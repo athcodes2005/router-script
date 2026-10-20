@@ -11,7 +11,10 @@ with the health-check maintenance lock.
 3. Stop the active tunnel and remove the current config.
 4. Run `tunnel.sh`, which registers noninteractively using the explicit config
    path and installs full-tunnel state.
-5. Verify the WARP process and active public IPv4 and IPv6 connectivity.
+5. Verify the WARP process, then fetch Cloudflare's trace through `tun0` for
+   both families (`https://1.1.1.1/cdn-cgi/trace` and its IPv6 literal) and
+   require `warp=on` or `warp=plus`. Google probes cannot validate a rotation:
+   Google IPv6 is rejected and Google IPv4 bypasses WARP by policy.
 
 ## Success
 

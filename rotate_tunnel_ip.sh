@@ -7,6 +7,9 @@ CONFIG_FILE="$DIR/config.json"
 BACKUP_FILE="$DIR/config.json.previous"
 BACKUP_TEMP="$BACKUP_FILE.tmp.$$"
 LOCK_DIR="$DIR/.ensure_network.lock"
+TUN_IF="${TUN_IF:-tun0}"
+WARP_TRACE_URL_V4="${WARP_TRACE_URL_V4:-https://1.1.1.1/cdn-cgi/trace}"
+WARP_TRACE_URL_V6="${WARP_TRACE_URL_V6:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
 WAS_RUNNING=0
 BACKUP_CREATED=0
 
@@ -16,6 +19,14 @@ LOG_FILE="$(prepare_log_file maintenance)"
 
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
+}
+
+# The new identity must carry traffic itself: probe through tun0 and require
+# Cloudflare's trace to report WARP. Google IPv6 is rejected by
+# google_wan_policy.sh and Google IPv4 bypasses WARP, so neither validates it.
+warp_trace_ok() {
+    curl "$1" -g -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 "$2" 2>/dev/null |
+        grep -Eq '^warp=(on|plus)$'
 }
 
 log "Rotating Cloudflare WARP IP to bypass blocks..."
@@ -83,8 +94,8 @@ fi
 log "Starting tunnel to fetch a fresh pair of IP addresses..."
 if sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 \
     && pidof "usque-rs" >/dev/null 2>&1 \
-    && [ "$(curl -4 -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' https://www.google.com/generate_204 2>/dev/null || true)" = "204" ] \
-    && [ "$(curl -6 -sS --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' https://www.google.com/generate_204 2>/dev/null || true)" = "204" ]; then
+    && warp_trace_ok -4 "$WARP_TRACE_URL_V4" \
+    && warp_trace_ok -6 "$WARP_TRACE_URL_V6"; then
     rm -f "$BACKUP_FILE"
     BACKUP_CREATED=0
     log "SUCCESS: IP rotation complete. You have a fresh Cloudflare connection."
