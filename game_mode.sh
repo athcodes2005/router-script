@@ -127,7 +127,9 @@ case "$CMD" in
         # default after a DHCP renewal while game mode was active.
         GW="$(ip -4 route show default dev "$WAN_IF" 2>/dev/null | awk '/via/ {print $3; exit}')"
         if [ -n "$GW" ]; then
-            ip route replace default via "$GW" dev "$WAN_IF" metric 10
+            # Restore the metric netifd uses for the WAN (10 on this GL.iNet setup).
+            WAN_METRIC="$(uci -q get "network.${WAN_UCI_IFACE:-wan}.metric" 2>/dev/null || echo 10)"
+            ip route replace default via "$GW" dev "$WAN_IF" metric "$WAN_METRIC"
             ip -4 route del default dev "$WAN_IF" metric 1 2>/dev/null || true
         fi
         if ip link show dev "$TUN_IF" >/dev/null 2>&1 && pidof usque-rs >/dev/null 2>&1; then

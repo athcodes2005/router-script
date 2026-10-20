@@ -417,10 +417,13 @@ refresh_game_session_routes() {
 
     TMP_ROUTES="$(mktemp "${GAME_SESSION_ROUTES_FILE}.XXXXXX")" || return 1
     FOUND=0
+    # Client addresses come from LAN_SUBNET, which is a /24 (e.g. "192.168.8.").
+    LAN_PREFIX="${LAN_SUBNET%/*}"
+    LAN_PREFIX="${LAN_PREFIX%.*}."
     for PORT in $GAME_SESSION_PORTS; do
         ADDRESSES="$(conntrack -L 2>/dev/null |
-            awk -v port="$PORT" '
-                /src=192\.168\.8\.[0-9]+/ && $0 ~ ("dport=" port "([[:space:]]|$)") {
+            awk -v port="$PORT" -v lan="src=$LAN_PREFIX" '
+                index($0, lan) && $0 ~ ("dport=" port "([[:space:]]|$)") {
                     for (i = 1; i <= NF; i++)
                         if ($i ~ /^dst=[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
                             sub(/^dst=/, "", $i); print $i; break

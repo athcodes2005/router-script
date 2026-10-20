@@ -110,6 +110,40 @@ class RecoveryTests(unittest.TestCase):
         }
         """ + block + '[ "$HAS_TEN" -eq 1 ] && [ "$HAS_ONE" -eq 0 ]')
 
+    def test_game_mode_off_restores_the_configured_wan_metric(self):
+        # F29: the WAN metric was hard-coded as 10.
+        source = (ROOT / 'game_mode.sh').read_text()
+        start = source.index('        GW=', source.index('# Save the gateway'))
+        end = source.index('        if ip link show', start)
+        output = self.run_shell("""
+        WAN_IF=eth0
+        uci() { [ "$*" = '-q get network.wan.metric' ] && echo 20; }
+        ip() {
+            case "$*" in
+                '-4 route show default dev eth0') echo 'default via 10.0.0.1 dev eth0 metric 1';;
+                *) printf 'ip %s\\n' "$*";;
+            esac
+        }
+        """ + source[start:end])
+        self.assertIn('ip route replace default via 10.0.0.1 dev eth0 metric 20', output)
+
+    def test_game_session_routes_follow_the_configured_lan(self):
+        # F29: conntrack parsing only recognised 192.168.8.x clients.
+        with tempfile.TemporaryDirectory() as tmp:
+            output = self.run_shell(function('refresh_game_session_routes') + r'''
+            WAN_IF=eth0; GAME_SESSION_PORTS=9339; LAN_SUBNET=10.10.10.0/24
+            GAME_SESSION_ROUTES_FILE="$TEST_DIR/game-routes"
+            conntrack() { echo 'udp 17 29 src=10.10.10.5 dst=203.0.113.9 sport=50000 dport=9339 src=203.0.113.9 dst=10.1.39.202 sport=9339 dport=50000 mark=0 use=1'; }
+            ip() {
+                case "$*" in
+                    '-4 route show default dev eth0') echo 'default via 10.0.0.1 dev eth0 metric 10';;
+                    *) printf 'ip %s\n' "$*";;
+                esac
+            }
+            refresh_game_session_routes
+            ''', dict(os.environ, TEST_DIR=tmp))
+        self.assertIn('ip route replace 203.0.113.9/32 via 10.0.0.1 dev eth0 metric 1', output)
+
     def test_monitor_distinguishes_http_and_transport_failures(self):
         source = (ROOT / 'monitor_game_network.sh').read_text()
         block = source[source.index('http_summary()'):source.index('write_log()')]
