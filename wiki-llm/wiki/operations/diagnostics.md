@@ -19,6 +19,11 @@ confusing their absence with a fault in the active full-tunnel architecture.
 
 ## Collection
 
+The health pipeline takes at most one failure snapshot per reason (Wi-Fi, DNS,
+WAN lease, campus route, internet, `/tmp` pressure, tunnel restart, ...) per
+`DIAGNOSTICS_COOLDOWN` (15 minutes), so a long outage keeps its first snapshot
+instead of replacing the retained history every tick.
+
 `collect_diagnostics.sh` creates names containing both a timestamp and process
 ID, preventing collisions between events in the same second. Snapshots are
 written with mode `0600`. Snapshots taken before this redaction was deployed

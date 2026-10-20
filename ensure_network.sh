@@ -45,6 +45,8 @@ WIFI_REPAIR_RETRY_FILE="${WIFI_REPAIR_RETRY_FILE:-/tmp/router-script-wifi-repair
 DNS_CONFIG_RETRY_FILE="${DNS_CONFIG_RETRY_FILE:-/tmp/router-script-dns-config-retry-after}"
 DNS_RUNTIME_RETRY_FILE="${DNS_RUNTIME_RETRY_FILE:-/tmp/router-script-dns-runtime-retry-after}"
 STAGE_REPAIR_COOLDOWN="${STAGE_REPAIR_COOLDOWN:-300}"
+DIAGNOSTICS_RETRY_DIR="${DIAGNOSTICS_RETRY_DIR:-/tmp/router-script-diagnostics-after}"
+DIAGNOSTICS_COOLDOWN="${DIAGNOSTICS_COOLDOWN:-900}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-IN}"
 WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
 WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
@@ -266,6 +268,18 @@ defer_retry() {
 
 clear_retry() {
     [ ! -f "$1" ] || rm -f "$1"
+}
+
+# A persistent failure repeats every tick. Keep the incident's first snapshot
+# rather than replacing the retained history with near-identical ones.
+collect_diagnostics_once() {
+    if retry_deferred "$DIAGNOSTICS_RETRY_DIR/$1"; then
+        log "Diagnostics for $1 were captured recently; not taking another snapshot."
+        return 0
+    fi
+    mkdir -p "$DIAGNOSTICS_RETRY_DIR" 2>/dev/null || true
+    sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+    defer_retry "$DIAGNOSTICS_RETRY_DIR/$1" "$DIAGNOSTICS_COOLDOWN"
 }
 
 tunnel_process_ok() {
@@ -550,7 +564,7 @@ else
         clear_retry "$WIFI_REPAIR_RETRY_FILE"
     else
         log "Wi-Fi remains degraded after repair. Capturing evidence once and continuing WAN and tunnel recovery."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        collect_diagnostics_once wifi
         defer_retry "$WIFI_REPAIR_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
     fi
 fi
@@ -568,7 +582,7 @@ else
         clear_retry "$DNS_CONFIG_RETRY_FILE"
     else
         log "DNS configuration remains invalid after repair. Capturing evidence once and continuing."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        collect_diagnostics_once dns-config
         defer_retry "$DNS_CONFIG_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
     fi
 fi
@@ -585,7 +599,7 @@ else
     sh "$DIR/configure_dns.sh" >> "$LOG_FILE" 2>&1 || log "configure_dns.sh failed during runtime recovery."
     if ! dns_runtime_ok; then
         log "DNS runtime remains unhealthy after repair. Collecting diagnostics."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        collect_diagnostics_once dns-runtime
         defer_retry "$DNS_RUNTIME_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
         exit 1
     fi
@@ -603,7 +617,7 @@ else
         log "LAN IPv6 configuration recovered."
     else
         log "LAN IPv6 remains invalid after repair. Capturing evidence once and continuing IPv4 and tunnel recovery."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        collect_diagnostics_once lan-ipv6
         defer_lan_ipv6_retry
     fi
 fi
@@ -615,7 +629,7 @@ fi
 
 if ! wan_ipv4_ok || ! wan_link_ok; then
     log "WAN IPv4 lease or carrier is still missing after recovery. Collecting diagnostics."
-    sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+    collect_diagnostics_once wan-lease
     exit 1
 fi
 
@@ -630,7 +644,7 @@ fi
 
 if ! campus_core_route_ok; then
     log "Campus DNS route is still incorrect after WAN recovery. Collecting diagnostics."
-    sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+    collect_diagnostics_once campus-route
     exit 1
 fi
 
@@ -681,7 +695,7 @@ if ! internet_v4_ok; then
     fi
     if ! internet_v4_ok; then
         log "IPv4 internet is still down after tunnel teardown. Collecting diagnostics."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        collect_diagnostics_once internet-down
         exit 1
     fi
     log "Internet recovered after tunnel teardown."
@@ -689,7 +703,7 @@ fi
 
 if ! runtime_resources_ok; then
     log "Runtime storage pressure detected: /tmp is at or above ${TMP_MAX_USED_PERCENT}% usage. Falling back to direct WAN."
-    sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+    collect_diagnostics_once tmp-pressure
     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
     defer_tunnel_retry
     exit 1
@@ -740,7 +754,7 @@ log "Restarting odhcpd to refresh LAN IPv6 Router Advertisements."
 
 if ! tunnel_healthy_confirmed; then
     log "Tunnel is still unhealthy after restart. Collecting diagnostics and enabling direct WAN fallback."
-    sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+    collect_diagnostics_once tunnel-restart
     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
     defer_tunnel_retry
     exit 1

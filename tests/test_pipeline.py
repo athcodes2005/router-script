@@ -74,6 +74,15 @@ class PipelineTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.box.count('ifdown wan'), 1)
 
+    # F06: retention keeps 24 snapshots; one per tick evicts the incident's onset.
+    def test_persistent_failure_is_snapshotted_once(self):
+        self.box.flag('wan_down')
+        self.assertEqual(self.tick().returncode, 1)
+        self.assertEqual(self.tick().returncode, 1)
+        snapshots = list((self.box.proj / 'diagnostics').glob('diagnostic_*.log'))
+        self.assertEqual(len(snapshots), 1)
+        self.assertIn('captured recently', self.box.log('ensure'))
+
 
 if __name__ == '__main__':
     unittest.main()
