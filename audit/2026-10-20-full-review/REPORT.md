@@ -1,10 +1,18 @@
 # Full review of router-script — 20 October 2026
 
-**Status: Phase 1 (audit only).** No project script, binary or configuration was
-changed. The project is now a git repository: baseline commit `2ba81fe` on
-`main` (`.env`, `config.json`, `logs/`, `diagnostics/` and Cargo `target/` are
-excluded by `.gitignore`); this report lives on branch `full-review-2026-10-20`.
-Every finding below is **proposed**; nothing is implemented until you approve it.
+**Status: Phase 2 complete for the approved batches 1–3; nothing deployed.**
+Eleven findings are fixed (F01, F02, F03, F04, F05, F06, F07 log-only, F08,
+F09, F11, F15), one commit each, on branch `full-review-2026-10-20`. The
+baseline is `2ba81fe` on `main`; `.env`, `config.json`, `logs/`,
+`diagnostics/` and Cargo `target/` are excluded by `.gitignore`.
+
+- **Outcome per finding:** §8.
+- **Measured effect:** §9.
+- **Invariant re-check:** §10.
+- **Deployment checklist and rollback:** §11.
+- **What I could not verify:** §12.
+
+Sections 0–7 are the Phase 1 audit exactly as committed in `8be33c1`.
 
 ## 0. Scope, method and limits
 
@@ -625,3 +633,258 @@ route/readiness logic would bypass it.
 for the required `shellcheck -s sh` runs. pytest is optional, since the tests
 run with `unittest`. For batch 5, permission to start OrbStack and let
 `cross`/cargo download crates.
+
+## 8. Phase 2 outcome per finding
+
+You approved batches 1–3. Every fix landed as one commit with a test that
+fails before it and passes after. Test infrastructure came first, as its own
+commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
+
+| ID | Status | Commit | Notes |
+|---|---|---|---|
+| F01 | **Fixed** | `147c151` | Wireless key/password/secret/PSK values redacted (escaped quotes handled); snapshots `umask 077`. Existing snapshots still hold passphrases: your action. |
+| F02 | **Fixed** | `61f5c43` | Wi-Fi and DNS-config failures capture once, cool down 5 min (`STAGE_REPAIR_COOLDOWN`) and continue. A dead resolver still ends the run, but its repair is rate-limited too. |
+| F03 | **Fixed** | `a1fb67c` | The four LAN↔`tun0` FORWARD rules are checked and repaired with the same specs as `tunnel.sh`; a repair is now logged. |
+| F04 | **Fixed** | `7b3fa2f` | `CAMPUS_NETS` re-added via the WAN gateway; the WAN is cycled only if that fails. |
+| F05 | **Fixed** | `a2cafe5` | Credentials reach curl on stdin (`-K -`), escaped; checked against real curl. |
+| F06 | **Fixed** | `0b09c86` | One failure snapshot per reason per 15 min (`DIAGNOSTICS_COOLDOWN`). |
+| F07 | **Fixed (log only)** | `6c7a43c` | WARNING plus one snapshot when 1.1.1.1 or 2606:4700:4700::1111 does not route via `tun0`; never restarts. |
+| F08 | **Fixed** | `c6050ec` | Rule 700, the chain and the PREROUTING jump change only on drift; the rule lines themselves are unchanged. |
+| F09 | **Fixed** | `a883824` | Rotation requires `warp=on`/`warp=plus` from Cloudflare's trace through `tun0`, for both families. |
+| F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
+| F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
+| F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
+| F12, F13, F14, F19, F20, F22, F23 | Deferred | — | Batch 4: not approved this round. |
+| F21, F24, F25 | Deferred | — | Need your decision (see §7). |
+| F26–F30 | Deferred | — | Batch 4. Only the wiki/README lines that the fixed items made inaccurate were updated, in the same commits (wiki contract). |
+
+Rejected: none. In Phase 1 I had already dropped one suspected issue, the
+IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
+
+Tests: 48 in total (21 original, 27 new), all passing under both macOS
+`/bin/sh` (bash 3.2 in POSIX mode) and `dash`, for every commit.
+`shellcheck -s sh` (0.11.0) reports no new findings in any changed script.
+The remaining findings are pre-existing: SC1090/SC1091 for the dynamic
+`source` of `paths.sh` and `.env`, SC2012 in `collect_diagnostics.sh` (`ls`
+for retention), and two SC2086 in `login.sh` (intentional splitting of
+`$RESOLVE_OPTS`). Run the suite with
+`python3 -m unittest discover -s tests` (about 2 minutes).
+
+## 9. Measured effect (sandbox, same harness for before and after)
+
+- **Processes per healthy tick:** 442 at `2ba81fe`, 290 at `HEAD` (−34 %).
+  `grep` drops 129 → 53 and `tr` 83 → 0 (F11). This counts every process,
+  real tools included, under dash on macOS. BusyBox NOFORK/NOEXEC applets
+  make some of them cheaper on the router.
+- **Game-policy changes per healthy tick:** 13 → 0 (F08).
+- **Unrepairable DNS drift.** Before: every tick restarted dnsmasq and
+  dnscrypt-proxy, committed UCI, took a snapshot, and never reached portal or
+  WARP recovery. After: one repair and one snapshot per 5 minutes, and portal
+  and WARP recovery still run (`test_pipeline.py`).
+- **Persistent failure.** Before: one snapshot per tick. After: one per reason
+  per 15 minutes.
+- **Not measured:** CPU time and wall time on the router, and how often the
+  F03, F04 and F08 trigger conditions occur in practice.
+
+## 10. Invariant re-check against the final diff
+
+All seven still hold.
+
+1. **Public IPv4 and IPv6 defaults via `tun0`; campus prefixes, endpoints and
+   split-horizon `/32`s on `eth0`.**
+   - `tunnel.sh` and `stop_tunnel.sh` are unchanged.
+   - The only new route-changing line re-adds `CAMPUS_NETS` via the WAN
+     gateway at metric 1. It uses the same default list as `tunnel.sh` and
+     `stop_tunnel.sh` (all three identical).
+   - F07 is read-only.
+   - The four F03 rules match `tunnel.sh`'s character for character (checked
+     mechanically).
+2. **DNS strict-order chain; only the listed campus hosts forwarded.**
+   - `configure_dns.sh` and every `dns_config_ok` predicate are unchanged.
+   - F02 changes only *when* a repair runs.
+   - F11 is an equivalent check (equivalence tests).
+3. **`filter_aaaa=0`, `ra_default=2`, `block_ipv6=false`, ULA + NAT66, MSS on
+   `tun0`.**
+   - The LAN-IPv6 and DNS configurators and their checks are unchanged.
+   - The NAT and MSS checks are unchanged and now extended (F03).
+4. **Bounded recovery.**
+   - The WARP restart, 5-minute cooldown and direct-IPv4 fallback logic is
+     unchanged; only its snapshot call is now rate-limited.
+   - A lost lease still stops the tunnel and recovers `wan` first.
+   - F02 adds cooldowns.
+   - F04 still falls back to `recover_wan`.
+5. **`.env`/`config.json` 0600; atomic registration writes.**
+   - `tunnel.sh`'s `chmod` lines, the Rust source and rotation's
+     backup/restore code are unchanged; F09 changed only the success probes.
+   - F05 writes no files.
+6. **Wi-Fi IN / HE20 / HE80.** `configure_wifi.sh` and `wifi_config_ok` are
+   unchanged. A repair that keeps failing is retried every 5 minutes instead
+   of every tick.
+7. **Rollback to `usque-rs-upstream-v0.1.0`.** `tunnel.sh`, the binaries and
+   the CLI flags are untouched.
+
+## 11. Deployment checklist
+
+**What to deploy:** six scripts: `diagnose.sh`, `collect_diagnostics.sh`,
+`login.sh`, `google_wan_policy.sh`, `rotate_tunnel_ip.sh`, `ensure_network.sh`.
+`tests/`, `wiki-llm/` and the README change stay on the Mac.
+
+**Don't use `sync_to_router.sh` for this.** It stops WARP to promote, and it
+also pushes the Mac's `.env`, `config.json` and every other file. The steps
+below keep WARP running.
+
+**Order:**
+
+1. **Step A (low risk, any time):** the first five files. `rotate_tunnel_ip.sh`
+   only runs when you invoke it.
+2. **Step B (the watchdog):** `ensure_network.sh`, at a time you can watch for
+   an hour (not just before a match).
+
+**1. Stage from the Mac:**
+
+```sh
+cd /Users/atharva/projects/router-script
+FILES="diagnose.sh collect_diagnostics.sh login.sh google_wan_policy.sh rotate_tunnel_ip.sh ensure_network.sh"
+tar -cf - $FILES | ssh -o BatchMode=yes root@192.168.8.1 'umask 077; cd /root/router-script && rm -rf .stage-20261020 && mkdir .stage-20261020 && tar -xf - -C .stage-20261020'
+shasum -a 256 $FILES
+```
+
+**2. On the router (`ssh root@192.168.8.1`): verify and back up.** Nothing
+changes yet.
+
+```sh
+cd /root/router-script
+FILES="diagnose.sh collect_diagnostics.sh login.sh google_wan_policy.sh rotate_tunnel_ip.sh ensure_network.sh"
+for f in $FILES; do sh -n ".stage-20261020/$f" || echo "SYNTAX FAIL $f"; done
+sha256sum .stage-20261020/*.sh          # must equal the Mac's shasum output
+mkdir -m 700 -p backup-20261020 && cp -p $FILES backup-20261020/
+pidof usque-rs > backup-20261020/warp-pid-before
+# Waits up to 2 min for a running health check; returns non-zero if busy.
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+promote() { for f in "$@"; do cp ".stage-20261020/$f" "$f.new" && chmod 755 "$f.new" && mv "$f.new" "$f"; done; }
+```
+
+`mv` replaces each file atomically, so a script that is already running keeps
+reading the old copy.
+
+**3. Step A:**
+
+```sh
+take_lock && { promote diagnose.sh collect_diagnostics.sh login.sh google_wan_policy.sh rotate_tunnel_ip.sh; rmdir .ensure_network.lock; } || echo "lock busy: nothing changed, retry"
+```
+
+**4. Step B, then one real health run.** The lock must be released first:
+the 2026-10-08 helper ran its health check while holding the lock, so that
+run only logged "Skipped".
+
+```sh
+take_lock && { promote ensure_network.sh; rmdir .ensure_network.lock; } || echo "lock busy: nothing changed, retry"
+sh ./ensure_network.sh; tail -n 5 logs/ensure.log
+[ "$(cat backup-20261020/warp-pid-before)" = "$(pidof usque-rs)" ] && echo "WARP PID preserved"
+rm -rf .stage-20261020
+```
+
+**5. Post-deploy checks (read-only):**
+
+- **F01:** `sh diagnose.sh | grep -n '"key"\|password'` shows only
+  `<redacted>` values. The next snapshot in `ls -l diagnostics | tail -n 2`
+  is `-rw-------`.
+- **F15:** `sh diagnose.sh | grep warp_ipv6_status` gives
+  `warp_ipv6_status=200`.
+- **F05:** `grep -c -- '-K -' login.sh` gives `1`. Optional parser check with
+  fake credentials against the router's own web server:
+  `printf 'user = "test:test"\n' | curl -sv -K - -o /dev/null http://127.0.0.1/ 2>&1 | grep -i '^> authorization'`
+  should print `> Authorization: Basic dGVzdDp0ZXN0`.
+- **F11:** `sh google_wan_policy.sh check-dns; echo "exit=$?"` gives
+  `exit=0`.
+- **F03:**
+  `iptables -C FORWARD -i br-lan -o tun0 -j ACCEPT && ip6tables -C FORWARD -i br-lan -o tun0 -j ACCEPT && echo forward-ok`.
+- **F08:** run `iptables -t mangle -L GAME_SESSION_POLICY -v -n` twice, a
+  minute apart. The packet counters should keep growing; before this fix they
+  reset every 30 s because the chain was flushed. `ip rule show | grep -c '^700:'`
+  gives `1`.
+- **F07:** `ip -4 route get 1.1.1.1; ip -6 route get 2606:4700:4700::1111`
+  shows `dev tun0` for both.
+- **F09 (optional; briefly interrupts WARP):** `sh rotate_tunnel_ip.sh` should
+  end with "SUCCESS".
+
+**6. First hour.** Watch `tail -f logs/ensure.log`.
+
+- **Expected:** "Starting health check." and "Health check passed." twice a
+  minute, and an unchanged `pidof usque-rs`.
+- **Informational new lines:**
+  - "Reinstalled missing tunnel NAT, MSS or LAN forwarding rules in place."
+    means a firewall reset happened that was previously silent.
+  - "Reinstalled campus routes on eth0 without cycling the WAN."
+  - "… repair cooldown is active …"
+  - "Diagnostics for … were captured recently …"
+- **Act on:**
+  - "WARNING: public traffic does not prefer tun0". Check
+    `ip -4 route show default` for a lower-metric default, for example a WAN
+    metric reset in the GL.iNet UI.
+  - "Skipped: health check PID … owns the maintenance lock" persisting for
+    minutes.
+  - Any "configure_*.sh failed".
+  - Game-policy counters resetting.
+
+**7. Rollback.**
+
+Full rollback, on the router:
+
+```sh
+cd /root/router-script
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+take_lock && { for f in diagnose.sh collect_diagnostics.sh login.sh google_wan_policy.sh rotate_tunnel_ip.sh ensure_network.sh; do cp -p "backup-20261020/$f" "$f.old" && mv "$f.old" "$f"; done; rmdir .ensure_network.lock; } || echo "lock busy: retry"
+rm -f /tmp/router-script-wifi-repair-retry-after /tmp/router-script-dns-config-retry-after /tmp/router-script-dns-runtime-retry-after
+rm -rf /tmp/router-script-diagnostics-after
+```
+
+No route, firewall, UCI or service state needs reverting. The only state these
+changes create is the FORWARD rules and campus routes that `tunnel.sh` already
+installs, plus the `/tmp` markers removed above.
+
+Rolling back one finding: run `git revert <commit>` on the Mac, then redeploy
+the listed file with steps 1–4. For a single-file emergency rollback on the
+router, use `cp -p backup-20261020/<file> <file>`.
+
+| Finding | Commit | Files | Revert order |
+|---|---|---|---|
+| F01 | `147c151` | `diagnose.sh`, `collect_diagnostics.sh` | independent |
+| F05 | `a2cafe5` | `login.sh` | independent |
+| F11 | `9968823` | `google_wan_policy.sh` | independent |
+| F09 | `a883824` | `rotate_tunnel_ip.sh` | independent |
+| F15 | `237f970` | `diagnose.sh`, `ensure_network.sh` | independent |
+| F03 | `a1fb67c` | `ensure_network.sh` | independent |
+| F04 | `7b3fa2f` | `ensure_network.sh` | independent |
+| F08 | `c6050ec` | `ensure_network.sh` | independent |
+| F07 | `6c7a43c` | `ensure_network.sh` | before F06 (it uses F06's helper) |
+| F06 | `0b09c86` | `ensure_network.sh` | after F07, before F02 (it uses F02's retry helpers) |
+| F02 | `61f5c43` | `ensure_network.sh` | after F06 and F07 |
+
+## 12. What I could not verify
+
+- **Nothing ran on the router.** Every behavioural claim comes from the
+  sandbox (stubbed system commands) under `dash` and macOS `bash --posix`,
+  not BusyBox ash.
+- **OpenWrt tool semantics, assumed but untested on the device:**
+  - BusyBox `sed -E` with the redaction regex (musl regex).
+  - BusyBox `awk -v` with `index()`, and `grep -c --`.
+  - The router's curl for `-K -` and `-g`. Only macOS curl 8.7.1 was used,
+    including a real Basic-auth round trip against a localhost server.
+  - `iptables -C` for the CONNMARK/MARK rules with masks.
+  - `iptables -S` output for the PREROUTING jump and `--restore-mark`. The
+    rule-700 check uses the same `ip rule show` pattern style as the Google
+    policy check that already works in production.
+- **Cloudflare's trace reporting `warp=on` through this MASQUE registration.**
+  The wiki's deployment checklist says it does; I didn't re-verify it.
+- **Real triggers.** The firewall flush (F03), persistent Wi-Fi/DNS failure
+  (F02) and campus-route loss (F04) were tested only as logic, not on
+  hardware. The real size of the F08 windows, and how they affected game
+  sessions, were not measured.
+- **CPU and time.** Process counts were measured on macOS; router CPU and
+  wall time were not measured.
+- **Deferred items.** Everything deferred is unchanged. The Rust client was
+  neither built nor tested (Docker is not running and the crates are not
+  cached).
+- **Existing snapshots.** Snapshots that already contain Wi-Fi passphrases,
+  on the router and on the Mac, were left untouched.

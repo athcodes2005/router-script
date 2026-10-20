@@ -446,3 +446,26 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../configure_dns.sh`, `../../bootstrap_router.sh`
 - `../../monitor_game_network.sh`, `../../game_mode.sh`
+
+
+## 2026-10-20 — Full review and approved fixes (not yet deployed)
+
+- Read-only audit of all scripts, the Rust client, logs and diagnostics: 30
+  findings. The local logs/diagnostics date from the 2026-08-01 pull.
+- Found that diagnostics recorded both Wi-Fi WPA2 passphrases, and that a stuck
+  Wi-Fi/DNS stage blocked all WAN, portal and WARP recovery.
+- Found that LAN↔`tun0` FORWARD rules were never repaired, that WARP rotation
+  always rolled back, and that the game policy was rebuilt every tick.
+- Fixed on branch `full-review-2026-10-20` with test-first commits: F01, F02,
+  F03, F04, F05, F06, F07 (log only), F08, F09, F11, F15. Verified with 48
+  sandboxed tests and shellcheck. **Not deployed:** the router still runs the
+  previous scripts until the report's deployment checklist is followed.
+- Wiki pages changed with the fixes: `operations/health-recovery.md`,
+  `operations/diagnostics.md`, `operations/warp-rotation.md`,
+  `security/secrets-and-trust.md`.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md`
+- `../../tests/sandbox.py`, `../../tests/test_pipeline.py`
+- `../../ensure_network.sh`, `../../diagnose.sh`, `../../login.sh`
