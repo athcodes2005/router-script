@@ -167,5 +167,28 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('iptables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240', output)
         self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220', output)
 
+    def test_forward_accept_rules_checked(self):
+        # F03: FORWARD's policy is DROP, so LAN<->tun0 traffic depends on these rules.
+        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        output = self.run_shell(defaults + function('nat_rules_ok') + r"""
+        iptables() { printf 'iptables: %s\n' "$*"; return 0; }
+        ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
+        nat_rules_ok
+        """)
+        for tool in ('iptables', 'ip6tables'):
+            self.assertIn(tool + ': -C FORWARD -i br-lan -o tun0 -j ACCEPT', output)
+            self.assertIn(tool + ': -C FORWARD -i tun0 -o br-lan -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT', output)
+
+    def test_missing_forward_rules_are_reinserted(self):
+        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        output = self.run_shell(defaults + function('ensure_nat_and_mss_rules') + r"""
+        iptables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'iptables: %s\n' "$*"; }
+        ip6tables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'ip6tables: %s\n' "$*"; }
+        ensure_nat_and_mss_rules
+        """)
+        for tool in ('iptables', 'ip6tables'):
+            self.assertIn(tool + ': -I FORWARD -i br-lan -o tun0 -j ACCEPT', output)
+            self.assertIn(tool + ': -I FORWARD -i tun0 -o br-lan -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT', output)
+
 if __name__ == '__main__':
     unittest.main()

@@ -393,6 +393,11 @@ nat_rules_ok() {
     iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS" 2>/dev/null || return 1
     ip6tables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || return 1
     ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null || return 1
+    # FORWARD's policy is DROP: LAN<->tun0 traffic exists only through these.
+    iptables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || return 1
+    iptables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || return 1
+    ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || return 1
+    ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || return 1
 }
 
 ensure_nat_and_mss_rules() {
@@ -402,6 +407,10 @@ ensure_nat_and_mss_rules() {
     iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS" 2>/dev/null || iptables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS"
     ip6tables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || ip6tables -t mangle -I FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
     ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null || ip6tables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null
+    iptables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || iptables -I FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT
+    iptables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT
+    ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 }
 
 runtime_resources_ok() {
@@ -454,10 +463,11 @@ tunnel_healthy() {
     tunnel_routes_ok || return 1
     TUNNEL_FAILURE_REASON="campus underlay route missing"
     campus_core_route_ok || return 1
-    TUNNEL_FAILURE_REASON="NAT or MSS rule missing"
+    TUNNEL_FAILURE_REASON="NAT, MSS or LAN forwarding rule missing"
     if ! nat_rules_ok; then
         ensure_nat_and_mss_rules
         nat_rules_ok || return 1
+        log "Reinstalled missing tunnel NAT, MSS or LAN forwarding rules in place."
     fi
     TUNNEL_FAILURE_REASON="both tunnel IPv4 HTTP probes failed"
     tunnel_internet_v4_ok || return 1

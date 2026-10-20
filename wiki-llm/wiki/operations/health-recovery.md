@@ -16,8 +16,9 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
 6. Verify the core campus route separately from optional resolved site routes.
 7. Verify direct-WAN IPv4 and run portal login recovery when needed.
 8. Reject WARP startup when `/tmp` is at or above the configured threshold.
-9. Validate process, CONNECT-IP readiness, TUN, default routes, NAT, and IPv4
-   HTTP reachability explicitly bound to the tunnel.
+9. Validate process, CONNECT-IP readiness, TUN, default routes, NAT, MSS and
+   LAN↔tun0 FORWARD accept rules (missing rules are reinstalled in place and
+   logged), and IPv4 HTTP reachability explicitly bound to the tunnel.
 10. Confirm live-client failures after three seconds before restarting WARP.
 11. Refresh optional host routes independently after a successful health check.
 
