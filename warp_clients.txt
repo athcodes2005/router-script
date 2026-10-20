@@ -1,0 +1,6 @@
+# LAN IPv4 clients whose traffic should use WARP instead of the direct WAN.
+# One IPv4 address or CIDR per line.
+#
+# iPhone running BGMI. The router reserves this address for Wi-Fi MAC
+# a2:38:e1:53:a3:3b.
+192.168.8.118

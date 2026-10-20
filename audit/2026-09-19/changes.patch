@@ -1,0 +1,720 @@
+--- before/configure_dns.sh
++++ configure_dns.sh
+@@ -22,6 +22,8 @@
+ fi
+ 
+ DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
++PORTAL_IP="${PORTAL_IP:-10.201.250.201}"
++SSO_IP="${SSO_IP:-10.200.1.100}"
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ LAN_IF="${LAN_IF:-br-lan}"
+@@ -101,10 +103,14 @@
+ # dnsmasq answers from these instead of forwarding to the dead resolver, so
+ # login.sh can always reach the captive-portal OAuth chain.
+ # Verified 2026-08-19; update here if IITB changes internal addresses.
+-uci del_list dhcp.@dnsmasq[0].address='/internet.iitb.ac.in/10.201.250.201' 2>/dev/null || true
+-uci add_list dhcp.@dnsmasq[0].address='/internet.iitb.ac.in/10.201.250.201'
+-uci del_list dhcp.@dnsmasq[0].address='/sso.iitb.ac.in/10.200.1.100' 2>/dev/null || true
+-uci add_list dhcp.@dnsmasq[0].address='/sso.iitb.ac.in/10.200.1.100'
++for ENTRY in $(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null || true); do
++    case "$ENTRY" in
++        /internet.iitb.ac.in/*|/sso.iitb.ac.in/*)
++            uci del_list "dhcp.@dnsmasq[0].address=$ENTRY" ;;
++    esac
++done
++uci add_list dhcp.@dnsmasq[0].address="/internet.iitb.ac.in/$PORTAL_IP"
++uci add_list dhcp.@dnsmasq[0].address="/sso.iitb.ac.in/$SSO_IP"
+ 
+ uci commit dhcp
+ 
+@@ -122,14 +128,14 @@
+ log "  dnscrypt-proxy (DoH): 127.0.0.1:5453 (last resort)"
+ log "  block_ipv6 = false"
+ log "  Portal/SSO pinned IPs (campus-DNS fallback):"
+-log "    internet.iitb.ac.in -> 10.201.250.201"
+-log "    sso.iitb.ac.in -> 10.200.1.100"
++log "    internet.iitb.ac.in -> $PORTAL_IP"
++log "    sso.iitb.ac.in -> $SSO_IP"
+ 
+ log "Verification:"
+-nslookup google.com 127.0.0.1 | sed -n '1,6p' || true
++timeout 3 nslookup google.com 127.0.0.1 | sed -n '1,6p' || true
+ echo "---"
+-nslookup -query=AAAA google.com 127.0.0.1 | sed -n '1,8p' || true
++timeout 3 nslookup -query=AAAA google.com 127.0.0.1 | sed -n '1,8p' || true
+ echo "---"
+ for DOMAIN in $CAMPUS_DOMAINS; do
+-    nslookup "$DOMAIN" 127.0.0.1 | sed -n '1,8p' || true
++    timeout 3 nslookup "$DOMAIN" 127.0.0.1 | sed -n '1,8p' || true
+ done
+--- before/configure_lan_ipv6.sh
++++ configure_lan_ipv6.sh
+@@ -50,7 +50,11 @@
+     sysctl -w "net.ipv6.conf.$LAN_IF.disable_ipv6=0" >> "$LOG_FILE" 2>&1
+ fi
+ 
+-uci set dhcp.@dnsmasq[0].filter_aaaa='0'
++if [ -f "${GAME_MODE_MARKER:-/tmp/router-script-game-mode}" ]; then
++    uci set dhcp.@dnsmasq[0].filter_aaaa='1'
++else
++    uci set dhcp.@dnsmasq[0].filter_aaaa='0'
++fi
+ uci set dhcp.lan.ra='server'
+ uci set dhcp.lan.ra_slaac='1'
+ uci set dhcp.lan.dhcpv6='server'
+--- before/diagnose.sh
++++ diagnose.sh
+@@ -17,8 +17,8 @@
+ LAN_IF="${LAN_IF:-br-lan}"
+ TUN_IF="${TUN_IF:-tun0}"
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in}"
+-CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in}"
++CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
++CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
+ WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
+ DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
+@@ -81,6 +81,11 @@
+ run ubus call network.wireless status
+ run sh -c "dmesg | grep -Ei 'tx_free|deauth|disassoc|wifi_sys_disconn|radar' | tail -n 80"
+ 
++section "QUEUE AND LINK COUNTERS"
++run tc -s qdisc show
++run ip -s link show dev "$WAN_IF"
++run ip -s link show dev "$TUN_IF"
++
+ section "WAN IFSTATUS"
+ printf 'carrier=%s\n' "$(cat "/sys/class/net/$WAN_IF/carrier" 2>/dev/null || echo unknown)"
+ run ifstatus "$WAN_UCI_IFACE"
+@@ -131,15 +136,15 @@
+ fi
+ 
+ section "DNS TESTS (127.0.0.1)"
+-run nslookup google.com 127.0.0.1
+-run nslookup -query=AAAA google.com 127.0.0.1
++run timeout 3 nslookup google.com 127.0.0.1
++run timeout 3 nslookup -query=AAAA google.com 127.0.0.1
+ for DOMAIN in $CAMPUS_DOMAINS; do
+-    run nslookup "$DOMAIN" 127.0.0.1
++    run timeout 3 nslookup "$DOMAIN" 127.0.0.1
+ done
+ 
+ section "DNS TESTS (direct resolvers)"
+-run nslookup google.com 8.8.8.8
+-run nslookup internet.iitb.ac.in "$CAMPUS_DNS_IP"
++run timeout 3 nslookup google.com 8.8.8.8
++run timeout 3 nslookup internet.iitb.ac.in "$CAMPUS_DNS_IP"
+ 
+ section "PING TESTS"
+ run ping -4 -W 3 -c 3 "$CAMPUS_DNS_IP"
+@@ -148,8 +153,8 @@
+ 
+ section "HTTP/HTTPS TESTS"
+ run curl -4 -sS --interface "$WAN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'direct_ipv4_status=%{http_code}\n' https://www.google.com/generate_204
+-run curl -4 -sS --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv4_status=%{http_code}\n' https://www.google.com/generate_204
+-run curl -6 -sS --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv6_status=%{http_code}\n' https://www.google.com/generate_204
++run curl -4 -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv4_status=%{http_code}\n' https://www.google.com/generate_204
++run curl -6 -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv6_status=%{http_code}\n' https://www.google.com/generate_204
+ 
+ section "TUNNEL INTERFACE"
+ run ip addr show dev "$TUN_IF"
+--- before/dns_flow.sh
++++ dns_flow.sh
+@@ -10,7 +10,7 @@
+ fi
+ 
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in}"
++CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ 
+ echo "=== LISTENERS (53/5453) ==="
+ netstat -lntup 2>/dev/null | grep -E '(:53 |:53$|:5453 |:5453$)' || true
+@@ -36,22 +36,22 @@
+ 
+ echo ""
+ echo "=== LIVE TESTS: dnsmasq (127.0.0.1) ==="
+-nslookup google.com 127.0.0.1 || true
++timeout 3 nslookup google.com 127.0.0.1 || true
+ echo "---"
+-nslookup -query=AAAA google.com 127.0.0.1 || true
++timeout 3 nslookup -query=AAAA google.com 127.0.0.1 || true
+ echo "---"
+ for DOMAIN in $CAMPUS_DOMAINS; do
+-    nslookup "$DOMAIN" 127.0.0.1 || true
++    timeout 3 nslookup "$DOMAIN" 127.0.0.1 || true
+ done
+ 
+ echo ""
+ echo "=== LIVE TESTS: direct (8.8.8.8) ==="
+-nslookup google.com 8.8.8.8 || true
++timeout 3 nslookup google.com 8.8.8.8 || true
+ 
+ echo ""
+ echo "=== LIVE TESTS: LAN entrypoint (192.168.8.1) ==="
+-nslookup google.com 192.168.8.1 || true
++timeout 3 nslookup google.com 192.168.8.1 || true
+ echo "---"
+ for DOMAIN in $CAMPUS_DOMAINS; do
+-    nslookup "$DOMAIN" 192.168.8.1 || true
++    timeout 3 nslookup "$DOMAIN" 192.168.8.1 || true
+ done
+--- before/ensure_network.sh
++++ ensure_network.sh
+@@ -44,9 +44,7 @@
+ DIRECT_PROBE_CONNECT_TIMEOUT="${DIRECT_PROBE_CONNECT_TIMEOUT:-2}"
+ DIRECT_PROBE_MAX_TIME="${DIRECT_PROBE_MAX_TIME:-4}"
+ DIRECT_CONFIRM_DELAY="${DIRECT_CONFIRM_DELAY:-2}"
+-TUNNEL_PERFORMANCE_PROBE_URL="${TUNNEL_PERFORMANCE_PROBE_URL:-https://www.google.com/generate_204}"
+-TUNNEL_MAX_PROBE_SECONDS="${TUNNEL_MAX_PROBE_SECONDS:-1.5}"
+-TUNNEL_PERFORMANCE_SAMPLES="${TUNNEL_PERFORMANCE_SAMPLES:-3}"
++TUNNEL_CONFIRM_DELAY="${TUNNEL_CONFIRM_DELAY:-3}"
+ OVERLAY_WARN_PERCENT="${OVERLAY_WARN_PERCENT:-90}"
+ GAME_MODE_MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
+ 
+@@ -127,7 +125,7 @@
+ 
+ tunnel_internet_v4_ok() {
+     for URL in $INTERNET_PROBE_URLS; do
+-        CODE="$(curl -4 -sS --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || true)"
++        CODE="$(curl -4 -sS --interface "$TUN_IF" --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || true)"
+         [ "$CODE" = "204" ] && return 0
+     done
+     return 1
+@@ -139,46 +137,6 @@
+         [ "$CODE" = "204" ] && return 0
+     done
+     return 1
+-}
+-
+-tunnel_performance_ok() {
+-    SLOW_SAMPLES=0
+-    SAMPLE=0
+-
+-    case "$TUNNEL_PERFORMANCE_SAMPLES" in
+-        ''|*[!0-9]*|0|1)
+-            log "Invalid TUNNEL_PERFORMANCE_SAMPLES=$TUNNEL_PERFORMANCE_SAMPLES; expected an integer of at least 2."
+-            return 1
+-            ;;
+-    esac
+-
+-    while [ "$SAMPLE" -lt "$TUNNEL_PERFORMANCE_SAMPLES" ]; do
+-        RESULT="$(curl -4 -sS \
+-            --connect-timeout 4 \
+-            --max-time 10 \
+-            -o /dev/null \
+-            -w '%{http_code} %{time_total}' \
+-            "$TUNNEL_PERFORMANCE_PROBE_URL" 2>/dev/null || true)"
+-        CODE="${RESULT%% *}"
+-        ELAPSED="${RESULT#* }"
+-
+-        if [ "$CODE" != "204" ] || ! awk \
+-            -v elapsed="$ELAPSED" \
+-            -v limit="$TUNNEL_MAX_PROBE_SECONDS" \
+-            'BEGIN { exit !(elapsed + 0 <= limit + 0) }'; then
+-            SLOW_SAMPLES=$((SLOW_SAMPLES + 1))
+-        fi
+-
+-        SAMPLE=$((SAMPLE + 1))
+-    done
+-
+-    # One transient slow response is tolerated. Two slow samples indicate a
+-    # persistently degraded tunnel even when HTTP eventually returns 204.
+-    if [ "$SLOW_SAMPLES" -ge 2 ]; then
+-        log "Tunnel performance degraded: $SLOW_SAMPLES/$TUNNEL_PERFORMANCE_SAMPLES probes exceeded ${TUNNEL_MAX_PROBE_SECONDS}s or failed."
+-        return 1
+-    fi
+-    return 0
+ }
+ 
+ wan_ipv4_ok() {
+@@ -282,76 +240,55 @@
+     ip route get "$CAMPUS_DNS_IP" 2>/dev/null | grep -q "dev $WAN_IF"
+ }
+ 
+-campus_direct_routes_ok() {
+-    for DOMAIN in $CAMPUS_DIRECT_DOMAINS; do
+-        FOUND_ADDRESS=0
+-        for ADDRESS in $(nslookup "$DOMAIN" "$CAMPUS_DNS_IP" 2>/dev/null | awk '/^Address [0-9]*: / { print $3 }'); do
+-            case "$ADDRESS" in
+-                *.*.*.*)
+-                    FOUND_ADDRESS=1
+-                    ip route get "$ADDRESS" 2>/dev/null | grep -q "dev $WAN_IF" || return 1
+-                    ;;
+-            esac
+-        done
+-        # An optional site's transient DNS failure must not reset the WAN.
+-        # Existing static/private campus routes remain valid until DNS returns.
+-        [ "$FOUND_ADDRESS" -eq 0 ] && continue
+-    done
+-
+-    return 0
+-}
+-
+-direct_public_routes_ok() {
+-    for DOMAIN in $DIRECT_PUBLIC_DOMAINS; do
+-        FOUND_ADDRESS=0
+-        for ADDRESS in $(nslookup "$DOMAIN" 127.0.0.1 2>/dev/null | awk '/^Address [0-9]*: / { print $3 }'); do
+-            case "$ADDRESS" in
+-                *.*.*.*)
+-                    FOUND_ADDRESS=1
+-                    ip route get "$ADDRESS" 2>/dev/null | grep -q "dev $WAN_IF" || return 1
+-                    ;;
+-            esac
+-        done
+-        # A transient public DNS failure must not tear down the tunnel; the
+-        # next tunnel/health pass will refresh the host route.
+-        [ "$FOUND_ADDRESS" -eq 0 ] && continue
+-    done
+-    return 0
+-}
+-
+-refresh_direct_public_routes() {
+-    DEFAULT_GW="$(ip route show default | grep -v "dev $TUN_IF" | head -n 1 | awk '/default/ {print $3}')"
++# Optional DNS exceptions are maintenance, not tunnel liveness. Resolve once:
++# querying again can return a different CDN address and falsely restart WARP.
++refresh_host_routes() (
++    DOMAINS="$1"
++    RESOLVER="$2"
++    ROUTES_FILE="$3"
++    DEFAULT_GW="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
+     [ -n "$DEFAULT_GW" ] || return 1
+-
+-    TMP_ROUTES="/tmp/router-script-direct-public-host-routes.$$"
+-    : > "$TMP_ROUTES"
+-    FOUND_ANY=0
+-    for DOMAIN in $DIRECT_PUBLIC_DOMAINS; do
+-        for ADDRESS in $(nslookup "$DOMAIN" 127.0.0.1 2>/dev/null | awk '/^Address [0-9]*: / { print $3 }'); do
+-            case "$ADDRESS" in
+-                *.*.*.*)
+-                    FOUND_ANY=1
+-                    ROUTE="$ADDRESS/32"
+-                    ip route replace "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1
+-                    grep -Fqx "$ROUTE" "$TMP_ROUTES" 2>/dev/null || printf '%s\n' "$ROUTE" >> "$TMP_ROUTES"
+-                    ;;
+-            esac
++    TMP_ROUTES="$(mktemp "${ROUTES_FILE}.XXXXXX")" || return 1
++    trap 'rm -f "$TMP_ROUTES"' EXIT
++    trap 'exit 130' INT
++    trap 'exit 143' TERM
++    ALL_RESOLVED=1
++    for DOMAIN in $DOMAINS; do
++        ADDRESSES="$(timeout 3 nslookup "$DOMAIN" "$RESOLVER" 2>/dev/null |
++            awk '/^Address [0-9]+: / && $3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print $3}')"
++        if [ -z "$ADDRESSES" ]; then
++            ALL_RESOLVED=0
++            continue
++        fi
++        for ADDRESS in $ADDRESSES; do
++            ROUTE="$ADDRESS/32"
++            if ip route replace "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1; then
++                grep -Fqx "$ROUTE" "$TMP_ROUTES" || printf '%s\n' "$ROUTE" >> "$TMP_ROUTES"
++            else
++                ALL_RESOLVED=0
++            fi
+         done
+     done
+-
+-    # Keep the last known-good set across a transient DNS failure. Once at
+-    # least one answer is available, remove stale addresses atomically.
+-    if [ "$FOUND_ANY" -eq 1 ]; then
+-        if [ -f "$DIRECT_PUBLIC_ROUTES_FILE" ]; then
+-            while IFS= read -r ROUTE; do
+-                [ -n "$ROUTE" ] && grep -Fqx "$ROUTE" "$TMP_ROUTES" 2>/dev/null || ip route del "$ROUTE" 2>/dev/null || true
+-            done < "$DIRECT_PUBLIC_ROUTES_FILE"
+-        fi
+-        mv "$TMP_ROUTES" "$DIRECT_PUBLIC_ROUTES_FILE"
+-    else
+-        rm -f "$TMP_ROUTES"
+-    fi
+-    return 0
++    if [ -f "$ROUTES_FILE" ]; then
++        while IFS= read -r ROUTE; do
++            [ -n "$ROUTE" ] || continue
++            grep -Fqx "$ROUTE" "$TMP_ROUTES" && continue
++            if [ "$ALL_RESOLVED" -eq 1 ]; then
++                ip route del "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null || true
++            else
++                # A partial DNS outage must not remove another domain's route.
++                printf '%s\n' "$ROUTE" >> "$TMP_ROUTES"
++            fi
++        done < "$ROUTES_FILE"
++    fi
++    mv "$TMP_ROUTES" "$ROUTES_FILE"
++)
++
++refresh_optional_routes() {
++    refresh_host_routes "$CAMPUS_DIRECT_DOMAINS" "$CAMPUS_DNS_IP" "${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}" ||
++        log "Campus host-route refresh deferred; preserving the running tunnel."
++    refresh_host_routes "$DIRECT_PUBLIC_DOMAINS" 127.0.0.1 "$DIRECT_PUBLIC_ROUTES_FILE" ||
++        log "Public host-route refresh deferred; preserving the running tunnel."
+ }
+ 
+ tunnel_ready_ok() {
+@@ -405,20 +342,32 @@
+ }
+ 
+ tunnel_healthy() {
++    TUNNEL_FAILURE_REASON="process missing"
++    tunnel_process_ok || return 1
++    TUNNEL_FAILURE_REASON="TUN interface missing"
++    ip link show dev "$TUN_IF" >/dev/null 2>&1 || return 1
++    TUNNEL_FAILURE_REASON="CONNECT-IP not ready (client may be reconnecting)"
++    tunnel_ready_ok || return 1
++    TUNNEL_FAILURE_REASON="default route missing"
++    tunnel_routes_ok || return 1
++    TUNNEL_FAILURE_REASON="campus underlay route missing"
++    campus_core_route_ok || return 1
++    TUNNEL_FAILURE_REASON="NAT rule missing"
++    nat_rules_ok || return 1
++    TUNNEL_FAILURE_REASON="both tunnel IPv4 HTTP probes failed"
++    tunnel_internet_v4_ok || return 1
++    TUNNEL_FAILURE_REASON=""
++}
++
++tunnel_healthy_confirmed() {
++    tunnel_healthy && return 0
++    log "Tunnel check failed: $TUNNEL_FAILURE_REASON. Confirming before restart."
++    # A missing process/interface cannot recover on its own. A live client's
++    # reconnect or brief packet loss deserves a second observation.
+     tunnel_process_ok || return 1
+     ip link show dev "$TUN_IF" >/dev/null 2>&1 || return 1
+-    tunnel_ready_ok || return 1
+-    tunnel_routes_ok || return 1
+-    campus_core_route_ok || return 1
+-    refresh_direct_public_routes || return 1
+-    campus_direct_routes_ok || return 1
+-    direct_public_routes_ok || return 1
+-    nat_rules_ok || return 1
+-
+-    # Active validation: one IPv4 success is enough to keep the tunnel.
+-    # Avoid extra IPv6/latency probe storms every 30s — they compete with game
+-    # traffic on the single QUIC session and previously caused false restarts.
+-    tunnel_internet_v4_ok || return 1
++    sleep "$TUNNEL_CONFIRM_DELAY"
++    tunnel_healthy
+ }
+ 
+ # --- Main health check pipeline ---
+@@ -585,7 +534,8 @@
+     exit 1
+ fi
+ 
+-if tunnel_healthy; then
++if tunnel_healthy_confirmed; then
++    refresh_optional_routes
+     rm -f "$TUNNEL_RETRY_FILE"
+     log "Health check passed."
+     exit 0
+@@ -599,14 +549,14 @@
+     exit 0
+ fi
+ 
+-log "Tunnel health check failed. Restarting tunnel."
++log "Tunnel health check failed: $TUNNEL_FAILURE_REASON. Restarting tunnel."
+ sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+ sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+ sleep 10
+ log "Restarting odhcpd to refresh LAN IPv6 Router Advertisements."
+ /etc/init.d/odhcpd restart >> "$LOG_FILE" 2>&1 || true
+ 
+-if ! tunnel_healthy; then
++if ! tunnel_healthy_confirmed; then
+     log "Tunnel is still unhealthy after restart. Collecting diagnostics and enabling direct WAN fallback."
+     sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+@@ -615,4 +565,5 @@
+ fi
+ 
+ rm -f "$TUNNEL_RETRY_FILE"
++refresh_optional_routes
+ log "Health check passed."
+--- before/game_mode.sh
++++ game_mode.sh
+@@ -8,7 +8,6 @@
+ 
+ DIR="$(cd "$(dirname "$0")" && pwd)"
+ ENV_FILE="$DIR/.env"
+-MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
+ 
+ . "$DIR/paths.sh"
+ 
+@@ -18,6 +17,7 @@
+     . "$ENV_FILE"
+ fi
+ 
++MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
+ WAN_IF="${WAN_IF:-eth0}"
+ LAN_IF="${LAN_IF:-br-lan}"
+ TUN_IF="${TUN_IF:-tun0}"
+@@ -34,9 +34,23 @@
+ [ "$#" -ge 1 ] || usage
+ CMD="$1"
+ 
+-direct_default_metric() {
+-    ip -4 route show default dev "$WAN_IF" 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="metric") {print $(i+1); exit}}'
+-}
++# Serialize policy changes with the watchdog. Status remains read-only.
++case "$CMD" in
++    on|off)
++        LOCK_DIR="$DIR/.ensure_network.lock"
++        WAIT_COUNT=0
++        until mkdir "$LOCK_DIR" 2>/dev/null; do
++            [ "$WAIT_COUNT" -lt 30 ] || { log "game_mode: maintenance lock busy"; exit 1; }
++            sleep 1
++            WAIT_COUNT=$((WAIT_COUNT + 1))
++        done
++        trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
++        trap 'exit 130' INT
++        trap 'exit 143' TERM
++        ;;
++    status) ;;
++    *) usage ;;
++esac
+ 
+ case "$CMD" in
+     status)
+@@ -109,6 +123,13 @@
+         uci commit dhcp
+         /etc/init.d/dnsmasq reload >/dev/null 2>&1 || true
+ 
++        # Save the gateway before removing metric 1: it may be the only WAN
++        # default after a DHCP renewal while game mode was active.
++        GW="$(ip -4 route show default dev "$WAN_IF" 2>/dev/null | awk '/via/ {print $3; exit}')"
++        if [ -n "$GW" ]; then
++            ip route replace default via "$GW" dev "$WAN_IF" metric 10
++            ip -4 route del default dev "$WAN_IF" metric 1 2>/dev/null || true
++        fi
+         if ip link show dev "$TUN_IF" >/dev/null 2>&1 && pidof usque-rs >/dev/null 2>&1; then
+             ip route del default dev "$TUN_IF" 2>/dev/null || true
+             ip route add default dev "$TUN_IF" metric 5 2>/dev/null || \
+@@ -116,12 +137,6 @@
+             ip -6 route del default dev "$TUN_IF" 2>/dev/null || true
+             ip -6 route add default dev "$TUN_IF" metric 5 2>/dev/null || \
+                 ip -6 route replace default dev "$TUN_IF" metric 5
+-            # Put WAN default back behind WARP (remove metric 1 and set metric 10).
+-            ip -4 route del default dev "$WAN_IF" metric 1 2>/dev/null || true
+-            GW="$(ip -4 route show default dev "$WAN_IF" 2>/dev/null | awk '/via/ {print $3; exit}')"
+-            if [ -n "$GW" ]; then
+-                ip route replace default via "$GW" dev "$WAN_IF" metric 10
+-            fi
+             log "game_mode OFF: WARP default restored (metric 5, IPv6 active, filter_aaaa=0)."
+         else
+             log "game_mode OFF: marker cleared; tunnel not running — start via ensure_network/tunnel.sh."
+--- before/monitor_game_network.sh
++++ monitor_game_network.sh
+@@ -1,75 +1,66 @@
+ #!/bin/sh
+-# Continuous game latency and network monitor
+-# Runs for 45 minutes (2700s), sampling every 5 seconds.
++# Read-only, bounded monitor. PHONE_IP is optional; sleeping clients may ignore ping.
++set -eu
++DIR="$(cd "$(dirname "$0")" && pwd)"
++[ ! -f "$DIR/.env" ] || . "$DIR/.env"
++. "$DIR/paths.sh"
++MONITOR_LOG="$(prepare_log_file game_monitor)"
++DURATION="${DURATION:-2700}"
++INTERVAL="${INTERVAL:-5}"
++PHONE_IP="${PHONE_IP:-}"
++WAN_IF="${WAN_IF:-eth0}"
++TUN_IF="${TUN_IF:-tun0}"
++PROBE_URL="${PROBE_URL:-https://www.google.com/generate_204}"
++MAX_MONITOR_BYTES="${MAX_MONITOR_BYTES:-1048576}"
++for VALUE in "$DURATION" "$INTERVAL" "$MAX_MONITOR_BYTES"; do
++    case "$VALUE" in ''|*[!0-9]*|0) echo 'Duration, interval and log size must be positive integers.' >&2; exit 1;; esac
++done
++WORK="$(mktemp -d /tmp/router-game-monitor.XXXXXX)"
++trap 'rm -rf "$WORK"' EXIT
++trap 'exit 130' INT
++trap 'exit 143' TERM
+ 
+-DIR="$(cd "$(dirname "$0")" && pwd)"
+-MONITOR_LOG="${DIR}/logs/game_monitor.log"
+-DURATION=2700
+-INTERVAL=5
+-PHONE_IP="192.168.8.176"
+-ALT_PHONE_IP="192.168.8.146"
+-GW_IP="10.1.40.250"
+-
+-mkdir -p "$(dirname "$MONITOR_LOG")"
+-echo "=== BGMI Game Network Monitor Started at $(date) ===" | tee -a "$MONITOR_LOG"
+-
+-ELAPSED=0
+-while [ "$ELAPSED" -lt "$DURATION" ]; do
+-    TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
+-    
+-    # 1. Ping Gateway
+-    GW_PING="$(ping -c 2 -W 1 "$GW_IP" 2>/dev/null | awk -F'/' '/round-trip|rtt/ {gsub(/[^0-9.]/, "", $5); print $5}')"
+-    [ -z "$GW_PING" ] && GW_PING="LOSS"
+-
+-    # 2. Ping Active Phone
+-    PHONE_PING="$(ping -c 2 -W 1 "$PHONE_IP" 2>/dev/null | awk -F'/' '/round-trip|rtt/ {gsub(/[^0-9.]/, "", $5); print $5}')"
+-    if [ -z "$PHONE_PING" ]; then
+-        PHONE_PING="$(ping -c 2 -W 1 "$ALT_PHONE_IP" 2>/dev/null | awk -F'/' '/round-trip|rtt/ {gsub(/[^0-9.]/, "", $5); print $5}')"
+-        [ -z "$PHONE_PING" ] && PHONE_PING="LOSS"
++ping_summary() {
++    ping -c 2 -W 1 "$1" 2>/dev/null |
++        awk '/packets transmitted/ {loss=$0} /round-trip|rtt/ {rtt=$0}
++             END {if (rtt == "") print "NO_REPLY"; else print loss "; " rtt}'
++}
++http_summary() {
++    if RESULT="$(curl -4 -sS --interface "$1" --connect-timeout 2 --max-time 3 \
++        -o /dev/null -w '%{http_code} %{time_total}' "$PROBE_URL" 2>/dev/null)"; then
++        case "$RESULT" in 204\ *) printf 'OK %s\n' "$RESULT";; *) printf 'HTTP_FAIL %s\n' "$RESULT";; esac
++    else
++        printf 'TRANSPORT_FAIL %s\n' "$RESULT"
+     fi
+-
+-    # 3. Direct WAN HTTP 204 Probe
+-    WAN_TIME="$(curl -4 -sS --interface eth0 --connect-timeout 2 --max-time 3 -o /dev/null -w '%{time_total}' https://www.google.com/generate_204 2>/dev/null || echo 'FAIL')"
+-
+-    # 4. Check BGMI UDP 20000 flows
+-    GAME_FLOWS="$(grep -c 'dport=20000' /proc/net/nf_conntrack 2>/dev/null || echo 0 | tr -d ' \n')"
+-    [ -z "$GAME_FLOWS" ] && GAME_FLOWS=0
+-
+-    # Format log line
+-    LOG_LINE="${TIMESTAMP} | GW: ${GW_PING} ms | Phone: ${PHONE_PING} ms | WAN_204: ${WAN_TIME} s | BGMI_UDP_Flows: ${GAME_FLOWS}"
+-    
+-    # Check for anomalies
+-    ANOMALY=""
+-    case "$GW_PING" in
+-        LOSS) ANOMALY="[ALERT: Gateway Loss]" ;;
+-        *)
+-            if awk -v p="$GW_PING" 'BEGIN {exit !(p > 10)}' 2>/dev/null; then
+-                ANOMALY="[ALERT: High Gateway Ping ${GW_PING}ms]"
+-            fi
+-            ;;
+-    esac
+-
+-    case "$PHONE_PING" in
+-        LOSS) ANOMALY="${ANOMALY} [ALERT: Phone Wi-Fi Loss]" ;;
+-        *)
+-            if awk -v p="$PHONE_PING" 'BEGIN {exit !(p > 30)}' 2>/dev/null; then
+-                ANOMALY="${ANOMALY} [ALERT: Wi-Fi Jitter ${PHONE_PING}ms]"
+-            fi
+-            ;;
+-    esac
+-
+-    if [ "$WAN_TIME" = "FAIL" ]; then
+-        ANOMALY="${ANOMALY} [ALERT: WAN Probe Failed]"
++}
++write_log() {
++    if [ -f "$MONITOR_LOG" ] && [ "$(wc -c < "$MONITOR_LOG")" -ge "$MAX_MONITOR_BYTES" ]; then
++        mv "$MONITOR_LOG" "$MONITOR_LOG.1"
+     fi
+-
+-    if [ -n "$ANOMALY" ]; then
+-        echo "${LOG_LINE} ${ANOMALY}" | tee -a "$MONITOR_LOG"
+-    else
+-        echo "$LOG_LINE" >> "$MONITOR_LOG"
+-    fi
+-
+-    sleep "$INTERVAL"
+-    ELAPSED=$((ELAPSED + INTERVAL))
+-done
+-
+-echo "=== BGMI Game Network Monitor Completed at $(date) ===" | tee -a "$MONITOR_LOG"
++    printf '%s\n' "$*" >> "$MONITOR_LOG"
++}
++START="$(date +%s)"
++DEADLINE=$((START + DURATION))
++write_log "=== Monitor started $(date); client=${PHONE_IP:-not_selected}; duration=${DURATION}s ==="
++while [ "$(date +%s)" -lt "$DEADLINE" ]; do
++    SAMPLE_START="$(date +%s)"
++    GW_IP="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
++    # Parallel probes see approximately the same moment, and cap sample time.
++    (if [ -n "$GW_IP" ]; then ping_summary "$GW_IP"; else echo NO_GATEWAY; fi) > "$WORK/gw" &
++    GW_PID=$!
++    (if [ -n "$PHONE_IP" ]; then ping_summary "$PHONE_IP"; else echo NOT_SELECTED; fi) > "$WORK/phone" &
++    PHONE_PID=$!
++    http_summary "$WAN_IF" > "$WORK/wan" & WAN_PID=$!
++    http_summary "$TUN_IF" > "$WORK/warp" & WARP_PID=$!
++    wait "$GW_PID" || true
++    wait "$PHONE_PID" || true
++    wait "$WAN_PID" || true
++    wait "$WARP_PID" || true
++    write_log "$(date '+%Y-%m-%d %H:%M:%S') | gateway: $(cat "$WORK/gw") | client: $(cat "$WORK/phone") | WAN: $(cat "$WORK/wan") | WARP: $(cat "$WORK/warp") | load: $(cut -d ' ' -f 1-3 /proc/loadavg)"
++    NEXT=$((SAMPLE_START + INTERVAL))
++    [ "$NEXT" -le "$DEADLINE" ] || NEXT="$DEADLINE"
++    NOW="$(date +%s)"
++    if [ "$NEXT" -gt "$NOW" ]; then sleep "$((NEXT - NOW))"; fi
++ done
++write_log "=== Monitor completed $(date) ==="
++printf 'Saved to %s\n' "$MONITOR_LOG"
+--- before/rotate_logs.sh
++++ rotate_logs.sh
+@@ -56,6 +56,7 @@
+ rotate_file "$(prepare_log_file ensure)"
+ rotate_file "$(prepare_log_file maintenance)"
+ rotate_file "$(prepare_log_file wifi)"
++rotate_file "$(prepare_log_file game_monitor)"
+ 
+ if [ "$MAX_DIAGNOSTICS" -gt 0 ] 2>/dev/null; then
+     ls -1t "$DIAGNOSTICS_DIR"/diagnostic_*.log 2>/dev/null | sed -n "$((MAX_DIAGNOSTICS + 1)),\$p" | while IFS= read -r OLD_FILE; do
+--- before/sync_to_router.sh
++++ sync_to_router.sh
+@@ -36,7 +36,9 @@
+     exit "$STATUS"
+ }
+ 
+-trap cleanup EXIT INT TERM
++trap cleanup EXIT
++trap 'exit 130' INT
++trap 'exit 143' TERM
+ 
+ chmod 600 "$DIR/.env" "$DIR/config.json" 2>/dev/null || true
+ 
+@@ -78,11 +80,6 @@
+ "
+ LOCK_HELD=1
+ 
+-if [ "$WAS_RUNNING" -eq 1 ]; then
+-    echo "Tunnel is running. Stopping before sync."
+-    run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./stop_tunnel.sh"
+-fi
+-
+ # Sync into a private staging directory first, then promote the complete set.
+ # A failed transfer therefore leaves the installed scripts untouched.
+ FILES="usque-rs config.json .env blocked_sites.txt warp_clients.txt paths.sh login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh PROJECT_CONTEXT.md README.md"
+@@ -92,6 +89,11 @@
+ for FILE in $FILES; do
+     [ -f "$DIR/$FILE" ] && run_scp -q "$DIR/$FILE" "$REMOTE:$REMOTE_STAGE/$FILE"
+ done
++
++if [ "$WAS_RUNNING" -eq 1 ]; then
++    echo "Tunnel is running. Stopping before sync."
++    run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./stop_tunnel.sh"
++fi
+ 
+ echo "Promoting staged files."
+ run_ssh "$REMOTE" "
+--- before/tunnel.sh
++++ tunnel.sh
+@@ -112,7 +112,7 @@
+     # liveness and active traffic checks are handled by ensure_network.sh.
+     echo "[INFO] Starting usque-rs native TUN in the background..."
+     rm -f "$WARP_READY_FILE"
+-    set -- "$EXECUTABLE" --config "$CONFIG_FILE" nativetun
++    set -- "$EXECUTABLE" --config "$CONFIG_FILE" nativetun --interface-name "$TUN_IF"
+     if [ "$SUPPORTS_CC" -eq 1 ]; then
+         set -- "$@" --congestion-control "$WARP_CC"
+     else
+@@ -188,7 +188,7 @@
+     fi
+     : > "$CAMPUS_ROUTES_FILE"
+     for DOMAIN in $CAMPUS_DIRECT_DOMAINS; do
+-        nslookup "$DOMAIN" "$CAMPUS_DNS_IP" 2>/dev/null |
++        timeout 3 nslookup "$DOMAIN" "$CAMPUS_DNS_IP" 2>/dev/null |
+             awk '/^Address [0-9]*: / { print $3 }' |
+             while IFS= read -r ADDRESS; do
+                 case "$ADDRESS" in
+@@ -211,7 +211,7 @@
+     fi
+     : > "$DIRECT_PUBLIC_ROUTES_FILE"
+     for DOMAIN in $DIRECT_PUBLIC_DOMAINS; do
+-        nslookup "$DOMAIN" 127.0.0.1 2>/dev/null |
++        timeout 3 nslookup "$DOMAIN" 127.0.0.1 2>/dev/null |
+             awk '/^Address [0-9]*: / { print $3 }' |
+             while IFS= read -r ADDRESS; do
+                 case "$ADDRESS" in

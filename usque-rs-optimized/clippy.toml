@@ -1,0 +1,14 @@
+# Clippy configuration for usque-rs
+# https://doc.rust-lang.org/clippy/configuration.html
+
+# Maximum cognitive complexity before warning
+cognitive-complexity-threshold = 40
+# Maximum number of lines in a function before warning  
+too-many-lines-threshold = 400
+# Maximum number of arguments before warning
+too-many-arguments-threshold = 10
+# Maximum number of bool params before warning
+max-fn-params-bools = 4
+# Allowed wildcard imports (for test helpers)
+allowed-wildcard-imports = ["super::*"]
+msrv = "1.75"

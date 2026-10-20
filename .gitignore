@@ -1,0 +1,15 @@
+# Secrets: never commit. Mode 0600 on disk; see wiki-llm/wiki/security/secrets-and-trust.md
+.env
+config.json
+config.json.previous
+
+# Runtime evidence pulled from the router (may expose topology and client destinations)
+logs/*
+!logs/.gitkeep
+diagnostics/
+
+# Build output and local noise
+usque-rs-optimized/target/
+__pycache__/
+*.pyc
+.DS_Store

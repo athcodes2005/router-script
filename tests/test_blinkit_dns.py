@@ -1,0 +1,101 @@
+"""Exercise the production updater with fake DNS/routes in a temporary directory."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+class BlinkitTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        self.hostdir = self.root / 'hosts'
+        self.hostdir.mkdir()
+        self.hosts = self.hostdir / 'hosts'
+        shutil.copy(ROOT / 'refresh_blinkit_dns.sh', self.root)
+        self.command('timeout', 'shift; exec "$@"')
+        self.command('nslookup', '''
+        printf '%s %s\n' "$1" "$2" >> "$TEST_ROOT/queries"
+        [ "$DNS_FAIL" = 0 ] || exit 1
+        echo 'Address 1: 192.0.2.10'
+        echo 'Address 2: 2001:db8::10'
+        ''')
+        self.command('ip', '''
+        case "$*" in
+          '-4 route show default dev eth0') echo 'default via 10.0.0.1 dev eth0 metric 10';;
+          *) [ "$ROUTE_FAIL" = 0 ] || exit 1
+             echo "$*" >> "$TEST_ROOT/routes"
+             test ! -f "$TEST_ROOT/hosts/hosts" || cat "$TEST_ROOT/hosts/hosts" >> "$TEST_ROOT/at-route-time";;
+        esac
+        ''')
+        self.env = dict(os.environ, PATH=str(self.bin)+':'+os.environ['PATH'],
+                        TEST_ROOT=str(self.root), DNS_FAIL='0', ROUTE_FAIL='0',
+                        WAN_IF='eth0', BLINKIT_HOSTS_DIR=str(self.hostdir),
+                        BLINKIT_IPV4_DOMAINS='api3.blinkit.com jumbo.blinkit.com',
+                        BLINKIT_DNS_SERVERS='8.8.8.8 8.8.4.4', DNSMASQ_PID_DIR=str(self.root/'pids'))
+
+    def command(self, name, body):
+        path=self.bin/name
+        path.write_text('#!/bin/sh\nset -eu\n'+body+'\n')
+        path.chmod(0o755)
+
+    def run_update(self):
+        return subprocess.run(['sh',str(self.root/'refresh_blinkit_dns.sh')],
+                              env=self.env, capture_output=True, text=True)
+
+    def test_legacy_blinkit_api_is_covered_by_all_policy_defaults(self):
+        for name in ['configure_dns.sh', 'ensure_network.sh', 'refresh_blinkit_dns.sh']:
+            text = (ROOT / name).read_text()
+            line = next(line for line in text.splitlines() if line.startswith('BLINKIT_IPV4_DOMAINS='))
+            self.assertIn('api2.grofers.com', line, name)
+        for name in ['ensure_network.sh', 'tunnel.sh']:
+            text = (ROOT / name).read_text()
+            line = next(line for line in text.splitlines() if line.startswith('DIRECT_PUBLIC_DOMAINS='))
+            self.assertIn('api2.grofers.com', line, name)
+        self.env['BLINKIT_IPV4_DOMAINS'] += ' api2.grofers.com'
+        result = self.run_update()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('192.0.2.10 api2.grofers.com', self.hosts.read_text())
+
+    def test_publish_ipv4_after_installing_routes(self):
+        self.hosts.write_text('192.0.2.1 api3.blinkit.com\n192.0.2.2 jumbo.blinkit.com\n')
+        result=self.run_update()
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.hosts.read_text(),'192.0.2.10 api3.blinkit.com\n192.0.2.10 jumbo.blinkit.com\n')
+        self.assertNotIn('192.0.2.10', (self.root/'at-route-time').read_text())
+        self.assertNotIn('127.0.0.1',(self.root/'queries').read_text())
+
+    def test_upstream_failure_reuses_saved_answers(self):
+        before='192.0.2.1 api3.blinkit.com\n192.0.2.2 jumbo.blinkit.com\n'
+        self.hosts.write_text(before)
+        self.env['DNS_FAIL']='1'
+        result=self.run_update()
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.hosts.read_text(),before)
+        self.assertIn('route replace 192.0.2.2/32', (self.root/'routes').read_text())
+
+    def test_route_failure_does_not_publish_new_answers(self):
+        self.hosts.write_text('192.0.2.1 api3.blinkit.com\n')
+        self.env['ROUTE_FAIL']='1'
+        self.assertNotEqual(self.run_update().returncode,0)
+        self.assertEqual(self.hosts.read_text(),'192.0.2.1 api3.blinkit.com\n')
+
+    def test_no_dns_and_no_saved_record_does_not_publish(self):
+        self.env['DNS_FAIL']='1'
+        self.assertNotEqual(self.run_update().returncode,0)
+        self.assertFalse(self.hosts.exists())
+
+    def test_unchanged_answers_do_not_rewrite_hosts(self):
+        self.assertEqual(self.run_update().returncode,0)
+        timestamp=self.hosts.stat().st_mtime_ns
+        self.assertEqual(self.run_update().returncode,0)
+        self.assertEqual(self.hosts.stat().st_mtime_ns,timestamp)
+
+if __name__ == '__main__':
+    unittest.main()

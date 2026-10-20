@@ -1,0 +1,143 @@
+--- before/configure_dns.sh
++++ configure_dns.sh
+@@ -27,6 +27,8 @@
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ LAN_IF="${LAN_IF:-br-lan}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+ 
+ # DNS servers in priority order
+ DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"
+@@ -85,6 +87,15 @@
+     uci add_list dhcp.@dnsmasq[0].server="$SERVER"
+ done
+ 
++# On dnsmasq 2.85, exact local zones plus refreshed IPv4 hosts return
++# NOERROR/NODATA for AAAA without disabling IPv6 for unrelated services.
++sh "$DIR/refresh_blinkit_dns.sh" || log "Blinkit refresh deferred; retaining saved DNS records."
++for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
++    uci add_list dhcp.@dnsmasq[0].server="/$DOMAIN/"
++done
++uci del_list dhcp.@dnsmasq[0].addnhosts="$BLINKIT_HOSTS_DIR" 2>/dev/null || true
++uci add_list dhcp.@dnsmasq[0].addnhosts="$BLINKIT_HOSTS_DIR"
++
+ # strict-order: query servers in the order listed, not all at once
+ uci set dhcp.@dnsmasq[0].strictorder='1'
+ 
+--- before/ensure_network.sh
++++ ensure_network.sh
+@@ -24,6 +24,8 @@
+ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com o1069899.ingest.us.sentry.io gemini.google.com}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+ DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
+ LAN_IP6IFACEID="${LAN_IP6IFACEID:-::1}"
+ LAN_RA_DEFAULT="${LAN_RA_DEFAULT:-2}"
+@@ -170,6 +172,11 @@
+     for DOMAIN in $CAMPUS_DOMAINS; do
+         echo "$CURRENT_SERVERS" | grep -Fq "/$DOMAIN/$CAMPUS_DNS_IP" || return 1
+     done
++
++    for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
++        printf '%s\n' "$CURRENT_SERVERS" | tr ' ' '\n' | grep -Fxq "/$DOMAIN/" || return 1
++    done
++    uci -q get dhcp.@dnsmasq[0].addnhosts | tr ' ' '\n' | grep -Fxq "$BLINKIT_HOSTS_DIR" || return 1
+ 
+     # Portal/SSO local pins must survive UCI drift (campus DNS outage path).
+     CURRENT_ADDRESSES="$(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null || echo "")"
+@@ -517,6 +524,10 @@
+     exit 1
+ fi
+ 
++# Publish fresh Blinkit IPv4 answers only after their WAN routes exist.
++sh "$DIR/refresh_blinkit_dns.sh" >> "$LOG_FILE" 2>&1 ||
++    log "Blinkit DNS refresh deferred; preserving last known records."
++
+ if [ -f "$GAME_MODE_MARKER" ]; then
+     # Competitive low-latency mode: keep direct WAN default. Do not re-promote
+     # WARP or restart the tunnel just because tun0 is not the default.
+--- before/tunnel.sh
++++ tunnel.sh
+@@ -201,6 +201,10 @@
+             done
+     done
+ 
++    # Restore/publish the IPv4-only Blinkit answers before resolving local
++    # public exceptions, including after a reboot or a tunnel teardown.
++    sh "$DIR/refresh_blinkit_dns.sh" || echo "[WARNING] Blinkit DNS refresh deferred."
++
+     # Selected public app endpoints use direct WAN egress to avoid WARP/shared
+     # proxy reputation checks. Resolve through the router resolver and refresh
+     # the host-route set every time the tunnel is (re)applied.
+--- before/sync_to_router.sh
++++ sync_to_router.sh
+@@ -82,7 +82,7 @@
+ 
+ # Sync into a private staging directory first, then promote the complete set.
+ # A failed transfer therefore leaves the installed scripts untouched.
+-FILES="usque-rs config.json .env blocked_sites.txt warp_clients.txt paths.sh login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh PROJECT_CONTEXT.md README.md"
++FILES="usque-rs config.json .env blocked_sites.txt warp_clients.txt paths.sh login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh PROJECT_CONTEXT.md README.md"
+ 
+ echo "Staging project files on the router."
+ run_ssh "$REMOTE" "rm -rf '$REMOTE_STAGE' && mkdir -m 700 '$REMOTE_STAGE'"
+--- before/refresh_blinkit_dns.sh
++++ refresh_blinkit_dns.sh
+@@ -0,0 +1,55 @@
++#!/bin/sh
++# Refresh exact Blinkit names as IPv4-only local DNS records. Routes are
++# installed before publishing addresses so clients never race the next cron run.
++set -eu
++DIR="$(cd "$(dirname "$0")" && pwd)"
++[ ! -f "$DIR/.env" ] || . "$DIR/.env"
++WAN_IF="${WAN_IF:-eth0}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
++BLINKIT_DNS_SERVERS="${BLINKIT_DNS_SERVERS:-8.8.8.8 8.8.4.4}"
++DNSMASQ_PID_DIR="${DNSMASQ_PID_DIR:-/var/run}"
++mkdir -p "$BLINKIT_HOSTS_DIR"
++# Stage outside addn-hosts directory: dnsmasq reads every file inside it.
++WORK="$(mktemp -d /tmp/router-blinkit-dns.XXXXXX)"
++trap 'rm -rf "$WORK"' EXIT
++trap 'exit 130' INT
++trap 'exit 143' TERM
++HOSTS="$BLINKIT_HOSTS_DIR/hosts"
++: > "$WORK/hosts"
++GW="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
++[ -n "$GW" ] || { echo 'Blinkit DNS: no WAN gateway; preserving records.' >&2; exit 1; }
++for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
++    ADDRESSES=""
++    for SERVER in $BLINKIT_DNS_SERVERS; do
++        # Query upstream directly, never our own locally pinned answers.
++        ADDRESSES="$(timeout 3 nslookup "$DOMAIN" "$SERVER" 2>/dev/null |
++            awk '/^Address [0-9]+: / && $3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print $3}')"
++        [ -z "$ADDRESSES" ] || break
++    done
++    if [ -z "$ADDRESSES" ] && [ -f "$HOSTS" ]; then
++        ADDRESSES="$(awk -v domain="$DOMAIN" '$2 == domain {print $1}' "$HOSTS")"
++    fi
++    [ -n "$ADDRESSES" ] || { echo "Blinkit DNS: no current or saved IPv4 for $DOMAIN." >&2; exit 1; }
++    for ADDRESS in $ADDRESSES; do
++        ip route replace "$ADDRESS/32" via "$GW" dev "$WAN_IF" metric 1
++        printf '%s %s\n' "$ADDRESS" "$DOMAIN" >> "$WORK/hosts"
++    done
++done
++sort -u "$WORK/hosts" > "$WORK/sorted"
++if ! cmp -s "$WORK/sorted" "$HOSTS"; then
++    # Atomic replacement on the destination filesystem. Hidden staging stays
++    # outside the directory exposed to dnsmasq and its optional jail.
++    STAGE="$(mktemp "${BLINKIT_HOSTS_DIR}.XXXXXX")"
++    trap 'rm -rf "$WORK"; rm -f "$STAGE"' EXIT
++    cat "$WORK/sorted" > "$STAGE"
++    chmod 644 "$STAGE"
++    mv "$STAGE" "$HOSTS"
++    # HUP reads hosts files without restarting DNS/DHCP or Wi-Fi.
++    for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
++        [ -f "$PID_FILE" ] || continue
++        PID="$(cat "$PID_FILE")"
++        case "$PID" in ''|*[!0-9]*) continue;; esac
++        kill -HUP "$PID" 2>/dev/null || true
++    done
++fi

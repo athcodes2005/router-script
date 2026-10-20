@@ -1,0 +1,46 @@
+--- before/configure_dns.sh
++++ configure_dns.sh
+@@ -27,7 +27,7 @@
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ LAN_IF="${LAN_IF:-br-lan}"
+-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
+ BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+ 
+ # DNS servers in priority order
+--- before/ensure_network.sh
++++ ensure_network.sh
+@@ -23,8 +23,8 @@
+ CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+ CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com o1069899.ingest.us.sentry.io gemini.google.com}"
+-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
+ BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+ DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
+ LAN_IP6IFACEID="${LAN_IP6IFACEID:-::1}"
+--- before/refresh_blinkit_dns.sh
++++ refresh_blinkit_dns.sh
+@@ -5,7 +5,7 @@
+ DIR="$(cd "$(dirname "$0")" && pwd)"
+ [ ! -f "$DIR/.env" ] || . "$DIR/.env"
+ WAN_IF="${WAN_IF:-eth0}"
+-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com}"
++BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
+ BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+ BLINKIT_DNS_SERVERS="${BLINKIT_DNS_SERVERS:-8.8.8.8 8.8.4.4}"
+ DNSMASQ_PID_DIR="${DNSMASQ_PID_DIR:-/var/run}"
+--- before/tunnel.sh
++++ tunnel.sh
+@@ -30,7 +30,7 @@
+ # Selected public services that reject WARP/shared-proxy egress.  These are
+ # intentionally exact hostnames observed from the affected app; broad CDN
+ # ranges would accidentally bypass WARP for unrelated sites.
+-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com o1069899.ingest.us.sentry.io gemini.google.com}"
++DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com}"
+ DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
+ WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
+ WARP_CC="${WARP_CC:-cubic}"

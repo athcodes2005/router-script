@@ -1,0 +1,12 @@
+# Blocked Sites — IPv4 destinations that must route through the tunnel (tun0)
+#
+# Format: one IP or CIDR per line
+# Lines starting with # are comments, blank lines are ignored
+#
+# Example:
+#   203.0.113.50
+#   198.51.100.0/24
+#
+# Add entries here as you discover sites blocked by the campus network.
+# After editing, restart the tunnel: ./stop_tunnel.sh && ./tunnel.sh
+34.180.38.160
