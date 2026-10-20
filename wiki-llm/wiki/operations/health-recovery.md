@@ -23,10 +23,12 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
 11. Refresh optional host routes independently after a successful health check.
 
 Every Wi-Fi, DNS, and LAN IPv6 repair is followed by a postcondition check.
-Wi-Fi and DNS remain required before recovery can safely continue. A failed LAN
-IPv6 repair captures diagnostics once, enters a five-minute repair cooldown,
-and continues IPv4 and WARP recovery; this prevents optional dual-stack repair
-from repeatedly reloading Wi-Fi or blocking all Internet recovery.
+A repair that still fails captures diagnostics once and enters a five-minute
+cooldown (`STAGE_REPAIR_COOLDOWN`; LAN IPv6 has its own), so radios, dnsmasq
+and the LAN are not reloaded every tick. Wi-Fi, DNS configuration and LAN IPv6
+failures then continue to WAN, portal and WARP recovery. Only a dead resolver
+(DNS runtime) still ends the run, because portal logout and WARP restart
+decisions depend on probes that need DNS.
 
 ## Resource-pressure behavior
 

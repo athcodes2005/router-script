@@ -40,6 +40,10 @@ LAN_IP6IFACEID="${LAN_IP6IFACEID:-::1}"
 LAN_RA_DEFAULT="${LAN_RA_DEFAULT:-2}"
 LAN_IPV6_RETRY_FILE="${LAN_IPV6_RETRY_FILE:-/tmp/router-script-lan-ipv6-retry-after}"
 LAN_IPV6_RETRY_COOLDOWN="${LAN_IPV6_RETRY_COOLDOWN:-300}"
+WIFI_REPAIR_RETRY_FILE="${WIFI_REPAIR_RETRY_FILE:-/tmp/router-script-wifi-repair-retry-after}"
+DNS_CONFIG_RETRY_FILE="${DNS_CONFIG_RETRY_FILE:-/tmp/router-script-dns-config-retry-after}"
+DNS_RUNTIME_RETRY_FILE="${DNS_RUNTIME_RETRY_FILE:-/tmp/router-script-dns-runtime-retry-after}"
+STAGE_REPAIR_COOLDOWN="${STAGE_REPAIR_COOLDOWN:-300}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-IN}"
 WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
 WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
@@ -242,6 +246,25 @@ lan_ipv6_retry_deferred() {
 
 defer_lan_ipv6_retry() {
     printf '%s\n' "$(( $(date +%s) + LAN_IPV6_RETRY_COOLDOWN ))" > "$LAN_IPV6_RETRY_FILE"
+}
+
+# A disruptive repair that keeps failing runs at most once per cooldown rather
+# than on every tick. Marker writes must never abort the pipeline.
+retry_deferred() {
+    [ -f "$1" ] || return 1
+    RETRY_AFTER="$(cat "$1" 2>/dev/null || echo 0)"
+    case "$RETRY_AFTER" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$(date +%s)" -lt "$RETRY_AFTER" ]
+}
+
+defer_retry() {
+    printf '%s\n' "$(( $(date +%s) + $2 ))" 2>/dev/null > "$1" || true
+}
+
+clear_retry() {
+    [ ! -f "$1" ] || rm -f "$1"
 }
 
 tunnel_process_ok() {
@@ -495,43 +518,63 @@ log "Starting health check."
 
 maintain_persistent_storage
 
-if ! wifi_config_ok; then
-    log "Wi-Fi stability configuration drift detected. Reapplying configure_wifi.sh."
-    sh "$DIR/configure_wifi.sh" >> "$LOG_FILE" 2>&1 || log "configure_wifi.sh failed."
+# The radios are not needed for WAN, portal or WARP recovery, which wired
+# clients and the router itself rely on, so a Wi-Fi failure never ends the run.
+if wifi_config_ok && wifi_runtime_ok; then
+    clear_retry "$WIFI_REPAIR_RETRY_FILE"
+elif retry_deferred "$WIFI_REPAIR_RETRY_FILE"; then
+    log "Wi-Fi remains degraded; repair cooldown is active. Continuing WAN and tunnel recovery."
+else
     if ! wifi_config_ok; then
-        log "Wi-Fi configuration remains invalid after repair. Collecting diagnostics."
+        log "Wi-Fi stability configuration drift detected. Reapplying configure_wifi.sh."
+        sh "$DIR/configure_wifi.sh" >> "$LOG_FILE" 2>&1 || log "configure_wifi.sh failed."
+    fi
+    if wifi_config_ok && ! wifi_runtime_ok; then
+        log "Wi-Fi runtime is down despite valid configuration. Reloading radios."
+        wifi reload >> "$LOG_FILE" 2>&1 || true
+        sleep 5
+    fi
+    if wifi_config_ok && wifi_runtime_ok; then
+        clear_retry "$WIFI_REPAIR_RETRY_FILE"
+    else
+        log "Wi-Fi remains degraded after repair. Capturing evidence once and continuing WAN and tunnel recovery."
         sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
-        exit 1
+        defer_retry "$WIFI_REPAIR_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
     fi
 fi
 
-if ! wifi_runtime_ok; then
-    log "Wi-Fi runtime is down despite valid configuration. Reloading radios."
-    wifi reload >> "$LOG_FILE" 2>&1 || true
-    sleep 5
-    if ! wifi_runtime_ok; then
-        log "Wi-Fi runtime remains down after reload. Collecting diagnostics."
-        sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
-        exit 1
-    fi
-fi
-
-if ! dns_config_ok; then
+# Configuration drift (a missing forward, pin or Google ipset entry) does not
+# stop dnsmasq answering, so it is repaired without ending the run.
+if dns_config_ok; then
+    clear_retry "$DNS_CONFIG_RETRY_FILE"
+elif retry_deferred "$DNS_CONFIG_RETRY_FILE"; then
+    log "DNS configuration remains degraded; repair cooldown is active."
+else
     log "DNS configuration drift detected. Reapplying configure_dns.sh."
     sh "$DIR/configure_dns.sh" >> "$LOG_FILE" 2>&1 || log "configure_dns.sh failed."
-    if ! dns_config_ok; then
-        log "DNS configuration remains invalid after repair. Collecting diagnostics."
+    if dns_config_ok; then
+        clear_retry "$DNS_CONFIG_RETRY_FILE"
+    else
+        log "DNS configuration remains invalid after repair. Capturing evidence once and continuing."
         sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
-        exit 1
+        defer_retry "$DNS_CONFIG_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
     fi
 fi
 
-if ! dns_runtime_ok; then
+# Probe-driven actions (portal logout, WARP restart) are unsafe without a
+# working resolver, so a dead resolver still ends the run.
+if dns_runtime_ok; then
+    clear_retry "$DNS_RUNTIME_RETRY_FILE"
+elif retry_deferred "$DNS_RUNTIME_RETRY_FILE"; then
+    log "DNS runtime remains unhealthy; repair cooldown is active. Skipping probe-driven recovery."
+    exit 1
+else
     log "dnsmasq runtime or campus resolution failed. Reapplying DNS configuration."
     sh "$DIR/configure_dns.sh" >> "$LOG_FILE" 2>&1 || log "configure_dns.sh failed during runtime recovery."
     if ! dns_runtime_ok; then
         log "DNS runtime remains unhealthy after repair. Collecting diagnostics."
         sh "$DIR/collect_diagnostics.sh" >> "$LOG_FILE" 2>&1 || true
+        defer_retry "$DNS_RUNTIME_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
         exit 1
     fi
 fi
