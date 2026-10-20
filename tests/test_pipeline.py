@@ -59,6 +59,21 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.box.log('login'), '')
         self.assertEqual(self.box.count('dnsmasq restart'), 1)
 
+    # F04: cycling the WAN releases the lease (a new address, every flow reset).
+    def test_missing_campus_route_is_reinstalled_without_wan_cycle(self):
+        self.box.flag('campus_route_tun')
+        self.box.flag('campus_route_fixable')
+        self.tick()
+        self.assertEqual(self.box.count('ifdown'), 0)
+        self.assertEqual(self.box.count('ip route replace 10.0.0.0/8 via 10.1.40.250 dev eth0 metric 1'), 1)
+        self.assertEqual(self.box.count('ip route replace 103.21.124.0/22 via 10.1.40.250 dev eth0 metric 1'), 1)
+        self.assertIn('Health check passed.', self.box.log('ensure'))
+
+    def test_unrepairable_campus_route_still_cycles_the_wan(self):
+        self.box.flag('campus_route_tun')
+        self.tick()
+        self.assertEqual(self.box.count('ifdown wan'), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

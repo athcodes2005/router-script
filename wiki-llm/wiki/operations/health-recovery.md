@@ -14,6 +14,9 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
 4. Repair LAN IPv6 configuration drift.
 5. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN.
 6. Verify the core campus route separately from optional resolved site routes.
+   With a healthy lease, a wrong route is fixed by reinstalling `CAMPUS_NETS`
+   via the WAN gateway; the WAN is cycled only if that fails, because a cycle
+   obtains a new DHCP address and resets every flow.
 7. Verify direct-WAN IPv4 and run portal login recovery when needed.
 8. Reject WARP startup when `/tmp` is at or above the configured threshold.
 9. Validate process, CONNECT-IP readiness, TUN, default routes, NAT, MSS and

@@ -24,6 +24,7 @@ TUN_IF="${TUN_IF:-tun0}"
 TUN_IPV4_MSS="${TUN_IPV4_MSS:-1240}"
 TUN_IPV6_MSS="${TUN_IPV6_MSS:-1220}"
 CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
+CAMPUS_NETS="${CAMPUS_NETS:-10.0.0.0/8 103.21.124.0/22}"
 CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
 CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
 DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com}"
@@ -278,6 +279,17 @@ tunnel_routes_ok() {
 
 campus_core_route_ok() {
     ip route get "$CAMPUS_DNS_IP" 2>/dev/null | grep -q "dev $WAN_IF"
+}
+
+# Called only after the lease and carrier passed: the routing state is what is
+# missing (e.g. an eth0 link flap flushed it while tun0 kept its default), so
+# reinstall it. Cycling the WAN would release the lease and reset every flow.
+repair_campus_routes() {
+    DEFAULT_GW="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
+    [ -n "$DEFAULT_GW" ] || return 1
+    for NET in $CAMPUS_NETS; do
+        ip route replace "$NET" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 || return 1
+    done
 }
 
 # Optional DNS exceptions are maintenance, not tunnel liveness. Resolve once:
@@ -609,7 +621,11 @@ fi
 
 if ! campus_core_route_ok; then
     log "Campus DNS route is not using $WAN_IF."
-    recover_wan
+    if repair_campus_routes && campus_core_route_ok; then
+        log "Reinstalled campus routes on $WAN_IF without cycling the WAN."
+    else
+        recover_wan
+    fi
 fi
 
 if ! campus_core_route_ok; then
