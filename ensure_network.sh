@@ -352,30 +352,59 @@ refresh_host_routes() (
     mv "$TMP_ROUTES" "$ROUTES_FILE"
 )
 
+# Intact means every rule the rebuild below adds is present, the restore rule
+# is first and nothing else was added. Keep both rule lists in sync.
+game_session_rules_intact() {
+    EXPECTED=1
+    iptables -t mangle -C GAME_SESSION_POLICY -m connmark ! --mark 0x0/"$GAME_POLICY_MASK" -j CONNMARK --restore-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK" 2>/dev/null || return 1
+    for PORT in $GAME_SESSION_PORTS; do
+        EXPECTED=$((EXPECTED + 4))
+        iptables -t mangle -C GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" 2>/dev/null || return 1
+        iptables -t mangle -C GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK" 2>/dev/null || return 1
+        iptables -t mangle -C GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" 2>/dev/null || return 1
+        iptables -t mangle -C GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK" 2>/dev/null || return 1
+    done
+    RULES="$(iptables -t mangle -S GAME_SESSION_POLICY 2>/dev/null | grep -- '^-A ' || true)"
+    [ "$(printf '%s\n' "$RULES" | grep -c -- '^-A ')" -eq "$EXPECTED" ] || return 1
+    case "$(printf '%s\n' "$RULES" | sed -n '1p')" in
+        *--restore-mark*) return 0 ;;
+    esac
+    return 1
+}
+
 ensure_game_session_policy() {
     DEFAULT_GW="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
     [ -n "$DEFAULT_GW" ] || return 1
 
     ip route replace "$LAN_SUBNET" dev "$LAN_IF" table "$GAME_POLICY_TABLE"
     ip route replace default via "$DEFAULT_GW" dev "$WAN_IF" table "$GAME_POLICY_TABLE"
-    while ip rule del priority "$GAME_POLICY_PRIORITY" fwmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" table "$GAME_POLICY_TABLE" 2>/dev/null; do :; done
-    ip rule add priority "$GAME_POLICY_PRIORITY" fwmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" table "$GAME_POLICY_TABLE"
-
-    if ! iptables -t mangle -N GAME_SESSION_POLICY 2>/dev/null; then
-        iptables -t mangle -F GAME_SESSION_POLICY
+    # Change rules only on drift: deleting and re-adding them every tick left
+    # windows in which new game sessions went unmarked and stayed on WARP.
+    if ! ip rule show | grep -Eq "^$GAME_POLICY_PRIORITY:.*fwmark $GAME_POLICY_MARK/$GAME_POLICY_MASK .*lookup $GAME_POLICY_TABLE"; then
+        while ip rule del priority "$GAME_POLICY_PRIORITY" fwmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" table "$GAME_POLICY_TABLE" 2>/dev/null; do :; done
+        ip rule add priority "$GAME_POLICY_PRIORITY" fwmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK" table "$GAME_POLICY_TABLE"
     fi
-    iptables -t mangle -F GAME_SESSION_POLICY
-    iptables -t mangle -A GAME_SESSION_POLICY -m connmark ! --mark 0x0/"$GAME_POLICY_MASK" -j CONNMARK --restore-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
-    for PORT in $GAME_SESSION_PORTS; do
-        iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK"
-        iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
-        iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK"
-        iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
-    done
-    while iptables -t mangle -C PREROUTING -j GAME_SESSION_POLICY 2>/dev/null; do
-        iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY
-    done
-    iptables -t mangle -I PREROUTING 1 -j GAME_SESSION_POLICY
+
+    if ! game_session_rules_intact; then
+        if ! iptables -t mangle -N GAME_SESSION_POLICY 2>/dev/null; then
+            iptables -t mangle -F GAME_SESSION_POLICY
+        fi
+        iptables -t mangle -F GAME_SESSION_POLICY
+        iptables -t mangle -A GAME_SESSION_POLICY -m connmark ! --mark 0x0/"$GAME_POLICY_MASK" -j CONNMARK --restore-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
+        for PORT in $GAME_SESSION_PORTS; do
+            iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK"
+            iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p tcp -m tcp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
+            iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j MARK --set-xmark "$GAME_POLICY_MARK/$GAME_POLICY_MASK"
+            iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
+        done
+    fi
+    # The jump stays the first mangle PREROUTING rule, as before.
+    if [ "$(iptables -t mangle -S PREROUTING 2>/dev/null | sed -n '2p')" != "-A PREROUTING -j GAME_SESSION_POLICY" ]; then
+        while iptables -t mangle -C PREROUTING -j GAME_SESSION_POLICY 2>/dev/null; do
+            iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY
+        done
+        iptables -t mangle -I PREROUTING 1 -j GAME_SESSION_POLICY
+    fi
 }
 
 refresh_optional_routes() {

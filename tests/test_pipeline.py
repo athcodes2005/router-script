@@ -92,6 +92,14 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Health check passed.', log)
         self.assertNotIn('Restarting tunnel', log)
 
+    # F08: tearing the game policy down each tick left new sessions unmarked.
+    def test_healthy_tick_leaves_game_policy_untouched(self):
+        self.tick()
+        for call in ('iptables -t mangle -F GAME_SESSION_POLICY', 'iptables -t mangle -D PREROUTING',
+                     'iptables -t mangle -I PREROUTING', 'ip rule del', 'ip rule add'):
+            self.assertEqual(self.box.count(call), 0, call)
+        self.assertIn('Health check passed.', self.box.log('ensure'))
+
 
 if __name__ == '__main__':
     unittest.main()

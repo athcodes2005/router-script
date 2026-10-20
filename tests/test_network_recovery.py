@@ -14,9 +14,19 @@ def function(name):
     assert match, name
     return match.group()
 
+ALL_FUNCTIONS = ''.join(re.findall(r'^[a-z_0-9]+\(\) [\{\(]\n.*?^[\}\)]\n', SOURCE, re.M | re.S))
+GAME_CHAIN = '\n'.join([
+    '-N GAME_SESSION_POLICY',
+    '-A GAME_SESSION_POLICY -m connmark ! --mark 0x0/0xf0000 -j CONNMARK --restore-mark --nfmask 0xf0000 --ctmask 0xf0000',
+    '-A GAME_SESSION_POLICY -i br-lan -p tcp -m tcp --dport 9339 -m conntrack --ctstate NEW -j MARK --set-xmark 0x40000/0xf0000',
+    '-A GAME_SESSION_POLICY -i br-lan -p tcp -m tcp --dport 9339 -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask 0xf0000 --ctmask 0xf0000',
+    '-A GAME_SESSION_POLICY -i br-lan -p udp -m udp --dport 9339 -m conntrack --ctstate NEW -j MARK --set-xmark 0x40000/0xf0000',
+    '-A GAME_SESSION_POLICY -i br-lan -p udp -m udp --dport 9339 -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask 0xf0000 --ctmask 0xf0000',
+])
+
 class RecoveryTests(unittest.TestCase):
     def run_shell(self, code, env=None):
-        result = subprocess.run(['sh', '-eu', '-c', code], text=True, capture_output=True, env=env)
+        result = subprocess.run(['sh', '-eu', '-c', code], text=True, capture_output=True, env=env, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
@@ -213,6 +223,45 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('LOG WARNING: public traffic does not prefer tun0', output)
         self.assertIn('DIAG route-preference', output)
         self.assertTrue(output.endswith('reached\n'))
+
+    def game_policy_case(self, prerouting_first, missing_rule=False):
+        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        return self.run_shell(defaults + ALL_FUNCTIONS + r"""
+        ip() {
+            case "$*" in
+                '-4 route show default dev eth0') echo 'default via 10.1.40.250 dev eth0';;
+                'rule show') printf '0:\tfrom all lookup local\n700:\tfrom all fwmark 0x40000/0xf0000 lookup 101\n';;
+                'rule del '*) printf 'ip %s\n' "$*"; return 1;;
+                *) printf 'ip %s\n' "$*";;
+            esac
+        }
+        JUMP=1
+        iptables() {
+            case "$*" in
+                '-t mangle -S PREROUTING') printf '%s\n' '-P PREROUTING ACCEPT' "$FIRST" '-A PREROUTING -j zone_lan_prerouting';;
+                '-t mangle -S GAME_SESSION_POLICY') printf '%s\n' "$CHAIN";;
+                '-t mangle -C PREROUTING -j GAME_SESSION_POLICY') [ "$JUMP" -eq 1 ];;
+                '-t mangle -D PREROUTING -j GAME_SESSION_POLICY') JUMP=0; printf 'iptables %s\n' "$*";;
+                *' -C GAME_SESSION_POLICY '*'-p udp'*'MARK'*) [ "$MISSING" -eq 0 ];;
+                *' -C '*) return 0;;
+                *) printf 'iptables %s\n' "$*";;
+            esac
+        }
+        ensure_game_session_policy
+        """, env={'PATH': '/usr/bin:/bin', 'FIRST': prerouting_first, 'CHAIN': GAME_CHAIN,
+                  'MISSING': str(int(missing_rule))})
+
+    def test_jump_not_first_is_moved_back_to_the_top(self):
+        output = self.game_policy_case('-A PREROUTING -i br-lan -m set --match-set google_net4 dst -j MARK --set-xmark 0x100000/0x100000')
+        self.assertIn('iptables -t mangle -I PREROUTING 1 -j GAME_SESSION_POLICY', output)
+        self.assertNotIn('-F GAME_SESSION_POLICY', output)
+        self.assertNotIn('ip rule', output)
+
+    def test_missing_chain_rule_rebuilds_the_chain(self):
+        output = self.game_policy_case('-A PREROUTING -j GAME_SESSION_POLICY', missing_rule=True)
+        self.assertIn('iptables -t mangle -F GAME_SESSION_POLICY', output)
+        self.assertIn('iptables -t mangle -A GAME_SESSION_POLICY -i br-lan -p udp -m udp --dport 9339', output)
+        self.assertNotIn('-I PREROUTING', output)
 
 if __name__ == '__main__':
     unittest.main()
