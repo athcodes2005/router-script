@@ -224,6 +224,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('DIAG route-preference', output)
         self.assertTrue(output.endswith('reached\n'))
 
+    def test_confirmation_message_fits_before_and_after_a_restart(self):
+        # F28: "Confirming before restart" was also logged after a restart.
+        output = self.run_shell(function('tunnel_healthy_confirmed') + '''
+        log() { printf 'LOG %s\\n' "$*"; }; sleep() { :; }; ip() { return 0; }
+        tunnel_process_ok() { return 0; }
+        tunnel_healthy() { TUNNEL_FAILURE_REASON=probe; return 1; }
+        TUN_IF=tun0; TUNNEL_CONFIRM_DELAY=3
+        tunnel_healthy_confirmed || true
+        ''')
+        self.assertIn('LOG Tunnel check failed: probe. Re-checking in 3s.', output)
+        self.assertNotIn('before restart', output)
+
     def test_odhcpd_is_restarted_once_per_warp_restart(self):
         # F30: tunnel.sh restarts odhcpd once the IPv6 default exists; a second
         # restart from the health check 10 s later added nothing.

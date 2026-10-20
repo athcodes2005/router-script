@@ -562,11 +562,14 @@ warn_if_tunnel_not_preferred() {
 
 tunnel_healthy_confirmed() {
     tunnel_healthy && return 0
-    log "Tunnel check failed: $TUNNEL_FAILURE_REASON. Confirming before restart."
     # A missing process/interface cannot recover on its own. A live client's
-    # reconnect or brief packet loss deserves a second observation.
-    tunnel_process_ok || return 1
-    ip link show dev "$TUN_IF" >/dev/null 2>&1 || return 1
+    # reconnect or brief packet loss deserves a second observation. The same
+    # check runs before and after a restart, so the message names neither.
+    if ! tunnel_process_ok || ! ip link show dev "$TUN_IF" >/dev/null 2>&1; then
+        log "Tunnel check failed: $TUNNEL_FAILURE_REASON."
+        return 1
+    fi
+    log "Tunnel check failed: $TUNNEL_FAILURE_REASON. Re-checking in ${TUNNEL_CONFIRM_DELAY}s."
     sleep "$TUNNEL_CONFIRM_DELAY"
     tunnel_healthy
 }
@@ -632,7 +635,7 @@ elif retry_deferred "$DNS_RUNTIME_RETRY_FILE"; then
     log "DNS runtime remains unhealthy; repair cooldown is active. Skipping probe-driven recovery."
     exit 1
 else
-    log "dnsmasq runtime or campus resolution failed. Reapplying DNS configuration."
+    log "dnsmasq is not running or not answering locally. Reapplying DNS configuration."
     sh "$DIR/configure_dns.sh" >> "$LOG_FILE" 2>&1 || log "configure_dns.sh failed during runtime recovery."
     if ! dns_runtime_ok; then
         log "DNS runtime remains unhealthy after repair. Collecting diagnostics."

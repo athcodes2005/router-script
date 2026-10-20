@@ -58,6 +58,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.tick().returncode, 1)
         self.assertEqual(self.box.log('login'), '')
         self.assertEqual(self.box.count('dnsmasq restart'), 1)
+        # F28: the probe name is pinned locally, so this tests dnsmasq, not campus DNS.
+        log = self.box.log('ensure')
+        self.assertIn('dnsmasq is not running or not answering locally', log)
+        self.assertNotIn('campus resolution failed', log)
 
     # F04: cycling the WAN releases the lease (a new address, every flow reset).
     def test_missing_campus_route_is_reinstalled_without_wan_cycle(self):
