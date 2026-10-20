@@ -22,8 +22,9 @@ ULA `/48`, persists it as an explicit `network.lan.ip6addr`, assigns it to
 `tun0`, permits LAN-to-tunnel forwarding, permits established return traffic,
 masquerades at `tun0`, and clamps TCP MSS.
 
-After tunnel state is installed, odhcpd is restarted so clients refresh their
-default route promptly. The health script also restarts it after tunnel repair.
+After tunnel state is installed, `tunnel.sh` restarts odhcpd once so clients
+refresh their default route promptly. Since 2026-10-20 the health script no
+longer restarts it a second time after a tunnel repair.
 
 ## Health invariants
 

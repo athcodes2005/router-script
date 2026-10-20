@@ -224,6 +224,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('DIAG route-preference', output)
         self.assertTrue(output.endswith('reached\n'))
 
+    def test_odhcpd_is_restarted_once_per_warp_restart(self):
+        # F30: tunnel.sh restarts odhcpd once the IPv6 default exists; a second
+        # restart from the health check 10 s later added nothing.
+        restart_path = SOURCE[SOURCE.index('Restarting tunnel."'):]
+        self.assertNotIn('odhcpd', restart_path)
+        self.assertEqual((ROOT / 'tunnel.sh').read_text().count('/etc/init.d/odhcpd restart'), 1)
+
     def game_policy_case(self, prerouting_first, missing_rule=False):
         defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
         return self.run_shell(defaults + ALL_FUNCTIONS + r"""

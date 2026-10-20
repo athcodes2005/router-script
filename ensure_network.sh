@@ -787,8 +787,6 @@ log "Tunnel health check failed: $TUNNEL_FAILURE_REASON. Restarting tunnel."
 sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
 sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
 sleep 10
-log "Restarting odhcpd to refresh LAN IPv6 Router Advertisements."
-/etc/init.d/odhcpd restart >> "$LOG_FILE" 2>&1 || true
 
 if ! tunnel_healthy_confirmed; then
     log "Tunnel is still unhealthy after restart. Collecting diagnostics and enabling direct WAN fallback."

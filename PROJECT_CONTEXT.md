@@ -139,6 +139,7 @@ Target behavior:
 ### IPv6 Router Advertisement refresh (2026-03-18)
 
 - When `ensure_network.sh` restarts the tunnel, it also restarts `odhcpd` to push fresh RAs.
+  (Since 2026-10-20 this happens once, inside `tunnel.sh`, after the IPv6 default exists.)
 
 ### Architecture change: full public dual-stack WARP (2026-07-31)
 
@@ -163,7 +164,7 @@ Target behavior:
 - `ensure_network.sh`
   - health-check wrapper that repairs DNS drift, LAN IPv6 drift, captive login, and tunnel health
   - stops the tunnel and falls back to `eth0` if internet remains down after login recovery
-  - restarts `odhcpd` after tunnel restart to refresh LAN IPv6 Router Advertisements
+  - tunnel restarts refresh LAN IPv6 Router Advertisements (`tunnel.sh` restarts `odhcpd` once)
   - owner-aware lock protection prevents overlapping recovery actions
   - bounds every HTTP probe, monitors `/tmp`, and rate-limits failed WARP retries
 - `install_cron_pipeline.sh`
