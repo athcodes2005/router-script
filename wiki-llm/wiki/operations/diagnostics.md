@@ -9,8 +9,10 @@ RAM-backed filesystem shared with active services.
 `diagnose.sh` reports interfaces, Ethernet carrier, live radio state, IPv4/IPv6
 routes, dynamic campus host routes, firewall/NAT, process and CONNECT-IP-ready
 state, DNS configuration, recent logs, memory, filesystem usage, and the largest
-immediate `/tmp` entries. Exact `204` probes distinguish direct IPv4, WARP IPv4,
-and WARP IPv6. It identifies tcpdump processes so abandoned captures are visible.
+immediate `/tmp` entries. Exact probes distinguish direct IPv4 and WARP IPv4
+(`204` from Google) and WARP IPv6 (`200` from Cloudflare's trace by IP literal,
+because the Google policy rejects router IPv6 to Google). It identifies tcpdump
+processes so abandoned captures are visible.
 Wireless status embeds WPA passphrases, so its key, password, secret and PSK
 values are redacted before they are recorded.
 

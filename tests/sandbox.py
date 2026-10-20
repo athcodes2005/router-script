@@ -140,24 +140,24 @@ case "$key" in
 esac
 '''
 
-CURL = r'''url=; v6=0; iface=; fmt=; prev=
+CURL = r'''url=; v6=0; iface=; fmt=; body_to=; prev=
 for a in "$@"; do
   case "$a" in -6) v6=1 ;; http://*|https://*) url=$a ;; esac
   [ "$prev" = --interface ] && iface=$a
   [ "$prev" = -w ] && fmt=$a
+  [ "$prev" = -o ] && body_to=$a
   prev=$a
 done
-case "$url" in
-  */cdn-cgi/trace)
-    { [ "$iface" = tun0 ] && flag warp_down; } && exit 7
-    if flag warp_trace_off; then printf 'fl=1\nwarp=off\n'; else printf 'fl=1\nwarp=on\n'; fi
-    exit 0 ;;
-esac
 code=204
-case "$url" in */login.php|*/logout.php) code=200 ;; esac
+case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = eth0 ] && flag direct_down && code=000
 [ "$iface" = tun0 ] && flag warp_down && code=000
 case "$url" in *google.com*) [ "$v6" = 1 ] && flag google_v6_rejected && code=000 ;; esac
+if [ "$code" != 000 ] && [ -z "$body_to" ]; then
+  case "$url" in */cdn-cgi/trace)
+    if flag warp_trace_off; then printf 'fl=1\nwarp=off\n'; else printf 'fl=1\nwarp=on\n'; fi ;;
+  esac
+fi
 out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e 's/%{time_total}/0.050/g')
 printf '%b' "$out"
 [ "$code" = 000 ] && exit 7

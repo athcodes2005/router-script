@@ -28,6 +28,14 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIn('HostelNet', output)
         self.assertIn('psk2', output)
 
+    def test_warp_ipv6_probe_avoids_the_google_policy(self):
+        # F15: google_wan_policy.sh rejects router IPv6 to Google, so a Google
+        # probe reported WARP IPv6 as down on every snapshot.
+        self.box.flag('google_v6_rejected')
+        output = self.box.run('diagnose.sh').stdout
+        self.assertIn('warp_ipv4_status=204', output)
+        self.assertIn('warp_ipv6_status=200', output)
+
     def test_snapshots_are_owner_only(self):
         previous = os.umask(0o022)
         try:

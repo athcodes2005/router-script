@@ -151,14 +151,6 @@ tunnel_internet_v4_ok() {
     return 1
 }
 
-tunnel_internet_v6_ok() {
-    for URL in $INTERNET_PROBE_URLS; do
-        CODE="$(curl -6 -sS --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || true)"
-        [ "$CODE" = "204" ] && return 0
-    done
-    return 1
-}
-
 wan_ipv4_ok() {
     ifstatus "$WAN_UCI_IFACE" 2>/dev/null | grep -q '"address"[[:space:]]*:[[:space:]]*"'
 }

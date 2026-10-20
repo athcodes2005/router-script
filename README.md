@@ -165,7 +165,7 @@ selection, so the upstream rollback binary remains compatible.
 
 ### If the whole connection becomes sluggish or unavailable
 - Run `./collect_diagnostics.sh --emergency` before restarting anything.
-- `diagnose.sh` records exact direct/WARP `204` probes, the WARP readiness marker,
+- `diagnose.sh` records exact direct/WARP HTTP probes, the WARP readiness marker,
   Ethernet carrier, live radio state, filesystem pressure, and campus host routes.
 - Project diagnostics retain 24 snapshots. If persistent storage reaches 97%,
   new project logs and diagnostics use `/tmp` instead of exhausting overlay.
