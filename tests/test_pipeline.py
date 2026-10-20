@@ -83,6 +83,15 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertIn('captured recently', self.box.log('ensure'))
 
+    # F07: a lower-metric default bypasses WARP while tun0-bound probes pass.
+    def test_public_route_bypass_is_reported_without_restart(self):
+        self.box.flag('route_bypass')
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn('WARNING: public traffic does not prefer tun0', log)
+        self.assertIn('Health check passed.', log)
+        self.assertNotIn('Restarting tunnel', log)
+
 
 if __name__ == '__main__':
     unittest.main()

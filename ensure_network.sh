@@ -59,6 +59,8 @@ INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interac
 INTERACTIVE_RETRY_SECONDS="${INTERACTIVE_RETRY_SECONDS:-300}"
 WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
 INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
+ROUTE_PROBE_V4="${ROUTE_PROBE_V4:-1.1.1.1}"
+ROUTE_PROBE_V6="${ROUTE_PROBE_V6:-2606:4700:4700::1111}"
 DIRECT_PROBE_CONNECT_TIMEOUT="${DIRECT_PROBE_CONNECT_TIMEOUT:-2}"
 DIRECT_PROBE_MAX_TIME="${DIRECT_PROBE_MAX_TIME:-4}"
 DIRECT_CONFIRM_DELAY="${DIRECT_CONFIRM_DELAY:-2}"
@@ -523,6 +525,20 @@ tunnel_healthy() {
     TUNNEL_FAILURE_REASON=""
 }
 
+# A lower-metric default (a reset WAN metric, an interrupted game mode) sends
+# LAN traffic around WARP while tun0-bound probes still pass. Restarting WARP
+# cannot fix that, so report it instead of acting on it.
+warn_if_tunnel_not_preferred() {
+    ROUTE_V4="$(ip -4 route get "$ROUTE_PROBE_V4" 2>&1 || true)"
+    ROUTE_V6="$(ip -6 route get "$ROUTE_PROBE_V6" 2>&1 || true)"
+    case "$ROUTE_V4" in
+        *" dev $TUN_IF "*)
+            case "$ROUTE_V6" in *" dev $TUN_IF "*) return 0 ;; esac ;;
+    esac
+    log "WARNING: public traffic does not prefer $TUN_IF (IPv4: $(printf '%s' "$ROUTE_V4" | tr '\n' ' '); IPv6: $(printf '%s' "$ROUTE_V6" | tr '\n' ' '))."
+    collect_diagnostics_once route-preference
+}
+
 tunnel_healthy_confirmed() {
     tunnel_healthy && return 0
     log "Tunnel check failed: $TUNNEL_FAILURE_REASON. Confirming before restart."
@@ -732,6 +748,7 @@ fi
 
 if tunnel_healthy_confirmed; then
     refresh_optional_routes
+    warn_if_tunnel_not_preferred
     rm -f "$TUNNEL_RETRY_FILE"
     log "Health check passed."
     exit 0
@@ -762,4 +779,5 @@ fi
 
 rm -f "$TUNNEL_RETRY_FILE"
 refresh_optional_routes
+warn_if_tunnel_not_preferred
 log "Health check passed."

@@ -24,6 +24,9 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
    logged), and IPv4 HTTP reachability explicitly bound to the tunnel.
 10. Confirm live-client failures after three seconds before restarting WARP.
 11. Refresh optional host routes independently after a successful health check.
+12. Warn (log plus one rate-limited snapshot, no restart) when a lower-metric
+    default would carry public IPv4 or IPv6 around `tun0`; a restart cannot fix
+    that, and the tunnel-bound probes alone would not notice it.
 
 Every Wi-Fi, DNS, and LAN IPv6 repair is followed by a postcondition check.
 A repair that still fails captures diagnostics once and enters a five-minute

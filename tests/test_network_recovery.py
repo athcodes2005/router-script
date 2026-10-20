@@ -190,5 +190,29 @@ class RecoveryTests(unittest.TestCase):
             self.assertIn(tool + ': -I FORWARD -i br-lan -o tun0 -j ACCEPT', output)
             self.assertIn(tool + ': -I FORWARD -i tun0 -o br-lan -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT', output)
 
+    def test_preferred_tunnel_routes_are_silent(self):
+        output = self.run_shell(function('warn_if_tunnel_not_preferred') + r"""
+        TUN_IF=tun0; ROUTE_PROBE_V4=1.1.1.1; ROUTE_PROBE_V6=2606:4700:4700::1111
+        log() { printf 'LOG %s\n' "$*"; }
+        collect_diagnostics_once() { printf 'DIAG %s\n' "$1"; }
+        ip() { echo "$4 dev tun0 src 172.16.0.2 uid 0"; }
+        warn_if_tunnel_not_preferred
+        """)
+        self.assertEqual(output, '')
+
+    def test_missing_ipv6_route_is_reported_not_fatal(self):
+        # `ip route get` fails without a route; under set -e that must not abort.
+        output = self.run_shell(function('warn_if_tunnel_not_preferred') + r"""
+        TUN_IF=tun0; ROUTE_PROBE_V4=1.1.1.1; ROUTE_PROBE_V6=2606:4700:4700::1111
+        log() { printf 'LOG %s\n' "$*"; }
+        collect_diagnostics_once() { printf 'DIAG %s\n' "$1"; }
+        ip() { case "$1" in -6) echo 'RTNETLINK answers: Network is unreachable'; return 2;; esac; echo "$4 dev tun0 uid 0"; }
+        warn_if_tunnel_not_preferred
+        echo reached
+        """)
+        self.assertIn('LOG WARNING: public traffic does not prefer tun0', output)
+        self.assertIn('DIAG route-preference', output)
+        self.assertTrue(output.endswith('reached\n'))
+
 if __name__ == '__main__':
     unittest.main()
