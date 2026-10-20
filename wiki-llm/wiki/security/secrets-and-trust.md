@@ -28,6 +28,8 @@ forwarded across origins in that HTTPS redirect chain; HTTPS-only redirects
 and a five-redirect limit are enforced, but there is no hostname allowlist.
 This is an explicit trust dependency on the campus portal, not same-origin-only
 authentication. Query strings and response bodies are excluded from login logs.
+The credentials reach curl on stdin as a config line (`-K -`), never in its
+command line, which any local process could read from `/proc`.
 
 ## WARP endpoint trust
 

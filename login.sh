@@ -97,9 +97,18 @@ logout_portal() {
     log "Logout request: $(safe_request_summary "$RESULT")"
 }
 
+# curl reads the credentials from stdin as a config line, so the token never
+# appears in its command line (/proc/<pid>/cmdline is world-readable).
+# Backslashes and double quotes are escaped for curl's quoted-string syntax.
+curl_credentials() {
+    printf 'user = "%s:%s"\n' \
+        "$(printf '%s' "$USER" | sed 's/[\\"]/\\&/g')" \
+        "$(printf '%s' "$PASS" | sed 's/[\\"]/\\&/g')"
+}
+
 token_login() {
     TOKEN_LOGIN_STATE="unknown"
-    RESULT="$(curl -4 -sS \
+    RESULT="$(curl_credentials | curl -4 -sS \
         --interface "$WAN_IF" \
         $RESOLVE_OPTS \
         --connect-timeout 10 \
@@ -108,7 +117,7 @@ token_login() {
         --proto '=https' \
         --proto-redir '=https' \
         --max-redirs 5 \
-        -u "$USER:$PASS" \
+        -K - \
         -o /dev/null \
         -w 'HTTP %{http_code} final=%{url_effective}' \
         "$PORTAL_BASE_URL/login.php" 2>&1)" || true
