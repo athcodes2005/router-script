@@ -72,19 +72,19 @@ ip -6 route del default dev "$TUN_IF" metric 5 2>/dev/null
 # Remove IPv4 default through tun0; the WAN default remains as fallback.
 ip -4 route del default dev "$TUN_IF" metric 5 2>/dev/null
 
-# Remove blocklist routes
+# Remove legacy blocklist routes. `read` trims surrounding blanks; CRs are
+# dropped once per file (BusyBox grep has no GNU `\s` for comment filtering).
 if [ -f "$BLOCKLIST" ]; then
-    grep -v '^\s*#' "$BLOCKLIST" | grep -v '^\s*$' | while IFS= read -r DEST; do
-        DEST="$(echo "$DEST" | tr -d '[:space:]')"
-        [ -n "$DEST" ] && ip route del "$DEST" dev "$TUN_IF" 2>/dev/null
+    tr -d '\r' < "$BLOCKLIST" | while read -r DEST; do
+        case "$DEST" in ''|\#*) continue ;; esac
+        ip route del "$DEST" dev "$TUN_IF" 2>/dev/null
     done
 fi
 
 # Remove per-client WARP policy rules and their routing table.
 if [ -f "$WARP_CLIENTS_FILE" ]; then
-    grep -v '^\s*#' "$WARP_CLIENTS_FILE" | grep -v '^\s*$' | while IFS= read -r CLIENT; do
-        CLIENT="$(echo "$CLIENT" | tr -d '[:space:]')"
-        [ -z "$CLIENT" ] && continue
+    tr -d '\r' < "$WARP_CLIENTS_FILE" | while read -r CLIENT; do
+        case "$CLIENT" in ''|\#*) continue ;; esac
         while ip rule del from "$CLIENT" table "$WARP_CLIENT_TABLE" 2>/dev/null; do :; done
     done
 fi
