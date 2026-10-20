@@ -123,7 +123,9 @@ case "$key" in
   'dhcp.@dnsmasq[0].addnhosts') echo "$BLINKIT_HOSTS_DIR" ;;
   'dhcp.@dnsmasq[0].address') echo '/internet.iitb.ac.in/10.201.250.201 /sso.iitb.ac.in/10.200.1.100' ;;
   'dhcp.@dnsmasq[0].ipset')
-    @AWK@ 'NF && $0 !~ /^#/ { printf "%s/%s/google_dns4,google_dns6", sep, $0; sep = " " } END { print "" }' "$SIM_PROJ/google_domains.txt" ;;
+    if flag google_ipset_drift; then skip=1; else skip=0; fi
+    @AWK@ -v skip="$skip" 'NF && $0 !~ /^#/ { if (skip && !dropped) { dropped = 1; next }
+      printf "%s/%s/google_dns4,google_dns6", sep, $0; sep = " " } END { print "" }' "$SIM_PROJ/google_domains.txt" ;;
   'dhcp.lan.ra'|'dhcp.lan.dhcpv6') echo server ;;
   'dhcp.lan.ra_slaac') echo 1 ;;
   'dhcp.lan.ra_default') echo 2 ;;

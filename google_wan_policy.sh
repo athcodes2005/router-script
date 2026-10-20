@@ -33,11 +33,13 @@ if [ "${1:-}" = configure-dns ]; then
     exit 0
 fi
 if [ "${1:-}" = check-dns ]; then
-    CURRENT="$(uci -q get dhcp.@dnsmasq[0].ipset 2>/dev/null || true)"
-    while IFS= read -r DOMAIN; do
-        case "$DOMAIN" in ''|\#*) continue;; esac
-        printf '%s\n' "$CURRENT" | tr ' ' '\n' | grep -Fxq "/$DOMAIN/google_dns4,google_dns6" || exit 1
-    done < "$DIR/google_domains.txt"
+    # One awk pass: a tr|grep pair per domain cost ~160 processes every tick.
+    CURRENT=" $(uci -q get dhcp.@dnsmasq[0].ipset 2>/dev/null | tr '\n' ' ' || true) "
+    awk -v current="$CURRENT" '
+        $0 == "" || /^#/ { next }
+        index(current, " /" $0 "/google_dns4,google_dns6 ") == 0 { missing = 1 }
+        END { exit missing }
+    ' "$DIR/google_domains.txt"
     exit 0
 fi
 
