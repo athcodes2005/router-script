@@ -11,6 +11,8 @@ routes, dynamic campus host routes, firewall/NAT, process and CONNECT-IP-ready
 state, DNS configuration, recent logs, memory, filesystem usage, and the largest
 immediate `/tmp` entries. Exact `204` probes distinguish direct IPv4, WARP IPv4,
 and WARP IPv6. It identifies tcpdump processes so abandoned captures are visible.
+Wireless status embeds WPA passphrases, so its key, password, secret and PSK
+values are redacted before they are recorded.
 
 Legacy policy-routing and blocklist sections are labeled as legacy to avoid
 confusing their absence with a fault in the active full-tunnel architecture.
@@ -18,7 +20,9 @@ confusing their absence with a fault in the active full-tunnel architecture.
 ## Collection
 
 `collect_diagnostics.sh` creates names containing both a timestamp and process
-ID, preventing collisions between events in the same second. It retains 24
+ID, preventing collisions between events in the same second. Snapshots are
+written with mode `0600`. Snapshots taken before this redaction was deployed
+contain Wi-Fi passphrases in plain text and should be treated as secret. It retains 24
 normal and 24 emergency snapshots by default. `download_emergency_diagnostics.sh`
 uses bounded SSH/SCP sessions to transfer evidence to the workstation.
 

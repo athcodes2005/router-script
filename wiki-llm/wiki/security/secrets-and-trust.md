@@ -40,6 +40,8 @@ A missing certificate or mismatched key terminates the session.
 
 Metadata such as file modes, routes, and endpoint reachability may be recorded.
 Secret file contents, cookies, tokens, private keys, and raw login bodies may not.
+`diagnose.sh` redacts secret values from the wireless status (which embeds WPA
+passphrases), and `collect_diagnostics.sh` writes snapshots with mode `0600`.
 Packet captures are considered sensitive even when they contain no payload.
 
 ## Sources

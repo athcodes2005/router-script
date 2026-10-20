@@ -1,6 +1,8 @@
 #!/bin/sh
 
 set -eu
+# Snapshots record topology, client data and logs: keep them owner-only.
+umask 077
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 MAX_DIAGNOSTICS="${MAX_DIAGNOSTICS:-24}"

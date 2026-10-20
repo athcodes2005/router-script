@@ -35,6 +35,12 @@ run() {
     "$@" 2>&1 || true
 }
 
+# netifd's wireless status embeds each interface's configuration, WPA
+# passphrases included. Snapshots leave the router, so never record secrets.
+redact_secrets() {
+    sed -E 's/("[^"]*(key|pass|secret|psk)[^"]*"[[:space:]]*:[[:space:]]*")(\\.|[^"\\])*"/\1<redacted>"/g'
+}
+
 show_log_tail() {
     section "RECENT $1"
     if [ -f "$2" ]; then
@@ -78,7 +84,7 @@ for DEVICE in "$WIFI_2G_DEVICE" "$WIFI_5G_DEVICE"; do
         "$(uci -q get "wireless.$DEVICE.htmode" 2>/dev/null || echo unknown)" \
         "$(uci -q get "wireless.$DEVICE.channel" 2>/dev/null || echo unknown)"
 done
-run ubus call network.wireless status
+ubus call network.wireless status 2>&1 | redact_secrets
 run sh -c "dmesg | grep -Ei 'tx_free|deauth|disassoc|wifi_sys_disconn|radar' | tail -n 80"
 
 section "QUEUE AND LINK COUNTERS"
