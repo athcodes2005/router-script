@@ -469,3 +469,28 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../audit/2026-10-20-full-review/REPORT.md`
 - `../../tests/sandbox.py`, `../../tests/test_pipeline.py`
 - `../../ensure_network.sh`, `../../diagnose.sh`, `../../login.sh`
+
+
+## 2026-10-20 — Deployed the full-review fixes
+
+- With the user's authorisation, deployed the six changed scripts. Step A
+  (diagnostics, login, Google policy and rotation scripts) went in at 21:16
+  IST; step B (`ensure_network.sh`) at 21:19. Both were promoted under the
+  maintenance lock without restarting WARP (PID 4495 unchanged).
+- Before promotion, the router's scripts matched the review baseline. Each
+  new mechanism was dry-run read-only against live data first: BusyBox
+  `sed`/`awk`, curl 7.83.1 `-K -`, the `iptables -S`/`-C` game-chain check,
+  and Cloudflare's trace (`warp=on` for both families through `tun0`).
+- Every health tick passed afterwards. The game-policy PREROUTING jump counter
+  now grows instead of resetting every 30 s.
+- Redacted the Wi-Fi passphrases in the 25 existing router snapshots (50
+  values, each file verified before replacement). All snapshots are now
+  mode `0600`.
+- Backup and rollback: `/root/router-script/backup-20261020`; the commands
+  are in the report's section 11. A real portal re-login (F05) has not
+  happened yet.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 13)
+- `../../ensure_network.sh`, `../../login.sh`, `../../diagnose.sh`

@@ -1,6 +1,7 @@
 # Full review of router-script — 20 October 2026
 
-**Status: Phase 2 complete for the approved batches 1–3; nothing deployed.**
+**Status: Phase 2 complete for the approved batches 1–3, and deployed to the
+router on 2026-10-20 at 21:16 (step A) and 21:19 (step B) IST; see §13.**
 Eleven findings are fixed (F01, F02, F03, F04, F05, F06, F07 log-only, F08,
 F09, F11, F15), one commit each, on branch `full-review-2026-10-20`. The
 baseline is `2ba81fe` on `main`; `.env`, `config.json`, `logs/`,
@@ -10,7 +11,8 @@ baseline is `2ba81fe` on `main`; `.env`, `config.json`, `logs/`,
 - **Measured effect:** §9.
 - **Invariant re-check:** §10.
 - **Deployment checklist and rollback:** §11.
-- **What I could not verify:** §12.
+- **What I could not verify:** §12 (partly superseded by §13).
+- **Deployment record:** §13.
 
 Sections 0–7 are the Phase 1 audit exactly as committed in `8be33c1`.
 
@@ -888,3 +890,83 @@ router, use `cp -p backup-20261020/<file> <file>`.
   cached).
 - **Existing snapshots.** Snapshots that already contain Wi-Fi passphrases,
   on the router and on the Mac, were left untouched.
+
+## 13. Deployment record — 20 October 2026, 21:15–21:22 IST
+
+You authorised SSH access for this deployment; it followed §11 with extra
+read-only gates. `.env` and `config.json` were never read.
+
+**Pre-flight.** All six scripts on the router matched the baseline `2ba81fe`
+byte for byte. WARP was running (PID 4495), no lock was held, `/overlay` was
+17 % and `/tmp` 0 % used, and health checks were passing every 30 s.
+
+**Staging.**
+- The first attempt sent an empty archive: my local shell is zsh, which
+  doesn't split an unquoted `$FILES`. The hash and syntax gate failed as
+  designed, and nothing was promoted.
+- I re-staged with the filenames written out. All six files passed BusyBox
+  `sh -n`, and their hashes matched the Mac.
+
+**Read-only dry runs on live data, before any promotion:**
+- **F11:** the old and new `check-dns` both exit 0 on the live UCI list; the
+  new one exits 1 when a domain is missing (BusyBox `awk` verified).
+- **F01:** BusyBox `sed -E` redacts both live passphrases, leaves no values
+  and keeps the SSIDs.
+- **F05:** the router's curl 7.83.1 reads the stdin config and sends exactly
+  `Basic base64("test:p\"q\\r")` for the fake credentials.
+- **F15/F09:** Cloudflare's trace through `tun0` reports `warp=on` for IPv4
+  and IPv6. The new IPv6 probe returns 200; the old Google probe returns 000.
+- **F08:** against the live `iptables -S` output and `-C` matching, the chain
+  is intact (5 rules, restore rule first), the jump is the first PREROUTING
+  rule, and rule 700 exists once.
+- **F07/F03:** both route probes select `tun0`, and all four FORWARD rules
+  are present.
+
+**Step A** (five scripts), promoted under the lock at about 21:16. The
+backup is in `/root/router-script/backup-20261020` (mode 700; six scripts
+plus the WARP PID). Verified:
+- The deployed `check-dns` exits 0.
+- `login.sh` uses `-K -`.
+- A new snapshot is `-rw-------`, with 2 fields redacted and 0 left.
+- `warp_ipv6_status=200`.
+- The scheduled ticks at 21:17:00 and 21:17:30 passed, and the PID was
+  unchanged.
+
+**Snapshots on the router.** 25 files held 50 passphrase values. Each was
+rewritten only after checking: identical line count, exactly the secret lines
+changed, none left.
+- The first pass skipped all 25 because BusyBox has no `diff`; no content
+  changed.
+- I re-ran it with an `awk` comparison: 25 of 25 redacted.
+- All 30 snapshots are now `-rw-------`, with 0 secret values left. Copies
+  pulled to other machines, such as the redacted Mac copy, are unaffected.
+
+**Step B** (`ensure_network.sh`), promoted under the lock at 21:19:02. A
+manual health run with the lock released passed, and the PID was unchanged.
+The PREROUTING jump counter grew from 133 to 387 packets during that run,
+meaning the jump was no longer torn down.
+
+**Watch of the scheduled ticks, 21:19–21:22, sampled every 30 s:**
+- Every tick passed.
+- Since step A, ensure.log has 31 lines, all "Starting health check." or
+  "Health check passed."; nothing else was logged.
+- The WARP PID stayed 4495 throughout; WARP was never restarted.
+- Rule 700 stayed single and the chain kept its 5 rules.
+- The PREROUTING jump counter rose monotonically (1,817 → 5,455 → 10,911 →
+  15,417 → 19,325 → 23,063 → 26,810 packets). Under the old script it
+  reset every 30 s, so F08 is confirmed in production.
+- The staging directory was removed. The backup stays in
+  `/root/router-script/backup-20261020` for §11's rollback commands.
+
+**Items from §12 now verified on the router:** BusyBox `sh -n`, `sed -E`
+redaction, `awk -v`/`index()`, curl 7.83.1 `-K -` and `-g`, `iptables -C`
+and `-S` for the game chain, the rule-700 `ip rule show` check, and
+Cloudflare's trace reporting `warp=on` through `tun0`.
+
+**Still unverified:**
+- **F05 in a real login:** the token path runs only on a real portal
+  re-login; the last ones (2026-10-17 and 10-18) used the old script. Watch
+  `logs/login.log` at the next one.
+- **F02, F03, F04, F06 and the F07 warning** only act on failures, so none
+  were exercised. They are covered only by the sandbox tests.
+- **The rest of the first hour:** the §11 watch list is yours to follow.
