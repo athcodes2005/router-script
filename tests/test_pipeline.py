@@ -108,6 +108,24 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Health check passed.', log)
         self.assertNotIn('Restarting tunnel', log)
 
+    # F20: the refreshers share /32s; one dropping a route must not delete it
+    # while another still lists it. The stubs resolve every public name to
+    # 198.51.100.10 and show one game session to 44.252.91.204.
+    def test_game_refresher_keeps_a_route_the_public_refresher_lists(self):
+        (self.box.tmp / 'router-script-game-session-host-routes').write_text('198.51.100.10/32\n')
+        self.tick()
+        self.assertEqual(self.box.count('ip route del 198.51.100.10/32'), 0)
+
+    def test_public_refresher_keeps_a_route_the_game_refresher_lists(self):
+        (self.box.tmp / 'router-script-direct-public-host-routes').write_text('44.252.91.204/32\n')
+        self.tick()
+        self.assertEqual(self.box.count('ip route del 44.252.91.204/32'), 0)
+
+    def test_route_no_refresher_lists_is_still_removed(self):
+        (self.box.tmp / 'router-script-direct-public-host-routes').write_text('203.0.113.9/32\n')
+        self.tick()
+        self.assertEqual(self.box.count('ip route del 203.0.113.9/32 via 10.1.40.250 dev eth0 metric 1'), 1)
+
     # F08: tearing the game policy down each tick left new sessions unmarked.
     def test_healthy_tick_leaves_game_policy_untouched(self):
         self.tick()

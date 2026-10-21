@@ -30,6 +30,7 @@ CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac
 DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com}"
 BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
 BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
 DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
 GAME_SESSION_PORTS="${GAME_SESSION_PORTS:-9339}"
 GAME_SESSION_ROUTES_FILE="${GAME_SESSION_ROUTES_FILE:-/tmp/router-script-game-session-host-routes}"
@@ -314,6 +315,16 @@ repair_campus_routes() {
     done
 }
 
+# The refreshers can share a /32 (a game server can also be a listed public
+# name), so a route is deleted only once no other refresher's file lists it.
+route_listed_elsewhere() {
+    for FILE in "$CAMPUS_ROUTES_FILE" "$DIRECT_PUBLIC_ROUTES_FILE" "$GAME_SESSION_ROUTES_FILE"; do
+        [ "$FILE" != "$2" ] || continue
+        grep -Fqx "$1" "$FILE" 2>/dev/null && return 0
+    done
+    return 1
+}
+
 # Optional DNS exceptions are maintenance, not tunnel liveness. Resolve once:
 # querying again can return a different CDN address and falsely restart WARP.
 refresh_host_routes() (
@@ -344,11 +355,13 @@ refresh_host_routes() (
         done
     done
     if [ -f "$ROUTES_FILE" ]; then
+        # shellcheck disable=SC2094 # route_listed_elsewhere skips this file; nothing writes it here.
         while IFS= read -r ROUTE; do
             [ -n "$ROUTE" ] || continue
             grep -Fqx "$ROUTE" "$TMP_ROUTES" && continue
             if [ "$ALL_RESOLVED" -eq 1 ]; then
-                ip route del "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null || true
+                route_listed_elsewhere "$ROUTE" "$ROUTES_FILE" ||
+                    ip route del "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null || true
             else
                 # A partial DNS outage must not remove another domain's route.
                 printf '%s\n' "$ROUTE" >> "$TMP_ROUTES"
@@ -416,7 +429,7 @@ ensure_game_session_policy() {
 refresh_optional_routes() {
     ensure_game_session_policy ||
         log "Game-session policy refresh deferred; preserving the running tunnel."
-    refresh_host_routes "$CAMPUS_DIRECT_DOMAINS" "$CAMPUS_DNS_IP" "${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}" ||
+    refresh_host_routes "$CAMPUS_DIRECT_DOMAINS" "$CAMPUS_DNS_IP" "$CAMPUS_ROUTES_FILE" ||
         log "Campus host-route refresh deferred; preserving the running tunnel."
     refresh_host_routes "$DIRECT_PUBLIC_DOMAINS" 127.0.0.1 "$DIRECT_PUBLIC_ROUTES_FILE" ||
         log "Public host-route refresh deferred; preserving the running tunnel."
@@ -456,10 +469,12 @@ refresh_game_session_routes() {
 
     if [ "$FOUND" -eq 1 ]; then
         if [ -f "$GAME_SESSION_ROUTES_FILE" ]; then
+            # shellcheck disable=SC2094 # route_listed_elsewhere skips this file; nothing writes it here.
             while IFS= read -r ROUTE; do
                 [ -n "$ROUTE" ] || continue
                 grep -Fqx "$ROUTE" "$TMP_ROUTES" 2>/dev/null && continue
-                ip route del "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null || true
+                route_listed_elsewhere "$ROUTE" "$GAME_SESSION_ROUTES_FILE" ||
+                    ip route del "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null || true
             done < "$GAME_SESSION_ROUTES_FILE"
         fi
         mv "$TMP_ROUTES" "$GAME_SESSION_ROUTES_FILE"
