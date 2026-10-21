@@ -163,8 +163,10 @@ class RecoveryTests(unittest.TestCase):
             state = Path(tmp) / 'routes'
             state.write_text('192.0.2.1/32\n192.0.2.2/32\n')
             env = dict(os.environ, TEST_DIR=tmp, PARTIAL=str(int(partial)))
-            self.run_shell(function('refresh_host_routes') + '''
+            self.run_shell(function('route_listed_elsewhere') + function('refresh_host_routes') + '''
             WAN_IF=eth0
+            CAMPUS_ROUTES_FILE="$TEST_DIR/campus"; GAME_SESSION_ROUTES_FILE="$TEST_DIR/game"
+            DIRECT_PUBLIC_ROUTES_FILE="$TEST_DIR/routes"
             timeout() { shift; "$@"; }
             nslookup() {
                 case "$1" in
