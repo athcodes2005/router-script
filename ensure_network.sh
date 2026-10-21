@@ -60,6 +60,9 @@ INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interac
 INTERACTIVE_RETRY_SECONDS="${INTERACTIVE_RETRY_SECONDS:-300}"
 WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
 INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
+TUNNEL_SLOW_SECONDS="${TUNNEL_SLOW_SECONDS:-1.5}"
+TUNNEL_SLOW_CHECKS="${TUNNEL_SLOW_CHECKS:-3}"
+TUNNEL_SLOW_FILE="${TUNNEL_SLOW_FILE:-/tmp/router-script-tunnel-slow-count}"
 ROUTE_PROBE_V4="${ROUTE_PROBE_V4:-1.1.1.1}"
 ROUTE_PROBE_V6="${ROUTE_PROBE_V6:-2606:4700:4700::1111}"
 DIRECT_PROBE_CONNECT_TIMEOUT="${DIRECT_PROBE_CONNECT_TIMEOUT:-2}"
@@ -146,8 +149,9 @@ internet_v4_ok() {
 
 tunnel_internet_v4_ok() {
     for URL in $INTERNET_PROBE_URLS; do
-        CODE="$(curl -4 -sS --interface "$TUN_IF" --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || true)"
-        [ "$CODE" = "204" ] && return 0
+        RESULT="$(curl -4 -sS --interface "$TUN_IF" --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code} %{time_total}' "$URL" 2>/dev/null || true)"
+        TUNNEL_PROBE_TIME="${RESULT#* }"
+        [ "${RESULT%% *}" = "204" ] && return 0
     done
     return 1
 }
@@ -592,6 +596,24 @@ warn_if_tunnel_not_preferred() {
     collect_diagnostics_once route-preference
 }
 
+# A reachable but slow tunnel (the 08-07/08-09 failure class) passes every
+# probe. Restarting on latency caused false restarts, so only report it.
+warn_if_tunnel_slow() {
+    if ! awk -v t="${TUNNEL_PROBE_TIME:-0}" -v limit="$TUNNEL_SLOW_SECONDS" 'BEGIN { exit !(t + 0 > limit + 0) }'; then
+        [ ! -f "$TUNNEL_SLOW_FILE" ] || rm -f "$TUNNEL_SLOW_FILE"
+        return 0
+    fi
+    SLOW_CHECKS="$(cat "$TUNNEL_SLOW_FILE" 2>/dev/null || echo 0)"
+    case "$SLOW_CHECKS" in
+        ''|*[!0-9]*) SLOW_CHECKS=0 ;;
+    esac
+    SLOW_CHECKS=$((SLOW_CHECKS + 1))
+    printf '%s\n' "$SLOW_CHECKS" 2>/dev/null > "$TUNNEL_SLOW_FILE" || true
+    [ "$SLOW_CHECKS" -ge "$TUNNEL_SLOW_CHECKS" ] || return 0
+    log "WARNING: the tunnel probe took over ${TUNNEL_SLOW_SECONDS}s on $SLOW_CHECKS consecutive checks (latest ${TUNNEL_PROBE_TIME}s); not restarting."
+    collect_diagnostics_once tunnel-slow
+}
+
 tunnel_healthy_confirmed() {
     tunnel_healthy && return 0
     # A missing process/interface cannot recover on its own. A live client's
@@ -805,6 +827,7 @@ fi
 if tunnel_healthy_confirmed; then
     refresh_optional_routes
     warn_if_tunnel_not_preferred
+    warn_if_tunnel_slow
     rm -f "$TUNNEL_RETRY_FILE"
     log "Health check passed."
     exit 0
@@ -834,4 +857,5 @@ fi
 rm -f "$TUNNEL_RETRY_FILE"
 refresh_optional_routes
 warn_if_tunnel_not_preferred
+warn_if_tunnel_slow
 log "Health check passed."

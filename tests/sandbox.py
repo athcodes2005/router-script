@@ -152,7 +152,8 @@ for a in "$@"; do
   [ "$prev" = -o ] && body_to=$a
   prev=$a
 done
-code=204
+code=204; t=0.050
+[ "$iface" = tun0 ] && flag tunnel_slow && t=2.400
 case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = eth0 ] && flag direct_down && code=000
 [ "$iface" = tun0 ] && flag warp_down && code=000
@@ -162,7 +163,7 @@ if [ "$code" != 000 ] && [ -z "$body_to" ]; then
     if flag warp_trace_off; then printf 'fl=1\nwarp=off\n'; else printf 'fl=1\nwarp=on\n'; fi ;;
   esac
 fi
-out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e 's/%{time_total}/0.050/g')
+out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g")
 printf '%b' "$out"
 [ "$code" = 000 ] && exit 7
 exit 0

@@ -139,6 +139,26 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.box.count('ip route del 198.51.100.30/32 via 10.1.40.250 dev eth0 metric 1'), 1)
         self.assertEqual(self.box.count('ip route del 198.51.100.40/32'), 0)
 
+    # F14: a reachable but slow tunnel (the 08-07/08-09 failure class) passes
+    # every probe. Restarting on latency caused false restarts, so only report.
+    def test_sustained_slow_tunnel_is_reported_without_restart(self):
+        self.box.flag('tunnel_slow')
+        self.tick()
+        self.tick()
+        self.assertNotIn('WARNING: the tunnel probe', self.box.log('ensure'))
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn('WARNING: the tunnel probe took over 1.5s on 3 consecutive checks '
+                      '(latest 2.400s); not restarting.', log)
+        self.assertNotIn('Restarting tunnel', log)
+        self.assertEqual(len(list((self.box.proj / 'diagnostics').glob('diagnostic_*.log'))), 1)
+
+    def test_one_fast_check_resets_the_slow_count(self):
+        for slow in (True, True, False, True, True):
+            self.box.flag('tunnel_slow', slow)
+            self.tick()
+        self.assertNotIn('WARNING: the tunnel probe', self.box.log('ensure'))
+
     # F08: tearing the game policy down each tick left new sessions unmarked.
     def test_healthy_tick_leaves_game_policy_untouched(self):
         self.tick()
