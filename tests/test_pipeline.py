@@ -126,6 +126,19 @@ class PipelineTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.box.count('ip route del 203.0.113.9/32 via 10.1.40.250 dev eth0 metric 1'), 1)
 
+    # F12 (corrected): the public refresher resolves the Blinkit names through
+    # dnsmasq, which serves the Blinkit hosts file, so an address that leaves
+    # the file loses its route on that tick. This holds only while the names
+    # stay in DIRECT_PUBLIC_DOMAINS.
+    def test_replaced_blinkit_address_loses_its_route(self):
+        upstream = self.box.state / 'blinkit_upstream'
+        upstream.write_text('198.51.100.30\n')
+        self.tick()
+        upstream.write_text('198.51.100.40\n')
+        self.tick()
+        self.assertEqual(self.box.count('ip route del 198.51.100.30/32 via 10.1.40.250 dev eth0 metric 1'), 1)
+        self.assertEqual(self.box.count('ip route del 198.51.100.40/32'), 0)
+
     # F08: tearing the game policy down each tick left new sessions unmarked.
     def test_healthy_tick_leaves_game_policy_untouched(self):
         self.tick()

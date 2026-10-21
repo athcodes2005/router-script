@@ -193,6 +193,13 @@ printf 'Server:\t\t%s\nAddress:\t%s#53\n\nName:      %s\n' "$server" "$server" "
 case "$name" in
   internet.iitb.ac.in) echo 'Address 1: 10.201.250.201' ;;
   sso.iitb.ac.in) echo 'Address 1: 10.200.1.100' ;;
+  api3.blinkit.com|jumbo.blinkit.com|api2.grofers.com)
+    # dnsmasq serves these local zones from the Blinkit hosts file only.
+    if [ "$server" = 127.0.0.1 ]; then
+      @AWK@ -v n="$name" '$2 == n { print "Address " ++i ": " $1 }' "$BLINKIT_HOSTS_DIR/hosts" 2>/dev/null
+    else
+      echo "Address 1: $(@CAT@ "$SIM_STATE/blinkit_upstream" 2>/dev/null || echo 198.51.100.10)"
+    fi ;;
   *) echo 'Address 1: 198.51.100.10'; echo 'Address 2: 2001:db8::10' ;;
 esac''',
     'iptables': IPTABLES,
