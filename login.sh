@@ -95,6 +95,7 @@ logout_portal() {
         -w 'HTTP %{http_code} final=%{url_effective}' \
         "$PORTAL_BASE_URL/logout.php" 2>&1)" || true
     log "Logout request: $(safe_request_summary "$RESULT")"
+    log_tls_clock_hint "$RESULT"
 }
 
 # curl reads the credentials from stdin as a config line, so the token never
@@ -104,6 +105,16 @@ curl_credentials() {
     printf 'user = "%s:%s"\n' \
         "$(printf '%s' "$USER" | sed 's/[\\"]/\\&/g')" \
         "$(printf '%s' "$PASS" | sed 's/[\\"]/\\&/g')"
+}
+
+# A clock months behind (after a reboot, before NTP syncs) makes the portal's
+# valid certificate look "not yet valid"; name the likely cause.
+log_tls_clock_hint() {
+    case "$1" in
+        *"curl: (60)"*|*"not yet valid"*|*"certificate has expired"*)
+            log "TLS verification failed. Check the router clock first: it reads $(date '+%Y-%m-%d %H:%M:%S'), and NTP may not have synced since boot."
+            ;;
+    esac
 }
 
 token_login() {
@@ -122,6 +133,7 @@ token_login() {
         -w 'HTTP %{http_code} final=%{url_effective}' \
         "$PORTAL_BASE_URL/login.php" 2>&1)" || true
     log "Access-token login request: $(safe_request_summary "$RESULT")"
+    log_tls_clock_hint "$RESULT"
     case "$RESULT" in
         *"/logout.php"*) TOKEN_LOGIN_STATE="stale-session" ;;
         *"/login.php"*) TOKEN_LOGIN_STATE="login-response" ;;

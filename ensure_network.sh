@@ -636,6 +636,13 @@ sh "$DIR/google_wan_policy.sh" >> "$LOG_FILE" 2>&1 ||
 
 log "Starting health check."
 
+# After a reboot the clock can be months behind until NTP syncs (86 days was
+# seen), which breaks lock ageing and TLS. The log was just written, so its
+# mtime is the current clock; this script cannot be newer than now.
+if [ "$0" -nt "$LOG_FILE" ]; then
+    log "WARNING: the clock reads $(date '+%Y-%m-%d %H:%M:%S'), earlier than this script's modification time. Lock ageing and TLS checks are unreliable until NTP syncs."
+fi
+
 maintain_persistent_storage
 
 # The radios are not needed for WAN, portal or WARP recovery, which wired

@@ -1,4 +1,6 @@
 """Whole-script runs of the health pipeline inside the isolated sandbox."""
+import os
+import time
 import unittest
 
 from sandbox import Sandbox
@@ -158,6 +160,18 @@ class PipelineTests(unittest.TestCase):
             self.box.flag('tunnel_slow', slow)
             self.tick()
         self.assertNotIn('WARNING: the tunnel probe', self.box.log('ensure'))
+
+    # F21: after a reboot the clock can be months behind until NTP syncs, which
+    # breaks lock ageing and TLS. The script's own mtime is a lower bound.
+    def test_clock_behind_the_script_is_reported(self):
+        self.tick()
+        self.assertNotIn('WARNING: the clock reads', self.box.log('ensure'))
+        future = time.time() + 86 * 86400
+        os.utime(self.box.proj / 'ensure_network.sh', (future, future))
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn("earlier than this script's modification time", log)
+        self.assertIn('Health check passed.', log)
 
     # F08: tearing the game policy down each tick left new sessions unmarked.
     def test_healthy_tick_leaves_game_policy_untouched(self):

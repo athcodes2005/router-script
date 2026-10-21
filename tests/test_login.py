@@ -33,6 +33,22 @@ class LoginTests(unittest.TestCase):
             self.assertIn('-K', argv.splitlines())
             self.assertEqual(Path(tmp, 'stdin').read_text(), 'user = "u123:p@ss\\"w\\\\rd:x"\n')
 
+    def test_tls_verification_failure_points_at_the_clock(self):
+        # F21: a clock months behind makes the portal's valid certificate "not yet valid".
+        with tempfile.TemporaryDirectory() as tmp:
+            script = FUNCTIONS + r'''
+            WAN_IF=eth0; RESOLVE_OPTS=; PORTAL_BASE_URL=https://internet.iitb.ac.in; LOG_FILE="$TMP/login.log"
+            curl() { cat > /dev/null; printf 'HTTP 200 final=https://internet.iitb.ac.in/login.php'; }
+            token_login
+            grep -q 'router clock' "$LOG_FILE" && exit 9
+            curl() { cat > /dev/null; echo 'curl: (60) SSL certificate problem: certificate is not yet valid' >&2; return 60; }
+            token_login
+            '''
+            result = subprocess.run(['sh', '-eu', '-c', script], text=True, capture_output=True,
+                                    env={'PATH': '/usr/bin:/bin', 'TMP': tmp, 'USER': USER, 'PASS': PASS})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Check the router clock', Path(tmp, 'login.log').read_text())
+
     @unittest.skipUnless(shutil.which('curl'), 'curl is required')
     def test_real_curl_sends_the_escaped_credentials(self):
         headers = []
