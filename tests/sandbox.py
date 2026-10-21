@@ -302,10 +302,14 @@ class Sandbox:
         env.update(extra)
         return env
 
+    def start(self, script, *args, **extra_env):
+        """Start a script as its own process group, without waiting for it."""
+        return subprocess.Popen([SHELL, str(self.proj / script), *args], env=self.env(**extra_env),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
+
     def run(self, script, *args, timeout=120, **extra_env):
-        process = subprocess.Popen([SHELL, str(self.proj / script), *args], env=self.env(**extra_env),
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                   start_new_session=True)
+        process = self.start(script, *args, **extra_env)
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

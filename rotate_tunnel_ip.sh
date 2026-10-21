@@ -43,10 +43,12 @@ done
 
 cleanup() {
     STATUS=$?
-    trap - EXIT INT TERM
+    trap - EXIT HUP INT TERM
 
     if [ "$STATUS" -ne 0 ] && [ "$BACKUP_CREATED" -eq 1 ] && [ -f "$BACKUP_FILE" ]; then
-        log "Restoring the previous WARP registration after an incomplete rotation."
+        # After an SSH drop the terminal is gone and tee fails; under set -e
+        # that would abort the restore and leave the lock behind.
+        log "Restoring the previous WARP registration after an incomplete rotation." || true
         sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
         rm -f "$CONFIG_FILE"
         mv "$BACKUP_FILE" "$CONFIG_FILE"
@@ -62,6 +64,7 @@ cleanup() {
 }
 
 trap cleanup EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 

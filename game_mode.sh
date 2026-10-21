@@ -45,7 +45,8 @@ case "$CMD" in
             WAIT_COUNT=$((WAIT_COUNT + 1))
         done
         trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
-        trap 'exit 130' INT
+        trap 'exit 129' HUP
+trap 'exit 130' INT
         trap 'exit 143' TERM
         ;;
     status) ;;
