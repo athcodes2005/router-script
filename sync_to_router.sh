@@ -18,6 +18,15 @@ run_scp() {
     scp -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"
 }
 
+# Older macOS releases have shasum but no sha256sum.
+local_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
 cleanup() {
     STATUS=$?
     trap - EXIT INT TERM
@@ -42,7 +51,7 @@ trap 'exit 143' TERM
 
 chmod 600 "$DIR/.env" "$DIR/config.json" 2>/dev/null || true
 
-# Use --force to push a blocklist that diverges from the router's copy.
+# Use --force to push a blocklist or config.json that diverges from the router's copy.
 FORCE=0
 case "${1:-}" in
     --force|-f) FORCE=1 ;;
@@ -63,6 +72,22 @@ if [ -n "$REMOTE_BLOCKLIST" ] && [ "$REMOTE_BLOCKLIST" != "$(cat "$DIR/blocked_s
         exit 1
     fi
     echo "WARNING: overwriting the router's blocked_sites.txt (--force)."
+fi
+
+# rotate_tunnel_ip.sh registers a new WARP identity on the router, so the local
+# config.json can be stale; pushing it would undo the rotation. Only hashes are
+# compared: the file holds the private key and is never printed.
+if [ -f "$DIR/config.json" ]; then
+    REMOTE_CONFIG_SHA="$(run_ssh "$REMOTE" "sha256sum '$REMOTE_DIR/config.json' 2>/dev/null | awk '{print \$1}'" || true)"
+    if [ -n "$REMOTE_CONFIG_SHA" ] && [ "$REMOTE_CONFIG_SHA" != "$(local_sha256 "$DIR/config.json")" ]; then
+        if [ "$FORCE" -eq 0 ]; then
+            echo "ERROR: config.json differs between local and the router (rotated on the router?)." >&2
+            echo "Run ./sync_from_router.sh to pull the router's copy first," >&2
+            echo "or re-run with --force to overwrite it." >&2
+            exit 1
+        fi
+        echo "WARNING: overwriting the router's config.json (--force)."
+    fi
 fi
 
 if run_ssh "$REMOTE" "pidof '$EXECUTABLE_BASENAME' >/dev/null 2>&1"; then
@@ -105,6 +130,8 @@ run_ssh "$REMOTE" "
     cd '$REMOTE_DIR'
     chmod 755 ./*.sh ./usque-rs
     chmod 600 ./.env ./config.json
+    # A power cut seconds after a deploy must not leave zero-length files.
+    sync
 "
 
 echo "Router sync complete."

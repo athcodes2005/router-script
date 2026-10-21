@@ -1,0 +1,123 @@
+"""sync_to_router.sh against a fake router directory.
+
+PATH holds only stub ssh/scp and links to a few harmless tools, so the real ssh
+cannot be reached; the stubs run the "remote" commands locally against a
+temporary directory. Every file is a dummy: the real .env and config.json are
+never read or copied.
+"""
+import os
+from pathlib import Path
+import shutil
+import stat
+import subprocess
+import tempfile
+import unittest
+
+from sandbox import SHELL
+
+ROOT = Path(__file__).resolve().parents[1]
+TARGET = 'root@sync-test.invalid'
+TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'dirname', 'grep', 'ls', 'mkdir', 'mv', 'rm', 'rmdir', 'sleep']
+LOCAL_CONFIG = '{"dummy": "local-registration"}\n'
+
+SSH = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; *) break ;; esac; done
+[ "$1" = "$EXPECTED_TARGET" ] || { echo "unexpected ssh target: $1" >&2; exit 255; }
+shift
+printf 'ssh %s\n' "$*" >> "$CALLS"
+PATH="$RBIN:$PATH" exec sh -c "$*"
+'''
+SCP = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -q) shift ;; *) break ;; esac; done
+case "$2" in "$EXPECTED_TARGET":*) ;; *) echo "unexpected scp target: $2" >&2; exit 1 ;; esac
+printf 'scp %s\n' "${1##*/}" >> "$CALLS"
+exec cp "$1" "${2#"$EXPECTED_TARGET":}"
+'''
+
+
+def write_exec(path, body):
+    path.write_text('#!%s\n%s' % (SHELL, body))
+    path.chmod(0o755)
+
+
+class SyncTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        self.local, self.router, bin_dir, rbin = (base / n for n in ('local', 'router', 'bin', 'rbin'))
+        for path in (self.local, self.router, bin_dir, rbin):
+            path.mkdir()
+        self.calls = base / 'calls'
+        self.calls.write_text('')
+        shutil.copy(ROOT / 'sync_to_router.sh', self.local)
+        files = {'usque-rs': 'binary\n', 'usque-rs-upstream-v0.1.0': 'rollback binary\n',
+                 'config.json': LOCAL_CONFIG, '.env': 'DUMMY=1\n', 'blocked_sites.txt': '# none\n',
+                 'paths.sh': '# dummy\n'}
+        for name, text in files.items():
+            (self.local / name).write_text(text)
+        for name in ('config.json', 'blocked_sites.txt'):
+            (self.router / name).write_text(files[name])
+
+        for name in TOOLS:
+            (bin_dir / name).symlink_to(shutil.which(name))
+        (bin_dir / 'sh').symlink_to(SHELL)
+        # Prefer shasum locally, as on macOS releases without sha256sum.
+        local_hash = shutil.which('shasum') or shutil.which('sha256sum')
+        (bin_dir / Path(local_hash).name).symlink_to(local_hash)
+        write_exec(bin_dir / 'ssh', SSH)
+        write_exec(bin_dir / 'scp', SCP)
+        # The router side: BusyBox sha256sum, no tunnel running, and a recorded sync.
+        if shutil.which('sha256sum'):
+            (rbin / 'sha256sum').symlink_to(shutil.which('sha256sum'))
+        else:
+            write_exec(rbin / 'sha256sum', 'exec shasum -a 256 "$@"\n')
+        write_exec(rbin / 'pidof', 'exit 1\n')
+        write_exec(rbin / 'sync', 'printf "sync\\n" >> "$CALLS"\nls -A "$ROUTER_SCRIPT_DIR" > "$CALLS.at-sync"\n')
+
+        self.env = {'PATH': str(bin_dir), 'HOME': str(base), 'CALLS': str(self.calls), 'RBIN': str(rbin),
+                    'EXPECTED_TARGET': TARGET, 'ROUTER_SSH_TARGET': TARGET,
+                    'ROUTER_SCRIPT_DIR': str(self.router)}
+        self.assertEqual(shutil.which('ssh', path=self.env['PATH']), str(bin_dir / 'ssh'))
+        self.assertEqual(shutil.which('scp', path=self.env['PATH']), str(bin_dir / 'scp'))
+
+    def sync(self, *args):
+        return subprocess.run([SHELL, str(self.local / 'sync_to_router.sh'), *args], env=self.env,
+                              capture_output=True, text=True, timeout=120)
+
+    def mode(self, name):
+        return stat.S_IMODE((self.router / name).stat().st_mode)
+
+    def test_promotion_is_flushed_to_storage(self):
+        # F23: a power cut seconds after a deploy could leave zero-length files.
+        self.assertEqual(self.sync().returncode, 0)
+        self.assertIn('sync', self.calls.read_text().splitlines())
+        at_sync = Path(str(self.calls) + '.at-sync').read_text().split()
+        self.assertIn('usque-rs', at_sync)
+        self.assertFalse([name for name in at_sync if name.startswith('.sync-stage')])
+
+    def test_registration_rotated_on_the_router_is_not_overwritten(self):
+        # F23: rotate_tunnel_ip.sh registers a new identity on the router.
+        rotated = '{"dummy": "rotated-on-router"}\n'
+        (self.router / 'config.json').write_text(rotated)
+        result = self.sync()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('config.json differs', result.stderr)
+        self.assertIn('sync_from_router.sh', result.stderr)
+        self.assertEqual((self.router / 'config.json').read_text(), rotated)
+        self.assertNotIn('scp', self.calls.read_text())
+        for text in (rotated, LOCAL_CONFIG):
+            self.assertNotIn(text.strip(), result.stdout + result.stderr)
+
+    def test_force_overwrites_a_rotated_registration(self):
+        (self.router / 'config.json').write_text('{"dummy": "rotated-on-router"}\n')
+        result = self.sync('--force')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.router / 'config.json').read_text(), LOCAL_CONFIG)
+
+    def test_first_deploy_without_a_router_registration_proceeds(self):
+        (self.router / 'config.json').unlink()
+        self.assertEqual(self.sync().returncode, 0)
+        self.assertEqual((self.router / 'config.json').read_text(), LOCAL_CONFIG)
+
+
+if __name__ == '__main__':
+    unittest.main()
