@@ -29,8 +29,11 @@ longer restarts it a second time after a tunnel repair.
 ## Health invariants
 
 The health check requires the expected UCI values, a global-scope LAN IPv6
-address, an IPv6 tunnel default, IPv6 NAT, and a successful public IPv6 HTTPS
-probe. Both address families must pass before WARP is considered healthy.
+address, an IPv6 tunnel default, and the IPv6 NAT, MSS and LAN forwarding rules.
+No IPv6 HTTPS probe gates health or triggers a restart: only IPv4 is probed
+through `tun0`. `diagnose.sh` reports `warp_ipv6_status` from Cloudflare's trace,
+and WARP rotation requires `warp=on` for both families
+([[../operations/warp-rotation]]).
 
 If LAN IPv6 repair fails, the health pipeline records one diagnostic and waits
 five minutes before another disruptive attempt while it continues direct IPv4
@@ -48,3 +51,4 @@ public IPv6 while keeping the Wi-Fi usable over direct IPv4.
 - `../../../tunnel.sh`
 - `../../../stop_tunnel.sh`
 - `../../../ensure_network.sh`
+- `../../../diagnose.sh`, `../../../rotate_tunnel_ip.sh`

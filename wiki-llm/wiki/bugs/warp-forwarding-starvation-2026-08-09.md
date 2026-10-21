@@ -47,7 +47,10 @@ only `4.2 Mbps` through the degraded WARP session.
   and an empty receive queue in the same controller benchmark.
 - Add three health-check performance samples. Two failed probes or two samples
   exceeding 1.5 seconds make the session unhealthy, so the minute watchdog can
-  recover a tunnel that is reachable but unusably slow.
+  recover a tunnel that is reachable but unusably slow. *(Historical: removed on
+  2026-09-19 because latency caused false restarts. Since 2026-10-22, three
+  consecutive probes over 1.5 s log a warning and one snapshot, with no restart;
+  see [[../operations/health-recovery]].)*
 
 ## Verification after deployment
 

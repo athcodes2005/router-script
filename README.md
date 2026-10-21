@@ -17,8 +17,9 @@ Deployment bundle for a GL.iNet GL-MT3000 router in an IITB hostel room.
 4. `127.0.0.1#5453` (dnscrypt-proxy DoH — last resort)
 
 Campus-specific domains (`internet.iitb.ac.in`, `sso.iitb.ac.in`,
-`moodle.iitb.ac.in`, `portal.iitb.ac.in`, and
-`cc.iitb.ac.in`) go directly to `10.200.1.11`.
+`cc.iitb.ac.in`, `moodle.iitb.ac.in`, `portal.iitb.ac.in`,
+`mulyankan.cse.iitb.ac.in`, and `webmail.iitb.ac.in`) go directly to
+`10.200.1.11`. Only these hosts are forwarded, never the whole `iitb.ac.in` zone.
 
 ### LAN IPv6 path
 - LAN clients receive a ULA prefix from `br-lan`

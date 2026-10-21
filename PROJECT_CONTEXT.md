@@ -12,7 +12,7 @@ Target behavior:
 2. Route all public IPv4 and IPv6 traffic through the Cloudflare WARP tunnel on `tun0`.
 3. Keep campus-private IPv4 (`10.0.0.0/8`) and WARP transport endpoints directly on `eth0`.
 4. Resolve DNS using plain resolvers first (`8.8.8.8`, `8.8.4.4`, `10.200.1.11`), with DoH as last resort.
-5. Forward internal-only campus hosts (`internet.iitb.ac.in`, `sso.iitb.ac.in`, `moodle.iitb.ac.in`, and `portal.iitb.ac.in`) to campus DNS `10.200.1.11`.
+5. Forward internal-only campus hosts (`internet.iitb.ac.in`, `sso.iitb.ac.in`, `cc.iitb.ac.in`, `moodle.iitb.ac.in`, `portal.iitb.ac.in`, `mulyankan.cse.iitb.ac.in`, and `webmail.iitb.ac.in`) to campus DNS `10.200.1.11`, never the whole `iitb.ac.in` zone.
 6. Keep Wi-Fi latency stable with the correct India regulatory domain and
    conservative 20 MHz/80 MHz channel widths.
 
