@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -96,6 +97,20 @@ class BlinkitTests(unittest.TestCase):
         timestamp=self.hosts.stat().st_mtime_ns
         self.assertEqual(self.run_update().returncode,0)
         self.assertEqual(self.hosts.stat().st_mtime_ns,timestamp)
+
+    # F13: each change HUPs dnsmasq, which also clears its cache; log the rate.
+    def test_each_change_is_logged_once_with_a_timestamp(self):
+        dnsmasq=subprocess.Popen(['sleep','30'])
+        self.addCleanup(dnsmasq.kill)
+        (self.root/'pids').mkdir()
+        (self.root/'pids'/'dnsmasq.cfg01411c.pid').write_text('%d\n' % dnsmasq.pid)
+        changed=self.run_update()
+        self.assertRegex(changed.stdout,
+                         r'^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d - Blinkit DNS: records changed \(2 entries\); '
+                         r'dnsmasq PIDs reloaded: 1 \(a reload clears the cache\)\.\n$')
+        self.assertEqual(dnsmasq.wait(timeout=5),-signal.SIGHUP)
+        unchanged=self.run_update()
+        self.assertEqual(unchanged.stdout+unchanged.stderr,'')
 
 if __name__ == '__main__':
     unittest.main()

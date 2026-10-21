@@ -46,10 +46,13 @@ if ! cmp -s "$WORK/sorted" "$HOSTS"; then
     chmod 644 "$STAGE"
     mv "$STAGE" "$HOSTS"
     # HUP reads hosts files without restarting DNS/DHCP or Wi-Fi.
+    RELOADED=0
     for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
         [ -f "$PID_FILE" ] || continue
         PID="$(cat "$PID_FILE")"
         case "$PID" in ''|*[!0-9]*) continue;; esac
-        kill -HUP "$PID" 2>/dev/null || true
+        if kill -HUP "$PID" 2>/dev/null; then RELOADED=$((RELOADED + 1)); fi
     done
+    # The HUP also clears dnsmasq's whole cache, so log each change to show the rate.
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Blinkit DNS: records changed ($(grep -c '' "$HOSTS") entries); dnsmasq PIDs reloaded: $RELOADED (a reload clears the cache)."
 fi
