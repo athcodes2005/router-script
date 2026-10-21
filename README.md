@@ -56,7 +56,7 @@ Campus-specific domains (`internet.iitb.ac.in`, `sso.iitb.ac.in`,
 - `blocked_sites.txt` — legacy split-routing data, retained for rollback
 - `warp_clients.txt` — legacy per-client routing data, retained for rollback
 - `usque-rs` — optimized Cloudflare WARP MASQUE client binary
-- `usque-rs-upstream-v0.1.0` — previous binary retained for rollback
+- `usque-rs-upstream-v0.1.0` — previous binary retained for rollback (deployed by `sync_to_router.sh`)
 - `usque-rs-optimized/` — source and reproducible ARM64 OpenWrt candidate
 - `.env` — credentials
 - `config.json` — usque-rs registration
@@ -132,9 +132,11 @@ but the active hostel deployment explicitly selects BBR2: same-path testing on
 2026-08-09 showed CUBIC rapidly collapsing and pinning a CPU core, while BBR2
 kept transfers consistent with an empty UDP receive queue.
 
-To roll back on the router:
+To roll back on the router (deploys before 2026-10-22 did not ship the
+rollback binary, so check that `usque-rs-upstream-v0.1.0` exists first):
 
 ```sh
+ls -l usque-rs-upstream-v0.1.0
 ./stop_tunnel.sh
 cp usque-rs-upstream-v0.1.0 usque-rs
 chmod 755 usque-rs

@@ -86,6 +86,16 @@ class SyncTests(unittest.TestCase):
     def mode(self, name):
         return stat.S_IMODE((self.router / name).stat().st_mode)
 
+    def test_rollback_binary_is_deployed(self):
+        # F25: README's rollback copies usque-rs-upstream-v0.1.0, which sync never shipped.
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.router / 'usque-rs-upstream-v0.1.0').read_text(), 'rollback binary\n')
+        self.assertEqual(self.mode('usque-rs-upstream-v0.1.0'), 0o755)
+        self.assertEqual(self.mode('usque-rs'), 0o755)
+        self.assertEqual(self.mode('.env'), 0o600)
+        self.assertEqual(self.mode('config.json'), 0o600)
+
     def test_promotion_is_flushed_to_storage(self):
         # F23: a power cut seconds after a deploy could leave zero-length files.
         self.assertEqual(self.sync().returncode, 0)

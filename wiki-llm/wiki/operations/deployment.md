@@ -11,13 +11,20 @@ into a private mode-`0700` staging directory while WARP remains running. Only
 after successful transfer does it stop WARP for promotion.
 
 Only after every transfer succeeds are staged files moved into the live
-directory. Scripts and the executable receive mode `0755`; `.env` and
-`config.json` receive mode `0600`. A trap removes staging state, releases the
+directory. Scripts, the executable and the rollback binary
+`usque-rs-upstream-v0.1.0` receive mode `0755`; `.env` and `config.json` receive
+mode `0600`. The promotion ends with `sync`, so a power cut right after a deploy
+cannot leave zero-length files. A trap removes staging state, releases the
 lock, and restarts a previously running tunnel after failures.
 
 The router copy of `blocked_sites.txt` may be edited independently. Sync refuses
 to overwrite divergent content unless `--force` is explicitly supplied. Use
 `sync_from_router.sh` to pull it first when appropriate.
+
+`config.json` gets the same protection, because `rotate_tunnel_ip.sh` registers
+new WARP identities on the router and leaves the local copy stale. Only SHA-256
+hashes are compared; the file holds the private key and is never printed. A
+router without a registration (first deploy) is not blocked.
 
 ## First-time bootstrap
 
