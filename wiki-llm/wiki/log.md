@@ -494,3 +494,33 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 13)
 - `../../ensure_network.sh`, `../../login.sh`, `../../diagnose.sh`
+
+## 2026-10-22 — Batch 4 of the full review (implemented, not deployed)
+
+- With the user's approval, implemented F13, F14 and F21 (log only), F19, F20,
+  F22, F23, F25 and F26–F30, each as one test-first commit. F24 is documented
+  on the new page [[systems/policy-routing]]. Nothing was deployed; the router
+  still runs the 2026-10-20 set.
+- Corrected F12: the public refresher already removes replaced Blinkit
+  addresses, because it resolves those names through dnsmasq's Blinkit hosts
+  file. A sandbox test now pins that dependency.
+- F22 now enforces the DNS invariant (upstream order, and only the listed
+  campus forwards). F19's test showed that the SIGHUP trap alone left a
+  rotation unrestored, because `cleanup`'s log write failed on the lost
+  terminal; that write is now non-fatal.
+- Added the first tests for `sync_to_router.sh` (stub ssh/scp against a
+  temporary directory) and for SIGHUP handling. 72 tests pass under `sh` and
+  `dash`; shellcheck findings are unchanged.
+- The wiki pages this batch's code contradicted were repaired in a follow-up
+  commit, not in the same commits as the contract asks.
+  `operations/health-recovery.md` is now 113 lines, above the preferred 80 (it
+  was 99).
+- The deployment steps, a read-only DNS-order gate and the rollback commands
+  are in the report's section 14.4.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 14)
+- [[systems/policy-routing]]
+- `../../ensure_network.sh`, `../../sync_to_router.sh`, `../../rotate_tunnel_ip.sh`, `../../refresh_blinkit_dns.sh`
+- `../../tests/test_sync.py`, `../../tests/test_hangup.py`

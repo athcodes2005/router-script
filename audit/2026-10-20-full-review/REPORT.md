@@ -213,7 +213,7 @@ plausible but unproven.
 | F09 | Medium | Confirmed (sandbox) | Correctness | `rotate_tunnel_ip.sh:84-87` | WARP rotation always rolls back: the IPv6 probe hits Google (rejected) and the IPv4 probe bypasses WARP |
 | F10 | Medium | Likely | Performance (Rust) | `tunnel.rs:240,528-546` | A 1,000-datagram unmanaged FIFO inside `usque-rs` can add hundreds of ms of latency during uploads |
 | F11 | Low | Confirmed (measured) | Resource | `google_wan_policy.sh:35-42` | `check-dns` costs 165 process execs per tick (36 % of a healthy tick) |
-| F12 | Low | Confirmed | Correctness | `refresh_blinkit_dns.sh:34-37` | Blinkit `/32` routes are never removed |
+| F12 | Low | Confirmed | Correctness | `refresh_blinkit_dns.sh:34-37` | Blinkit `/32` routes are never removed (**corrected in §14: mostly not a defect**) |
 | F13 | Low | Likely | Resource | `refresh_blinkit_dns.sh:49-54` | Every Blinkit address change SIGHUPs dnsmasq, flushing its whole cache; the change rate is not logged |
 | F14 | Low | Confirmed (history) | Observability | `ensure_network.sh:137-143` | Slow-tunnel detection (the 08-09 safety net) was removed on 09-19; a reachable-but-slow tunnel passes |
 | F15 | Low | Confirmed | Observability | `diagnose.sh:157`; `ensure_network.sh:145-151` | The diagnostic WARP-IPv6 probe targets Google and has always failed since 09-23; `tunnel_internet_v6_ok` is dead code |
@@ -526,7 +526,8 @@ plausible but unproven.
   - The GL.iNet rules and the mark-bit allocation are undocumented.
 - **F27:**
   - `stop_tunnel.sh` spends about 50 forks on legacy blocklist/WARP-client
-    cleanup, and uses `\s` in BusyBox BRE.
+    cleanup, and uses `\s` in BusyBox BRE. (Corrected in §14: about 10, since
+    each legacy file holds one real entry.)
   - `pending_pkt` in `tunnel.rs` is never set.
 - **F28:**
   - "Confirming before restart" is also logged *after* a restart.
@@ -656,9 +657,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
-| F12, F13, F14, F19, F20, F22, F23 | Deferred | — | Batch 4: not approved this round. |
-| F21, F24, F25 | Deferred | — | Need your decision (see §7). |
-| F26–F30 | Deferred | — | Batch 4. Only the wiki/README lines that the fixed items made inaccurate were updated, in the same commits (wiki contract). |
+| F12–F14, F19–F30 | See §14 | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Implemented and tested; not deployed. |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -970,3 +969,246 @@ Cloudflare's trace reporting `warp=on` through `tun0`.
 - **F02, F03, F04, F06 and the F07 warning** only act on failures, so none
   were exercised. They are covered only by the sandbox tests.
 - **The rest of the first hour:** the §11 watch list is yours to follow.
+
+## 14. Batch 4 — approved 21 October 2026, implemented, not deployed
+
+You approved batch 4 and decided the three open items: F21 log only, F24
+documentation only, F25 ship the rollback binary. Each code change landed as
+one commit with a test that fails before it. Nothing in this batch has been
+deployed; the router still runs the 2026-10-20 set (§13).
+
+### 14.1 Outcome per finding
+
+| ID | Status | Commit | Notes |
+|---|---|---|---|
+| F12 | **Finding corrected; no script change** | `0e3ad17` (test) | Phase 1 judged `refresh_blinkit_dns.sh` alone. The health pipeline's public refresher resolves the Blinkit names through dnsmasq, which serves the Blinkit hosts file, so a replaced address loses its route on the same tick. A sandbox test pins this and fails if the names leave `DIRECT_PUBLIC_DOMAINS`. The approved fix (keep two generations) would have kept old routes *longer* than today, so it was not built. Residual: a run that installs routes, then exits before publishing (a name with no answer and no saved record), leaves those routes unowned. |
+| F13 | **Fixed (log only)** | `172c205` | One timestamped `ensure.log` line per record change, with the number of dnsmasq PIDs actually signalled. Its rate answers F12's open question: is removal within one tick too fast for clients that cached the old answer? |
+| F14 | **Fixed (log only)** | `99eab50` | The passing probe's `time_total` is kept. Three consecutive checks over 1.5 s log a WARNING and take one `tunnel-slow` snapshot; one fast check resets the count. It never restarts. Tunables: `TUNNEL_SLOW_SECONDS`, `TUNNEL_SLOW_CHECKS`. |
+| F19 | **Fixed** | `3994808` | `trap 'exit 129' HUP` in both scripts. The trap alone was not enough for rotation: the test showed `cleanup`'s first `log` (a `tee`) failing on the lost terminal, and `set -e` aborting the restore with status 141. That log call is now non-fatal. `game_mode.sh` only releases its lock; partial game-mode state remains, and F07's warning reports it. |
+| F20 | **Fixed** | `bf012b8`, `575bb11` | A `/32` is deleted only once no other refresher's file lists it, at both deletion sites. The first commit also adds the repo's first shellcheck directive, for a false-positive SC2094; the second makes the unit test use the real helper. |
+| F21 | **Fixed (log only)** | `d0d18db` | `ensure_network.sh` warns when `"$0" -nt "$LOG_FILE"`, comparing against the log line it just wrote, so the check costs no process. `login.sh` names the clock on curl exit 60, "not yet valid" or "certificate has expired". |
+| F22 | **Fixed** | `4b3c531` | The first four servers must match the strict-order chain, and only the listed hosts may be forwarded to campus DNS (a whole-zone forward is drift). `configure_dns.sh` rewrites the whole list, so the existing repair fixes both. The 2026-08-01 snapshot's list passes. Churn risk if GL.iNet rewrites the list: bounded by F02's 5-minute cooldown, and gated before deployment (§14.4). |
+| F23 | **Fixed** | `f548383` | The promotion ends with `sync`. A local `config.json` whose SHA-256 differs from the router's is refused unless `--force` is given. Contents are never printed, and a router with no registration still deploys. `tests/test_sync.py` is the first test of `sync_to_router.sh` (stub ssh/scp, `.invalid` target, dummy files only). |
+| F24 | **Documented** | `6ff4eeb` | New page `wiki/systems/policy-routing.md`: the rule order (ours plus GL.iNet's), mark-bit owners, the overlap, and rules for new marks. The mask is unchanged. |
+| F25 | **Fixed** | `8164762` | `usque-rs-upstream-v0.1.0` is in the deploy set, with a guarded `chmod 755`. Cost: about 6 MB more per sync, and staging now holds both binaries (about 12 MB) on `/overlay` until promotion. The README rollback checks for the file first. |
+| F26 | **Fixed** | `26d8b5d` | Campus name lists (7), IPv6 health text, and the 08-09 page's slow-sample rule marked historical. The GL.iNet rules are on F24's page. |
+| F27 | **Fixed (shell half)** | `9629f58` | One `tr` per file, `case` for comments (BusyBox `grep` has no `\s`). Corrected estimate: about 10 processes per stop before, 2 after (the commit message says "about three", counting only `tr`). The Rust half (`pending_pkt`) stays deferred with F10 and F16–F18. |
+| F28 | **Fixed** | `113a1e1` | Restart-path and DNS-runtime messages say what happened. |
+| F29 | **Fixed** | `a6ea218` | LAN prefix from `LAN_SUBNET`; `game_mode.sh off` uses the UCI WAN metric (10 here, so no change). |
+| F30 | **Fixed** | `bacac56` | One odhcpd restart per WARP restart (`tunnel.sh`'s). |
+| docs | — | `fa8c1ff` | Wiki pages that batch-4 code contradicted, repaired afterwards (the contract asks for the same commit; noted as a lapse). |
+
+Tests: 72 (24 more than after batches 1–3), all passing under macOS `/bin/sh`
+and `dash`. `shellcheck -s sh` findings in every changed script are identical
+to the 2026-10-20 deployed state (`41828c5`).
+
+### 14.2 Measured effect
+
+- Processes per healthy tick: 290 → 292. The two extra are one `awk` each
+  for F22 and F14. Game-policy changes per tick stay at 0. This was measured
+  with the same harness as §9.
+
+### 14.3 Invariant re-check
+
+All seven still hold. `configure_dns.sh`, `configure_lan_ipv6.sh`,
+`configure_wifi.sh`, `tunnel.sh` and `google_wan_policy.sh` are unchanged
+since `41828c5`.
+
+1. **Defaults via `tun0`; campus, endpoints and split-horizon `/32`s on
+   `eth0`.** F20 only withholds deletions. F14 and F21 only log. F29 derives
+   the values this router already uses. F27 changes only how the legacy files
+   are read.
+2. **DNS chain and campus forwards.** F22 now enforces both, including "never
+   the whole zone".
+3. **`filter_aaaa=0`, `ra_default=2`, `block_ipv6=false`, ULA + NAT66, MSS.**
+   The configurators and their checks are unchanged. `game_mode.sh` gains
+   only the HUP trap and the F29 metric. F30 drops a redundant odhcpd restart.
+4. **Bounded recovery.** The restart, cooldown and fallback code is
+   unchanged, and F14's test asserts that it never restarts.
+5. **`.env`/`config.json` 0600; atomic registration.** Sync still sets 0600
+   (now tested). Rotation's backup and restore are unchanged, except that a
+   failed log write can no longer abort the restore.
+6. **Wi-Fi IN / HE20 / HE80.** Unchanged.
+7. **Rollback binary.** Now actually shipped (F25). `tunnel.sh` and both
+   binaries are unchanged.
+
+### 14.4 Deployment checklist (batch 4)
+
+**What:** six router scripts (`ensure_network.sh`, `stop_tunnel.sh`,
+`game_mode.sh`, `refresh_blinkit_dns.sh`, `login.sh`,
+`rotate_tunnel_ip.sh`) and the rollback binary. `sync_to_router.sh` runs on
+the Mac and needs no router deploy. As in §11, use the staged steps below,
+not `sync_to_router.sh`.
+
+**0. Pre-flight (read-only).** On the Mac, list the expected current hashes:
+
+```sh
+cd /Users/atharva/projects/router-script
+for f in ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh; do printf '%s  %s\n' "$(git show 41828c5:"$f" | shasum -a 256 | cut -d' ' -f1)" "$f"; done
+shasum -a 256 usque-rs-upstream-v0.1.0
+```
+
+On the router, these must match:
+
+```sh
+cd /root/router-script
+sha256sum ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh
+ls -l usque-rs-upstream-v0.1.0 2>/dev/null && sha256sum usque-rs-upstream-v0.1.0 || echo "rollback binary absent"
+df -h /overlay /tmp
+```
+
+Stop if a script differs (pull the router's copy first). Also stop if a
+rollback binary is present with a different hash, and ask before replacing a
+copy that may have been tested. Then run the **F22 gate**. It applies the new
+check, verbatim, to the live list:
+
+```sh
+uci -q get dhcp.@dnsmasq[0].server | awk -v want="8.8.8.8 8.8.4.4 10.200.1.11 127.0.0.1#5453" -v dns=10.200.1.11 \
+  -v allowed=" internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in " '
+  { n = split(want, w, " "); for (i = 1; i <= n; i++) if ($i != w[i]) bad = 1
+    for (i = 1; i <= NF; i++) { parts = split($i, part, "/"); if (parts < 3 || part[parts] != dns) continue
+      for (j = 2; j < parts; j++) if (index(allowed, " " part[j] " ") == 0) bad = 1 } }
+  END { exit bad }' && echo "F22 gate: pass" || echo "F22 gate: FAIL - do not do step B"
+```
+
+A failure means the first new tick would rewrite the DNS config and restart
+dnsmasq. In that case, look at the list (it holds no secrets) and decide
+before step B.
+
+**1. Stage from the Mac** (file names written out; zsh does not split
+`$FILES`):
+
+```sh
+tar -cf - ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh usque-rs-upstream-v0.1.0 | ssh -o BatchMode=yes root@192.168.8.1 'umask 077; cd /root/router-script && rm -rf .stage-batch4 && mkdir .stage-batch4 && tar -xf - -C .stage-batch4'
+shasum -a 256 ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh usque-rs-upstream-v0.1.0
+```
+
+**2. Verify and back up on the router:**
+
+```sh
+cd /root/router-script
+FILES="ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh"
+for f in $FILES; do sh -n ".stage-batch4/$f" || echo "SYNTAX FAIL $f"; done
+sha256sum .stage-batch4/*               # must equal the Mac's shasum output
+mkdir -m 700 -p backup-batch4 && cp -p $FILES backup-batch4/
+pidof usque-rs > backup-batch4/warp-pid-before
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+promote() { for f in "$@"; do cp ".stage-batch4/$f" "$f.new" && chmod 755 "$f.new" && mv "$f.new" "$f"; done; }
+```
+
+**3. Step A**, the scripts outside the watchdog. `refresh_blinkit_dns.sh` runs
+every tick but only gains a log line, `login.sh` runs on portal recovery, and
+the rest run on demand or on a WARP restart:
+
+```sh
+take_lock && { promote stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh; rmdir .ensure_network.lock; } || echo "lock busy: nothing changed, retry"
+```
+
+**4. Step B**, the watchdog, at a time you can watch for an hour. Only after
+the F22 gate passes:
+
+```sh
+take_lock && { promote ensure_network.sh; rmdir .ensure_network.lock; } || echo "lock busy: nothing changed, retry"
+sh ./ensure_network.sh; tail -n 6 logs/ensure.log
+[ "$(cat backup-batch4/warp-pid-before)" = "$(pidof usque-rs)" ] && echo "WARP PID preserved"
+```
+
+**5. Step C (F25)**, the rollback binary:
+
+```sh
+cp .stage-batch4/usque-rs-upstream-v0.1.0 usque-rs-upstream-v0.1.0.new && chmod 755 usque-rs-upstream-v0.1.0.new && mv usque-rs-upstream-v0.1.0.new usque-rs-upstream-v0.1.0
+sha256sum usque-rs-upstream-v0.1.0      # must equal the Mac's
+rm -rf .stage-batch4
+```
+
+**6. Post-deploy checks (read-only):**
+
+- **F22:** `grep -c 'DNS configuration drift detected' logs/ensure.log` does
+  not grow.
+- **F21:** `grep -c 'WARNING: the clock reads' logs/ensure.log` is 0 while
+  the clock is synced.
+- **F14:** `cat /tmp/router-script-tunnel-slow-count 2>/dev/null || echo "no slow checks"`.
+- **F13:** `grep 'Blinkit DNS: records changed' logs/ensure.log | tail -n 3`.
+  The rate over a day is the data F12's open question needs.
+- **F12/F20 route ownership.** The following lists metric-1 host routes on
+  `eth0` that no state file owns. Expect only the WARP endpoint routes. It
+  writes one temporary file and removes it.
+
+  ```sh
+  cat /tmp/router-script-*-host-routes 2>/dev/null | sort -u > /tmp/owned-routes
+  ip -4 route show | awk '$1 ~ /^[0-9.]+$/ && / dev eth0 / && / metric 1/ {print $1 "/32"}' | sort -u | grep -vxF -f /tmp/owned-routes
+  rm -f /tmp/owned-routes
+  ```
+
+**7. First hour.** Same as §11, plus:
+
+- **Informational:** "Blinkit DNS: records changed (N entries); dnsmasq PIDs
+  reloaded: 1 …".
+- **Act on:**
+  - "WARNING: the tunnel probe took over 1.5s …": WARP is slow. Nothing
+    restarts automatically; compare with `sh monitor_game_network.sh`.
+  - "WARNING: the clock reads …": check NTP and `date`.
+  - "DNS configuration drift detected" every 5 minutes: GL.iNet is rewriting
+    the list (F22 churn). Roll back F22.
+  - In `logs/login.log`, "TLS verification failed. Check the router clock
+    first".
+
+**8. Rollback** on the router (the backup holds the 2026-10-20 versions):
+
+```sh
+cd /root/router-script
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+take_lock && { for f in ensure_network.sh stop_tunnel.sh game_mode.sh refresh_blinkit_dns.sh login.sh rotate_tunnel_ip.sh; do cp -p "backup-batch4/$f" "$f.old" && mv "$f.old" "$f"; done; rmdir .ensure_network.lock; } || echo "lock busy: retry"
+rm -f /tmp/router-script-tunnel-slow-count
+```
+
+The only new runtime state is that `/tmp` counter and log lines. The rollback
+binary can stay; nothing uses it unless you roll back to it. For one finding,
+run `git revert <commit>` on the Mac and redeploy that file. Several batch-4
+commits touch nearby lines in `ensure_network.sh`, so a revert may need a
+manual merge; the backup copy is the fastest emergency path.
+
+| Finding | Commit(s) | Files | Revert order |
+|---|---|---|---|
+| F22 | `4b3c531` | `ensure_network.sh` | independent |
+| F20 | `bf012b8`, `575bb11` | `ensure_network.sh`, tests | `575bb11` first |
+| F14 | `99eab50` | `ensure_network.sh`, sandbox | before F06 (uses its helper) |
+| F21 | `d0d18db` | `ensure_network.sh`, `login.sh` | independent |
+| F28, F29, F30 | `113a1e1`, `a6ea218`, `bacac56` | `ensure_network.sh` (F29 also `game_mode.sh`) | independent |
+| F13 | `172c205` | `refresh_blinkit_dns.sh` | independent |
+| F19 | `3994808` | `game_mode.sh`, `rotate_tunnel_ip.sh` | independent |
+| F27 | `9629f58` | `stop_tunnel.sh` | independent |
+| F25 | `8164762` | `sync_to_router.sh`, README, wiki | before F23 |
+| F23 | `f548383` | `sync_to_router.sh` | after F25 |
+
+### 14.5 What I could not verify (batch 4)
+
+- **Nothing in batch 4 ran on the router.** All behaviour comes from the
+  sandbox under `dash` and macOS `bash --posix`, not BusyBox ash.
+- **BusyBox specifics not yet run on the device:**
+  - `test -nt` (F21). It is in POSIX.1-2024 and BusyBox's `test`.
+  - `awk` `split()` in F22; `-v` and `index()` were verified on 10-20.
+  - The ash `HUP` trap (F19).
+  - `kill -HUP` success counting (F13).
+- **F22 against the live list.** Only the 2026-08-01 snapshot was checked;
+  the gate in §14.4 covers this.
+- **F14's threshold against real latency.** Healthy probes took 69–75 ms on
+  08-09. The live distribution of `time_total`, and so the false-warning
+  rate, are unknown.
+- **F12's correction.** It depends on dnsmasq answering the public
+  refresher's `127.0.0.1` query from the Blinkit hosts file. This was
+  modelled in the sandbox and verified as a design on 09-19, but not
+  re-checked live. The ownership check in §14.4 tests it.
+- **F19 against a real dropbear session:**
+  - The test closes the pipes and sends SIGHUP to the process group. A real
+    pty hangup gives EIO, not SIGPIPE, and which processes receive SIGHUP was
+    not reproduced.
+  - A job started without a tty gets no SIGHUP. Its next failed write exits
+    under `set -e`, and `cleanup` should then complete. That is reasoned, not
+    tested.
+- **F23/F25 on the real link:** dropbear's `scp`, how long `sync` takes on
+  the router's flash, and whether `/overlay` has room for the extra ~6 MB
+  (it was 17 % used on 10-20) are unchecked, as is the rollback binary's
+  presence there.
+- **Deferred:** the Rust items (F10, F16–F18, and F27's `pending_pkt`) are
+  unbuilt and untested.
