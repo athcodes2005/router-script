@@ -115,11 +115,15 @@ case "$key" in
   'dhcp.@dnsmasq[0].strictorder'|'dhcp.@dnsmasq[0].noresolv') echo 1 ;;
   'dhcp.@dnsmasq[0].filter_aaaa') echo 0 ;;
   'dhcp.@dnsmasq[0].server')
-    printf '8.8.8.8 8.8.4.4 10.200.1.11 127.0.0.1#5453 /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'
+    if flag dns_order_drift; then printf '10.200.1.11 8.8.8.8 8.8.4.4 127.0.0.1#5453'
+    else printf '8.8.8.8 8.8.4.4 10.200.1.11 127.0.0.1#5453'; fi
+    printf ' /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'
     for d in internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in; do
       [ "$d" = webmail.iitb.ac.in ] && flag dns_drift && continue
       printf ' /%s/10.200.1.11' "$d"
-    done; echo ;;
+    done
+    flag dns_zone_forward && printf ' /iitb.ac.in/10.200.1.11'
+    echo ;;
   'dhcp.@dnsmasq[0].addnhosts') echo "$BLINKIT_HOSTS_DIR" ;;
   'dhcp.@dnsmasq[0].address') echo '/internet.iitb.ac.in/10.201.250.201 /sso.iitb.ac.in/10.200.1.100' ;;
   'dhcp.@dnsmasq[0].ipset')

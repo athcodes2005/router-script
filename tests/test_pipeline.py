@@ -63,6 +63,18 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('dnsmasq is not running or not answering locally', log)
         self.assertNotIn('campus resolution failed', log)
 
+    # F22: with strict-order the upstream order is the invariant, and only the
+    # listed campus hosts may be forwarded to campus DNS.
+    def test_upstream_order_drift_is_repaired(self):
+        self.box.flag('dns_order_drift')
+        self.tick()
+        self.assertIn('DNS configuration drift detected', self.box.log('ensure'))
+
+    def test_whole_campus_zone_forward_is_repaired(self):
+        self.box.flag('dns_zone_forward')
+        self.tick()
+        self.assertIn('DNS configuration drift detected', self.box.log('ensure'))
+
     # F04: cycling the WAN releases the lease (a new address, every flow reset).
     def test_missing_campus_route_is_reinstalled_without_wan_cycle(self):
         self.box.flag('campus_route_tun')

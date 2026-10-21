@@ -184,6 +184,20 @@ dns_config_ok() {
         echo "$CURRENT_SERVERS" | grep -Fq "/$DOMAIN/$CAMPUS_DNS_IP" || return 1
     done
 
+    # strict-order only helps if the upstreams come first, in this order, and
+    # only the listed hosts may go to campus DNS (never the whole zone).
+    printf '%s\n' "$CURRENT_SERVERS" | awk -v want="$DNS_SERVERS" -v dns="$CAMPUS_DNS_IP" -v allowed=" $CAMPUS_DOMAINS " '
+        {
+            n = split(want, w, " ")
+            for (i = 1; i <= n; i++) if ($i != w[i]) bad = 1
+            for (i = 1; i <= NF; i++) {
+                parts = split($i, part, "/")
+                if (parts < 3 || part[parts] != dns) continue
+                for (j = 2; j < parts; j++) if (index(allowed, " " part[j] " ") == 0) bad = 1
+            }
+        }
+        END { exit bad }' || return 1
+
     for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
         printf '%s\n' "$CURRENT_SERVERS" | tr ' ' '\n' | grep -Fxq "/$DOMAIN/" || return 1
     done
