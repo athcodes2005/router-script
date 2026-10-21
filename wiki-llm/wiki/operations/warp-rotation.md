@@ -31,7 +31,9 @@ or an operator can distinguish a rollback from successful rotation.
 ## Concurrency
 
 The lock prevents the minute health check from interpreting intentional tunnel
-teardown as an outage. Trap cleanup releases the lock on normal exit or signal.
+teardown as an outage. Trap cleanup releases the lock on normal exit, INT,
+TERM or HUP. An SSH drop sends HUP and takes the terminal away; the restore
+still completes even though its log line can no longer be written there.
 
 ## Sources
 

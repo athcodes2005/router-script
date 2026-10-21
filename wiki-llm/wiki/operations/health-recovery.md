@@ -7,10 +7,16 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
 
 ## Check order
 
+Each run first warns when the clock reads earlier than the script's own
+modification time. After a reboot the clock can be months behind until NTP
+syncs, which breaks lock ageing and TLS; `login.sh` likewise names the clock when
+curl reports a certificate failure.
+
 1. Bound project logs when overlay storage crosses the warning threshold.
 2. Repair Wi-Fi configuration or reload a configured but down radio.
-3. Repair DNS configuration, dnsmasq runtime, campus resolution, portal/SSO
-   address pins, and dnscrypt listen address.
+3. Repair DNS configuration (the four upstreams first and in strict order,
+   forwards for exactly the listed campus hosts, portal/SSO address pins, the
+   dnscrypt listen address) and the dnsmasq runtime.
 4. Repair LAN IPv6 configuration drift.
 5. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN.
 6. Verify the core campus route separately from optional resolved site routes.
@@ -27,6 +33,9 @@ immediately, while an ownerless maintenance lock must age 180 seconds first.
 12. Warn (log plus one rate-limited snapshot, no restart) when a lower-metric
     default would carry public IPv4 or IPv6 around `tun0`; a restart cannot fix
     that, and the tunnel-bound probes alone would not notice it.
+13. Warn the same way when the tunnel probe took over 1.5 s on three
+    consecutive checks (`TUNNEL_SLOW_SECONDS`, `TUNNEL_SLOW_CHECKS`). One fast
+    check resets the count.
 
 Every Wi-Fi, DNS, and LAN IPv6 repair is followed by a postcondition check.
 A repair that still fails captures diagnostics once and enters a five-minute
@@ -71,14 +80,19 @@ the former dead wait when probes could not repair a stale portal record.
 Each failure now logs the failing layer. A live process/interface receives a
 second health observation after `TUNNEL_CONFIRM_DELAY` (default three seconds);
 a missing process/interface triggers immediate recovery. IPv6 HTTP and latency
-are diagnostic measurements, not restart triggers. IPv6 default-route presence
-remains a structural requirement.
+are diagnostic measurements, not restart triggers (sustained latency only logs a
+warning). IPv6 default-route presence remains a structural requirement.
 
 Optional campus/public DNS exceptions are resolved once per refresh with
 three-second lookup bounds. They do not determine WARP liveness. Failed or
 partial resolution retains prior routes; stale routes are removed only after
 all configured names produced IPv4 answers and route installation succeeded.
-This avoids CDN-answer races and partial-DNS-induced tunnel restarts.
+This avoids CDN-answer races and partial-DNS-induced tunnel restarts. The campus,
+public and game-session refreshers can share a `/32` (a game server can also be
+a listed public name), so a route is deleted only once no refresher's file lists
+it. Replaced Blinkit addresses are removed by the public refresher, which
+resolves those names through dnsmasq's Blinkit hosts file; this depends on the
+names staying in `DIRECT_PUBLIC_DOMAINS`.
 
 `game_mode.sh on` prefers direct campus WAN. Policy toggles share the maintenance
 lock, and disabling game mode preserves the WAN gateway before removing its
@@ -96,4 +110,5 @@ IPv4 fallback over a configured yet nonfunctional tunnel. See
 - `../../../stop_tunnel.sh`
 - `../../../collect_diagnostics.sh`
 - `../../../login.sh`
+- `../../../refresh_blinkit_dns.sh`
 - `../../../paths.sh`

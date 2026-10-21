@@ -28,7 +28,12 @@ HTTP 403 on both WAN and WARP; unauthenticated requests are not an app test.
 - dnsmasq includes that directory and treats the three exact API zones as local.
   Their AAAA replies are NOERROR/NODATA; unrelated services retain IPv6.
 - Saved records survive reboot and upstream DNS failures. Failed route
-  installation prevents publishing a new record set. Changed hosts trigger HUP.
+  installation prevents publishing a new record set. Changed hosts trigger HUP,
+  which also clears dnsmasq's cache; since 2026-10-22 each change logs one
+  timestamped line with the number of dnsmasq PIDs signalled.
+- The refresher never deletes routes. A replaced address loses its route when
+  the health pipeline's public-route refresher, which resolves these names
+  through dnsmasq, no longer sees it.
 - The installed dnsmasq 2.85 rejects `--filter-AAAA`, and its init script ignores
   `filter_aaaa`; setting that UCI flag alone does not implement filtering.
 

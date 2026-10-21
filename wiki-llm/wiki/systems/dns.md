@@ -46,9 +46,11 @@ use router-provided DNS for campus-only hosts.
 ## Repair and inspection
 
 `configure_dns.sh` writes and commits UCI state, adjusts dnscrypt-proxy2, and
-restarts affected services. `ensure_network.sh` verifies strict ordering,
-`noresolv`, every expected upstream, campus forwarding, portal/SSO `address=`
-pins, dnscrypt listen on `127.0.0.1:5453`, and IPv6 allowance. `dns_flow.sh`
+restarts affected services. `ensure_network.sh` verifies `strictorder` and
+`noresolv`, that the four upstreams come first and in order, forwards for
+exactly the listed campus hosts (a whole-zone `/iitb.ac.in/` forward counts as
+drift), portal/SSO `address=` pins, dnscrypt listen on `127.0.0.1:5453`, and
+IPv6 allowance. `dns_flow.sh`
 prints policy (including pins) and executes representative lookups.
 
 DNS choice and packet routing are related but separate: a private campus answer
