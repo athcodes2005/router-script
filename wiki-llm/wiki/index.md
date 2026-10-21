@@ -17,6 +17,7 @@ the active topology. This index lists every maintained wiki page.
 - [[systems/google-wan]] — Google/YouTube direct IITB routing and IPv6 fallback.
 - [[systems/dns]] — resolver chain and campus-domain forwarding.
 - [[systems/campus-wan]] — Hostel 01 addressing, gateway, DNS, and campus hops.
+- [[systems/policy-routing]] — rule priorities and mark bits, ours and GL.iNet's.
 - [[systems/ipv6]] — LAN IPv6 addressing, advertisement, NAT, and routing.
 - [[systems/wifi]] — radio stability profile and drift repair.
 

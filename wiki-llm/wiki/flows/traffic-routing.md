@@ -39,7 +39,8 @@ gateway. The endpoint packet therefore never enters the tunnel it sustains.
 `ensure_network.sh` tests tunnel defaults, campus route selection, NAT, and live
 IPv4/IPv6 HTTPS. Google matches combine published service prefixes and DNS-learned
 addresses; see [[../systems/google-wan]]. Other exceptions use routes or game
-port policy. Campus DNS selection remains domain based.
+port policy. Campus DNS selection remains domain based. The policy-routing rules
+and mark bits, including GL.iNet's, are in [[../systems/policy-routing]].
 
 ## Sources
 
@@ -48,3 +49,4 @@ port policy. Campus DNS selection remains domain based.
 - `../../../ensure_network.sh`
 - [[architecture]]
 - [[../systems/campus-wan]]
+- [[../systems/policy-routing]]
