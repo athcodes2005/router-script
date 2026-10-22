@@ -12,11 +12,9 @@ LOG_FILE="$(prepare_log_file ipv6)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
 LAN_IP6ASSIGN="${LAN_IP6ASSIGN:-60}"
-LAN_IP6IFACEID="${LAN_IP6IFACEID:-::1}"
-LAN_RA_DEFAULT="${LAN_RA_DEFAULT:-2}"
-LAN_IF="${LAN_IF:-br-lan}"
 
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"

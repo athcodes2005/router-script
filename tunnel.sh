@@ -18,32 +18,11 @@ LOG_FILE="$(prepare_log_file tunnel)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
-WAN_IF="${WAN_IF:-eth0}"
-LAN_IF="${LAN_IF:-br-lan}"
-LAN_SUBNET="${LAN_SUBNET:-192.168.8.0/24}"
-TUN_IF="${TUN_IF:-tun0}"
-TUN_IPV4_MSS="${TUN_IPV4_MSS:-1240}"
-TUN_IPV6_MSS="${TUN_IPV6_MSS:-1220}"
-CAMPUS_NETS="${CAMPUS_NETS:-10.0.0.0/8 103.21.124.0/22}"
-CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
-# Selected public services that reject WARP/shared-proxy egress.  These are
-# intentionally exact hostnames observed from the affected app; broad CDN
-# ranges would accidentally bypass WARP for unrelated sites.
-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com}"
-DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
-GAME_SESSION_PORTS="${GAME_SESSION_PORTS:-9339}"
-GAME_POLICY_TABLE="${GAME_POLICY_TABLE:-101}"
-GAME_POLICY_PRIORITY="${GAME_POLICY_PRIORITY:-700}"
-GAME_POLICY_MARK="${GAME_POLICY_MARK:-0x40000}"
-GAME_POLICY_MASK="${GAME_POLICY_MASK:-0xf0000}"
-WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
 WARP_CC="${WARP_CC:-cubic}"
 # Datagrams the client may queue before it pauses TUN reads; 0 leaves it off.
 WARP_TUN_BACKPRESSURE="${WARP_TUN_BACKPRESSURE:-0}"
-WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
 WARP_STARTUP_TIMEOUT="${WARP_STARTUP_TIMEOUT:-25}"
 
 exec >> "$LOG_FILE" 2>&1

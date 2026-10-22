@@ -13,31 +13,8 @@ LOG_FILE="$(prepare_log_file ensure)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
-WAN_IF="${WAN_IF:-eth0}"
-WAN_UCI_IFACE="${WAN_UCI_IFACE:-wan}"
-LAN_IF="${LAN_IF:-br-lan}"
-LAN_SUBNET="${LAN_SUBNET:-192.168.8.0/24}"
-TUN_IF="${TUN_IF:-tun0}"
-TUN_IPV4_MSS="${TUN_IPV4_MSS:-1240}"
-TUN_IPV6_MSS="${TUN_IPV6_MSS:-1220}"
-CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_NETS="${CAMPUS_NETS:-10.0.0.0/8 103.21.124.0/22}"
-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com}"
-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
-BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
-CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
-DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
-GAME_SESSION_PORTS="${GAME_SESSION_PORTS:-9339}"
-GAME_SESSION_ROUTES_FILE="${GAME_SESSION_ROUTES_FILE:-/tmp/router-script-game-session-host-routes}"
-GAME_POLICY_TABLE="${GAME_POLICY_TABLE:-101}"
-GAME_POLICY_PRIORITY="${GAME_POLICY_PRIORITY:-700}"
-GAME_POLICY_MARK="${GAME_POLICY_MARK:-0x40000}"
-GAME_POLICY_MASK="${GAME_POLICY_MASK:-0xf0000}"
-LAN_IP6IFACEID="${LAN_IP6IFACEID:-::1}"
-LAN_RA_DEFAULT="${LAN_RA_DEFAULT:-2}"
 LAN_IPV6_RETRY_FILE="${LAN_IPV6_RETRY_FILE:-/tmp/router-script-lan-ipv6-retry-after}"
 LAN_IPV6_RETRY_COOLDOWN="${LAN_IPV6_RETRY_COOLDOWN:-300}"
 WIFI_REPAIR_RETRY_FILE="${WIFI_REPAIR_RETRY_FILE:-/tmp/router-script-wifi-repair-retry-after}"
@@ -46,18 +23,10 @@ DNS_RUNTIME_RETRY_FILE="${DNS_RUNTIME_RETRY_FILE:-/tmp/router-script-dns-runtime
 STAGE_REPAIR_COOLDOWN="${STAGE_REPAIR_COOLDOWN:-300}"
 DIAGNOSTICS_RETRY_DIR="${DIAGNOSTICS_RETRY_DIR:-/tmp/router-script-diagnostics-after}"
 DIAGNOSTICS_COOLDOWN="${DIAGNOSTICS_COOLDOWN:-900}"
-WIFI_COUNTRY="${WIFI_COUNTRY:-IN}"
-WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
-WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
-WIFI_2G_HTMODE="${WIFI_2G_HTMODE:-HE20}"
-WIFI_5G_HTMODE="${WIFI_5G_HTMODE:-HE80}"
 TUNNEL_RETRY_FILE="${TUNNEL_RETRY_FILE:-/tmp/router-script-tunnel-retry-after}"
 TUNNEL_RETRY_COOLDOWN="${TUNNEL_RETRY_COOLDOWN:-300}"
 TMP_MAX_USED_PERCENT="${TMP_MAX_USED_PERCENT:-90}"
-INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
 INTERACTIVE_RETRY_SECONDS="${INTERACTIVE_RETRY_SECONDS:-300}"
-WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
-INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
 TUNNEL_SLOW_SECONDS="${TUNNEL_SLOW_SECONDS:-1.5}"
 TUNNEL_SLOW_CHECKS="${TUNNEL_SLOW_CHECKS:-3}"
 TUNNEL_SLOW_FILE="${TUNNEL_SLOW_FILE:-/tmp/router-script-tunnel-slow-count}"
@@ -68,7 +37,6 @@ DIRECT_PROBE_MAX_TIME="${DIRECT_PROBE_MAX_TIME:-4}"
 DIRECT_CONFIRM_DELAY="${DIRECT_CONFIRM_DELAY:-2}"
 TUNNEL_CONFIRM_DELAY="${TUNNEL_CONFIRM_DELAY:-3}"
 OVERLAY_WARN_PERCENT="${OVERLAY_WARN_PERCENT:-90}"
-GAME_MODE_MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
 PLATFORM_CHECK_FILE="${PLATFORM_CHECK_FILE:-/tmp/router-script-platform-checked}"
 
 # DNS servers expected by the new config
@@ -172,8 +140,8 @@ dns_config_ok() {
 
     # Portal/SSO local pins must survive UCI drift (campus DNS outage path).
     CURRENT_ADDRESSES="$(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null || echo "")"
-    echo "$CURRENT_ADDRESSES" | grep -Fq "/internet.iitb.ac.in/${PORTAL_IP:-10.201.250.201}" || return 1
-    echo "$CURRENT_ADDRESSES" | grep -Fq "/sso.iitb.ac.in/${SSO_IP:-10.200.1.100}" || return 1
+    echo "$CURRENT_ADDRESSES" | grep -Fq "/internet.iitb.ac.in/$PORTAL_IP" || return 1
+    echo "$CURRENT_ADDRESSES" | grep -Fq "/sso.iitb.ac.in/$SSO_IP" || return 1
 
     # Check dnscrypt-proxy block_ipv6 and listen port (must not steal :53).
     [ -f "/etc/dnscrypt-proxy2/dnscrypt-proxy.toml" ] || return 1

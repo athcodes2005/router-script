@@ -3,10 +3,7 @@
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 [ ! -f "$DIR/.env" ] || . "$DIR/.env"
-WAN_IF="${WAN_IF:-eth0}"
-LAN_IF="${LAN_IF:-br-lan}"
-LAN_SUBNET="${LAN_SUBNET:-192.168.8.0/24}"
-TUN_IF="${TUN_IF:-tun0}"
+. "$DIR/defaults.sh"
 GOOGLE_TABLE=102
 GOOGLE_PRIORITY=710
 GOOGLE_MARK=0x100000

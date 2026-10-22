@@ -6,13 +6,13 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="$DIR/config.json"
 BACKUP_FILE="$DIR/config.json.previous"
 BACKUP_TEMP="$BACKUP_FILE.tmp.$$"
-TUN_IF="${TUN_IF:-tun0}"
 WARP_TRACE_URL_V4="${WARP_TRACE_URL_V4:-https://1.1.1.1/cdn-cgi/trace}"
 WARP_TRACE_URL_V6="${WARP_TRACE_URL_V6:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
 WAS_RUNNING=0
 BACKUP_CREATED=0
 
 . "$DIR/paths.sh"
+. "$DIR/defaults.sh"
 
 LOG_FILE="$(prepare_log_file maintenance)"
 

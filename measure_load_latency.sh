@@ -20,8 +20,8 @@ LOG_FILE="$(prepare_log_file latency)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
-TUN_IF="${TUN_IF:-tun0}"
 PHASE_SECONDS="${1:-20}"
 RTT_URL="${RTT_URL:-http://1.1.1.1/cdn-cgi/trace}"
 UPLOAD_URL="${UPLOAD_URL:-https://speed.cloudflare.com/__up}"

@@ -16,11 +16,9 @@ LOG_FILE="$(prepare_log_file ensure)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
-MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
-WAN_IF="${WAN_IF:-eth0}"
-LAN_IF="${LAN_IF:-br-lan}"
-TUN_IF="${TUN_IF:-tun0}"
+MARKER="$GAME_MODE_MARKER"
 
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
@@ -126,7 +124,7 @@ case "$CMD" in
         GW="$(ip -4 route show default dev "$WAN_IF" 2>/dev/null | awk '/via/ {print $3; exit}')"
         if [ -n "$GW" ]; then
             # Restore the metric netifd uses for the WAN (10 on this GL.iNet setup).
-            WAN_METRIC="$(uci -q get "network.${WAN_UCI_IFACE:-wan}.metric" 2>/dev/null || echo 10)"
+            WAN_METRIC="$(uci -q get "network.$WAN_UCI_IFACE.metric" 2>/dev/null || echo 10)"
             ip route replace default via "$GW" dev "$WAN_IF" metric "$WAN_METRIC"
             ip -4 route del default dev "$WAN_IF" metric 1 2>/dev/null || true
         fi

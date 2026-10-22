@@ -19,14 +19,12 @@ else
     log "Error: .env file not found in $SCRIPT_DIR"
     exit 1
 fi
+. "$SCRIPT_DIR/defaults.sh"
 
 : "${USER:?USER must be set in .env}"
 : "${PASS:?PASS must be set in .env}"
 
-WAN_IF="${WAN_IF:-eth0}"
 PORTAL_BASE_URL="${PORTAL_BASE_URL:-https://internet.iitb.ac.in}"
-INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
-INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
 INTERNET_RECHECK_ATTEMPTS="${INTERNET_RECHECK_ATTEMPTS:-3}"
 INTERNET_RECHECK_DELAY="${INTERNET_RECHECK_DELAY:-2}"
 INTERNET_PROBE_CONNECT_TIMEOUT="${INTERNET_PROBE_CONNECT_TIMEOUT:-2}"
@@ -37,11 +35,11 @@ FRESH_LOGIN_SETTLE_DELAY="${FRESH_LOGIN_SETTLE_DELAY:-3}"
 
 # Pinned IPs for captive-portal domains.  These guarantee curl can reach the
 # OAuth chain even if campus DNS is completely dead and dnsmasq has not yet
-# loaded the address records.  Kept in sync with configure_dns.sh.
-PORTAL_IP="${PORTAL_IP:-10.201.250.201}"
-SSO_IP="${SSO_IP:-10.200.1.100}"
+# loaded the address records. configure_dns.sh pins the same PORTAL_IP and
+# SSO_IP (both from defaults.sh).
 RESOLVE_OPTS="--resolve internet.iitb.ac.in:443:${PORTAL_IP} --resolve sso.iitb.ac.in:443:${SSO_IP}"
 
+# shellcheck disable=SC2153 # WAN_IF comes from defaults.sh, not a misspelt WAN_IP.
 check_internet() {
     for URL in $INTERNET_PROBE_URLS; do
         CODE="$(curl -4 -sS \

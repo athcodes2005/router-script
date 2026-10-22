@@ -20,15 +20,7 @@ LOG_FILE="$(prepare_log_file dns)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
-
-DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
-PORTAL_IP="${PORTAL_IP:-10.201.250.201}"
-SSO_IP="${SSO_IP:-10.200.1.100}"
-CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-LAN_IF="${LAN_IF:-br-lan}"
-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
-BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+. "$DIR/defaults.sh"
 
 # DNS servers in priority order
 DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"

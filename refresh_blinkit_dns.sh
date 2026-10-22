@@ -5,14 +5,9 @@
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 [ ! -f "$DIR/.env" ] || . "$DIR/.env"
-WAN_IF="${WAN_IF:-eth0}"
-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
-BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
+. "$DIR/defaults.sh"
 BLINKIT_DNS_SERVERS="${BLINKIT_DNS_SERVERS:-8.8.8.8 8.8.4.4}"
 DNSMASQ_PID_DIR="${DNSMASQ_PID_DIR:-/var/run}"
-CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
-DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
-GAME_SESSION_ROUTES_FILE="${GAME_SESSION_ROUTES_FILE:-/tmp/router-script-game-session-host-routes}"
 mkdir -p "$BLINKIT_HOSTS_DIR"
 # Stage outside addn-hosts directory: dnsmasq reads every file inside it.
 WORK="$(mktemp -d /tmp/router-blinkit-dns.XXXXXX)"

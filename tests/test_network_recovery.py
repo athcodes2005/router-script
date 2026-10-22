@@ -14,6 +14,9 @@ def function(name):
     assert match, name
     return match.group()
 
+# defaults.sh, then ensure_network.sh's own defaults, as the script sources them.
+DEFAULTS = (ROOT / 'defaults.sh').read_text() + SOURCE[
+    SOURCE.index('. "$DIR/defaults.sh"\n') + len('. "$DIR/defaults.sh"\n'):SOURCE.index('# DNS servers expected')]
 ALL_FUNCTIONS = ''.join(re.findall(r'^[a-z_0-9]+\(\) [\{\(]\n.*?^[\}\)]\n', SOURCE, re.M | re.S))
 GAME_CHAIN = '\n'.join([
     '-N GAME_SESSION_POLICY',
@@ -31,7 +34,7 @@ class RecoveryTests(unittest.TestCase):
         return result.stdout
 
     def test_game_policy_uses_default_lan_without_env_override(self):
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         self.run_shell(defaults + function('ensure_game_session_policy') + r"""
         ip() {
             case "$*" in
@@ -94,8 +97,7 @@ class RecoveryTests(unittest.TestCase):
         start = source.index('        GW=', source.index('# Save the gateway'))
         end = source.index('        if ip link show', start)
         block = source[start:end]
-        self.run_shell("""
-        WAN_IF=eth0
+        self.run_shell(""". "%s/defaults.sh"
         HAS_ONE=1; HAS_TEN=0
         ip() {
             case "$*" in
@@ -108,15 +110,14 @@ class RecoveryTests(unittest.TestCase):
                 *) exit 8;;
             esac
         }
-        """ + block + '[ "$HAS_TEN" -eq 1 ] && [ "$HAS_ONE" -eq 0 ]')
+        """ % ROOT + block + '[ "$HAS_TEN" -eq 1 ] && [ "$HAS_ONE" -eq 0 ]')
 
     def test_game_mode_off_restores_the_configured_wan_metric(self):
         # F29: the WAN metric was hard-coded as 10.
         source = (ROOT / 'game_mode.sh').read_text()
         start = source.index('        GW=', source.index('# Save the gateway'))
         end = source.index('        if ip link show', start)
-        output = self.run_shell("""
-        WAN_IF=eth0
+        output = self.run_shell('. "%s/defaults.sh"\n' % ROOT + """
         uci() { [ "$*" = '-q get network.wan.metric' ] && echo 20; }
         ip() {
             case "$*" in
@@ -194,7 +195,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(list(Path(tmp).glob('routes.*')), [])
 
     def test_bidirectional_mss_clamping_checked(self):
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         output = self.run_shell(defaults + function('nat_rules_ok') + r"""
         iptables() { printf 'iptables: %s\n' "$*"; return 0; }
         ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
@@ -204,7 +205,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220', output)
 
     def test_ensure_nat_and_mss_rules_repaired(self):
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         output = self.run_shell(defaults + function('ensure_nat_and_mss_rules') + r"""
         iptables() { printf 'iptables: %s\n' "$*"; return 0; }
         ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
@@ -215,7 +216,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_forward_accept_rules_checked(self):
         # F03: FORWARD's policy is DROP, so LAN<->tun0 traffic depends on these rules.
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         output = self.run_shell(defaults + function('nat_rules_ok') + r"""
         iptables() { printf 'iptables: %s\n' "$*"; return 0; }
         ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
@@ -226,7 +227,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertIn(tool + ': -C FORWARD -i tun0 -o br-lan -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT', output)
 
     def test_missing_forward_rules_are_reinserted(self):
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         output = self.run_shell(defaults + function('ensure_nat_and_mss_rules') + r"""
         iptables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'iptables: %s\n' "$*"; }
         ip6tables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'ip6tables: %s\n' "$*"; }
@@ -305,7 +306,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual((ROOT / 'tunnel.sh').read_text().count('/etc/init.d/odhcpd restart'), 1)
 
     def game_policy_case(self, prerouting_first, missing_rule=False):
-        defaults = SOURCE[SOURCE.index('WAN_IF='):SOURCE.index('# DNS servers expected')]
+        defaults = DEFAULTS
         return self.run_shell(defaults + ALL_FUNCTIONS + r"""
         ip() {
             case "$*" in

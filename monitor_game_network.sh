@@ -3,13 +3,12 @@
 set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 [ ! -f "$DIR/.env" ] || . "$DIR/.env"
+. "$DIR/defaults.sh"
 . "$DIR/paths.sh"
 MONITOR_LOG="$(prepare_log_file game_monitor)"
 DURATION="${DURATION:-2700}"
 INTERVAL="${INTERVAL:-5}"
 PHONE_IP="${PHONE_IP:-}"
-WAN_IF="${WAN_IF:-eth0}"
-TUN_IF="${TUN_IF:-tun0}"
 PROBE_URL="${PROBE_URL:-https://www.google.com/generate_204}"
 MAX_MONITOR_BYTES="${MAX_MONITOR_BYTES:-1048576}"
 for VALUE in "$DURATION" "$INTERVAL" "$MAX_MONITOR_BYTES"; do

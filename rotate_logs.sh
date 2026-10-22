@@ -5,10 +5,10 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 MAX_LOG_BYTES="${MAX_LOG_BYTES:-1048576}"
 KEEP_ROTATIONS="${KEEP_ROTATIONS:-3}"
-MAX_DIAGNOSTICS="${MAX_DIAGNOSTICS:-24}"
 ROTATION_TMP=""
 
 . "$DIR/paths.sh"
+. "$DIR/defaults.sh"
 
 LOG_FILE="$(prepare_log_file maintenance)"
 

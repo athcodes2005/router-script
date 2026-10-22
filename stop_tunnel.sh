@@ -14,25 +14,7 @@ LOG_FILE="$(prepare_log_file tunnel)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
-
-WAN_IF="${WAN_IF:-eth0}"
-LAN_IF="${LAN_IF:-br-lan}"
-LAN_SUBNET="${LAN_SUBNET:-192.168.8.0/24}"
-TUN_IF="${TUN_IF:-tun0}"
-TUN_IPV4_MSS="${TUN_IPV4_MSS:-1240}"
-TUN_IPV6_MSS="${TUN_IPV6_MSS:-1220}"
-CAMPUS_NETS="${CAMPUS_NETS:-10.0.0.0/8 103.21.124.0/22}"
-CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
-DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
-GAME_SESSION_ROUTES_FILE="${GAME_SESSION_ROUTES_FILE:-/tmp/router-script-game-session-host-routes}"
-GAME_POLICY_TABLE="${GAME_POLICY_TABLE:-101}"
-GAME_POLICY_PRIORITY="${GAME_POLICY_PRIORITY:-700}"
-GAME_POLICY_MARK="${GAME_POLICY_MARK:-0x40000}"
-GAME_POLICY_MASK="${GAME_POLICY_MASK:-0xf0000}"
-GAME_SESSION_PORTS="${GAME_SESSION_PORTS:-9339}"
-WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
-WARP_CLIENT_TABLE="${WARP_CLIENT_TABLE:-100}"
-WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
+. "$DIR/defaults.sh"
 
 if [ -f "$CONFIG_FILE" ]; then
     CONFIG_ENDPOINT="$(jsonfilter -i "$CONFIG_FILE" -e '@.endpoint_v4' 2>/dev/null || true)"

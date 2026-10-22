@@ -11,21 +11,9 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 . "$DIR/paths.sh"
+. "$DIR/defaults.sh"
 
-WAN_IF="${WAN_IF:-eth0}"
-WAN_UCI_IFACE="${WAN_UCI_IFACE:-wan}"
-LAN_IF="${LAN_IF:-br-lan}"
-TUN_IF="${TUN_IF:-tun0}"
-CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
-WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
-WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
-DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
 WARP_CLIENTS_FILE="$DIR/warp_clients.txt"
-WARP_CLIENT_TABLE="${WARP_CLIENT_TABLE:-100}"
-WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
-CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
 
 section() {
     printf '\n=== %s ===\n' "$1"

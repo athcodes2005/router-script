@@ -5,9 +5,9 @@ set -eu
 umask 077
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-MAX_DIAGNOSTICS="${MAX_DIAGNOSTICS:-24}"
 
 . "$DIR/paths.sh"
+. "$DIR/defaults.sh"
 
 # Use --emergency or -e flag for emergency prefix
 PREFIX="diagnostic"

@@ -16,12 +16,8 @@ LOG_FILE="$(prepare_log_file wifi)"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/defaults.sh"
 
-WIFI_COUNTRY="${WIFI_COUNTRY:-IN}"
-WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
-WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
-WIFI_2G_HTMODE="${WIFI_2G_HTMODE:-HE20}"
-WIFI_5G_HTMODE="${WIFI_5G_HTMODE:-HE80}"
 WIFI_APPLY="${WIFI_APPLY:-1}"
 
 log() {

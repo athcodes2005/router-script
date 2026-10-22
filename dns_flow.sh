@@ -8,9 +8,7 @@ ENV_FILE="$DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
-
-CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+. "$DIR/defaults.sh"
 
 echo "=== LISTENERS (53/5453) ==="
 netstat -lntup 2>/dev/null | grep -E '(:53 |:53$|:5453 |:5453$)' || true
@@ -21,8 +19,8 @@ uci show dhcp.@dnsmasq[0] 2>/dev/null | grep -E 'server|strictorder|noresolv|add
 
 echo ""
 echo "=== PORTAL/SSO PINS (expected address=) ==="
-echo "internet.iitb.ac.in -> ${PORTAL_IP:-10.201.250.201}"
-echo "sso.iitb.ac.in -> ${SSO_IP:-10.200.1.100}"
+echo "internet.iitb.ac.in -> $PORTAL_IP"
+echo "sso.iitb.ac.in -> $SSO_IP"
 
 echo ""
 echo "=== DNSCRYPT SUMMARY ==="

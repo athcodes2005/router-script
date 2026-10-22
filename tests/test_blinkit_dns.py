@@ -20,6 +20,7 @@ class BlinkitTests(unittest.TestCase):
         self.hostdir.mkdir()
         self.hosts = self.hostdir / 'hosts'
         shutil.copy(ROOT / 'refresh_blinkit_dns.sh', self.root)
+        shutil.copy(ROOT / 'defaults.sh', self.root)
         self.command('timeout', 'shift; exec "$@"')
         self.command('nslookup', '''
         printf '%s %s\n' "$1" "$2" >> "$TEST_ROOT/queries"
@@ -60,13 +61,10 @@ class BlinkitTests(unittest.TestCase):
                               env=self.env, capture_output=True, text=True)
 
     def test_legacy_blinkit_api_is_covered_by_all_policy_defaults(self):
-        for name in ['configure_dns.sh', 'ensure_network.sh', 'refresh_blinkit_dns.sh']:
-            text = (ROOT / name).read_text()
-            line = next(line for line in text.splitlines() if line.startswith('BLINKIT_IPV4_DOMAINS='))
-            self.assertIn('api2.grofers.com', line, name)
-        for name in ['ensure_network.sh', 'tunnel.sh']:
-            text = (ROOT / name).read_text()
-            line = next(line for line in text.splitlines() if line.startswith('DIRECT_PUBLIC_DOMAINS='))
+        # Every script takes both lists from defaults.sh (A1).
+        text = (ROOT / 'defaults.sh').read_text()
+        for name in ['BLINKIT_IPV4_DOMAINS=', 'DIRECT_PUBLIC_DOMAINS=']:
+            line = next(line for line in text.splitlines() if line.startswith(name))
             self.assertIn('api2.grofers.com', line, name)
         self.env['BLINKIT_IPV4_DOMAINS'] += ' api2.grofers.com'
         result = self.run_update()
