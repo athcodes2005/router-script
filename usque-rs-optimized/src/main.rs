@@ -33,6 +33,9 @@ mod tls;
 mod tun_device;
 mod tunnel;
 
+#[cfg(test)]
+mod pipeline_tests;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::time::Duration;
