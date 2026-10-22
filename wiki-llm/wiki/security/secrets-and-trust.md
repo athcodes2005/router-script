@@ -16,9 +16,10 @@ material. Both remain router-local at mode `0600`; the wiki records paths only.
 ## Deployment protection
 
 Synchronization uses a private staging directory and applies final permissions
-after promotion. Failed sync cleanup removes the exact staging directory and
-restores a previously running tunnel. It does not expose secret files through a
-partially installed set.
+after promotion. Promotion checks every staged file against a SHA-256 manifest
+first. Failed sync cleanup removes the exact staging directory and restores a
+previously running tunnel. It does not expose secret files through a partially
+installed set.
 
 ## Portal credentials
 
@@ -38,6 +39,11 @@ verification is disabled for this special endpoint flow, but the peer certificat
 is mandatory and its SPKI must match the public key delivered by registration.
 A missing certificate or mismatched key terminates the session.
 
+quiche loads the client key and certificate from temporary PEM files. The client
+deletes both as soon as they are loaded (audit F18). Before, they lived for the
+whole session, and the SIGTERM that stops the client skips destructors, so each
+stop probably left a copy of the key in `/tmp` (root-only, mode `0600`).
+
 ## Router services and the tunnel
 
 SSH, the GL.iNet admin UI (80, 443, 8080, 8443) and dnsmasq listen on all
@@ -50,7 +56,8 @@ arriving over the tunnel therefore reached these services (audit F31, found on
 2026-10-22). Commit `3b3a183` drops new inbound connections on `tun0` for
 IPv4 and IPv6:
 - `tunnel.sh` adds the rule at start.
-- `ensure_network.sh` restores it after a firewall reload. It never restarts
+- `ensure_network.sh` restores it after a firewall restart: at once through
+  the fw3 include `firewall_hook.sh`, or at the next tick. It never restarts
   WARP for it.
 - `stop_tunnel.sh` leaves it in place, because it is inert without `tun0`.
 

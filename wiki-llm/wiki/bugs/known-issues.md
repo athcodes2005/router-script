@@ -62,16 +62,20 @@ IPv4 management/fallback, while campus and Cloudflare outages remain external.
 
 [[game-latency-audit-2026-09-19]] documents deployed recovery hardening and
 bounded live verification. Rare game spikes are not yet proven resolved.
-Remaining source-review findings include copied Rust integration-test logic,
+The remaining source-review findings were copied Rust integration-test logic,
 discarded client lifecycle output, nontransactional full-sync promotion and
-ownerless long-running maintenance locks. The report distinguishes these from
-confirmed live failures. No new Rust binary or speculative SQM cap was deployed.
+ownerless long-running maintenance locks. All four are fixed on the
+`open-issues-2026-10-22` branch (audit F36, F37, F40, F39), not yet deployed.
+No speculative SQM cap was deployed; loaded latency is still unmeasured, and
+`measure_load_latency.sh` now measures it.
 
 ## DNS filtering on the vendor firmware
 
 The installed dnsmasq 2.85 rejects `--filter-AAAA`, and its init script ignores
-`filter_aaaa`. Existing UCI toggles alone do not suppress IPv6 DNS. Game mode
-still rejects LAN IPv6 forwarding through WARP; Blinkit now uses tested exact
+`filter_aaaa`. Existing UCI toggles alone do not suppress IPv6 DNS. Game mode no
+longer toggles the option (audit F41); it hides IPv6 by rejecting LAN IPv6
+forwarding through WARP, which clients treat as a hard error and fall back to
+IPv4 at once; Blinkit now uses tested exact
 local zones and refreshed IPv4 hosts instead. See
 [[blinkit-ipv6-vpn-warning-2026-09-19]]. Clients using independent encrypted DNS
 can bypass the router's domain-specific policy.

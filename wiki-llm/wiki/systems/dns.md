@@ -66,7 +66,8 @@ IPv4 hosts plus exact local DNS zones. AAAA replies are NOERROR/NODATA while
 other domains retain IPv6. `refresh_blinkit_dns.sh` queries upstream directly,
 installs WAN routes first, and publishes only changed records. See
 [[../bugs/blinkit-ipv6-vpn-warning-2026-09-19]] for verification and limitations.
-The deployed dnsmasq 2.85 does not implement the `filter_aaaa` UCI option.
+The deployed dnsmasq 2.85 does not implement the `filter_aaaa` UCI option, so
+it stays 0 in every mode; game mode no longer toggles it.
 
 ## Sources
 

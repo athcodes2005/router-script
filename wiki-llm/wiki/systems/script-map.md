@@ -4,6 +4,12 @@
 
 - `paths.sh`: chooses persistent log/diagnostic paths, falling back to `/tmp`
   when the project filesystem is at least 97 percent used or unwritable.
+- `defaults.sh`: every default that more than one script uses; sourced after
+  `.env`, so `.env` wins.
+- `lock.sh`: the maintenance lock, with an owner record (PID, start time,
+  uptime, name); never taken from a live owner by age.
+- `firewall_hook.sh`: fw3 include that starts a health check right after fw3
+  rebuilds the firewall.
 - `login.sh`: probes connectivity and performs safe IITB portal login recovery,
   with curl `--resolve` pins for portal/SSO when campus DNS is unavailable.
 - `tunnel.sh`: starts or reuses WARP and installs full-tunnel routing state.
@@ -23,7 +29,10 @@
   periodic maintenance jobs.
 - `rotate_logs.sh`: bounds logs by size and retention count.
 - `rotate_tunnel_ip.sh`: registers a new WARP identity with verified rollback.
-- `sync_to_router.sh`: locked, staged deployment with bounded SSH/SCP sessions.
+- `sync_to_router.sh`: staged deployment with a SHA-256 manifest and bounded
+  SSH/SCP sessions; `promote_staged.sh` then promotes the set on the router
+  under the lock.
+- `install_firewall_hook.sh`: registers the fw3 include `firewall.router_script`.
 - `sync_from_router.sh`: bounded, staged, validated pull of mutable router state.
 - `download_emergency_diagnostics.sh`: bounded remote capture and download.
 
@@ -35,6 +44,8 @@
 - `dns_flow.sh`: displays resolver configuration and tests important lookups.
 - `monitor_game_network.sh`: read-only, bounded latency monitor for game
   sessions (optional `PHONE_IP`); logs via `paths.sh`.
+- `measure_load_latency.sh`: round trips through WARP idle and under upload and
+  download load (`logs/latency.log`); holds the lock, changes nothing.
 
 ## Data and executable files
 

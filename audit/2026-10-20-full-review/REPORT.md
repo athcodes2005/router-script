@@ -236,6 +236,14 @@ plausible but unproven.
 | F32 | Low | Confirmed | Correctness | `tunnel.sh:212-261` (before `dcc7e10`) | Each start deleted every campus/public `/32` before re-resolving: live traffic moved to WARP on the reuse path, and failed lookups lost their routes (from 09-19 §6; §18) |
 | F33 | Low | Confirmed (latent) | Robustness | `tunnel.sh:164` (before `e7131a4`) | WAN gateway taken from the first non-`tun0` default on any interface (§18) |
 | F34 | Low | Confirmed | Failure handling | `tunnel.sh:222-261` (before `dcc7e10`) | One failed optional host route aborted the WARP start under `set -e` (§18) |
+| F35 | Low | Confirmed (code) | Robustness (Rust) | `tunnel.rs` TUN writes (before `fc5b627`) | TUN write errors were ignored: a vanished device swallowed every downstream packet while the session looked healthy (09-19 §4; §19) |
+| F36 | Low | Confirmed | Test coverage (Rust) | `tests/tunnel_mtu.rs` (before `5dd83dd`) | The MTU and pipeline tests exercised copies of the production code (09-19 §3; §19) |
+| F37 | Low | Confirmed | Observability | `tunnel.sh` launch; `tunnel.rs` events | The client's output was discarded, so nothing recorded why a session ended (09-19 §3, A6; §19) |
+| F38 | Low | Confirmed (fw3 source) | Failure handling | fw3 `restart`/`flush` | Every rule router-script adds was gone until the next tick after a firewall restart (A3; §19) |
+| F39 | Low | Confirmed (sandbox, BusyBox) | Concurrency | `ensure_network.sh` lock (before `0d9284e`) | Live game-mode and rotation locks were taken over by age; an ownerless lock dated in the future was never taken over (09-19 §5, F21; §19) |
+| F40 | Low | Confirmed (sandbox) | Deployment | `sync_to_router.sh` (before `58e02aa`) | Promotion trusted every transfer and could stop halfway; its lock had no live owner (09-19 §5; §19) |
+| F41 | Low | Confirmed | Correctness | `game_mode.sh`, `configure_lan_ipv6.sh` (before `c394454`) | Game mode toggled `filter_aaaa`, which dnsmasq 2.85 ignores, and reloaded dnsmasq each time (known issue; §19) |
+| F42 | Low | Confirmed (dash, BusyBox) | Concurrency | `game_mode.sh`, `rotate_tunnel_ip.sh` (before `b7ddaca`) | An SSH drop could still skip cleanup: a child killed by the hangup was reported on the closed terminal, and SIGPIPE killed the script (F19 follow-up; §19) |
 
 ### F01 — Wi-Fi passphrases in every diagnostic (High, Confirmed)
 
@@ -546,14 +554,14 @@ plausible but unproven.
 
 | From | Item | Relation to this review |
 |---|---|---|
-| 09-19 §3 | Client stdout/stderr discarded, so no disconnect reasons | Still open; see improvement A6 |
-| 09-19 §3 | MTU integration tests copy production logic | Still open |
-| 09-19 §4 | ICMPv4 quote fixed at 28 bytes; TUN write errors ignored; CONNECT stream close ignored | Still open; F16 adds the idle-timeout angle |
-| 09-19 §5 | Non-transactional promotion; ownerless locks reclaimable after 180 s | Still open; F19 and F21 add the HUP and clock angles |
+| 09-19 §3 | Client stdout/stderr discarded, so no disconnect reasons | Fixed on the branch as F37 (A6), not deployed (§19) |
+| 09-19 §3 | MTU integration tests copy production logic | Fixed on the branch as F36, not deployed (§19) |
+| 09-19 §4 | ICMPv4 quote fixed at 28 bytes; TUN write errors ignored; CONNECT stream close ignored | TUN writes: F35; stream close and idle timeout: F16 (§19, not deployed). The 28-byte ICMPv4 quote is still open |
+| 09-19 §5 | Non-transactional promotion; ownerless locks reclaimable after 180 s | Fixed on the branch as F40 and F39, with F42 for the hangup case (§19, not deployed) |
 | 09-19 §6 | `tunnel.sh` clears dynamic routes before resolving and doesn't share the refresh code | Fixed as F32–F34 (§18). The two scripts still resolve the names separately, but no longer conflict: `tunnel.sh` only adds. |
-| 09-19 §2 | Loaded latency / SQM unmeasured | Still open; F10 is the in-tunnel counterpart |
-| google-wan.md | Firewall resets leave a gap until the next tick | F03 shows the FORWARD ACCEPTs are not covered at all |
-| known-issues | dnsmasq 2.85 ignores `filter_aaaa`, so game-mode AAAA filtering is ineffective | Unchanged |
+| 09-19 §2 | Loaded latency / SQM unmeasured | Still unmeasured; `measure_load_latency.sh` measures it (§19.7). F10 is the in-tunnel counterpart |
+| google-wan.md | Firewall resets leave a gap until the next tick | F03 covered the FORWARD ACCEPTs; F38 closes the gap (§19, not deployed) |
+| known-issues | dnsmasq 2.85 ignores `filter_aaaa`, so game-mode AAAA filtering is ineffective | The dead toggle is gone (F41, §19, not deployed); game mode's IPv6 REJECT is what hides IPv6 |
 
 ## 5. Considered and decided NOT bugs
 
@@ -621,6 +629,10 @@ plausible but unproven.
 | A9 | Platform-assumption check once per boot: WAN metric, radio section names, required binaries (`ipset`, `iptables`, `conntrack`, `jsonfilter`, `timeout`) | Clear "platform changed" errors after firmware updates | Small | Low | Yes |
 | A10 | Documented mark-bit and rule-priority allocation, including GL.iNet's | Prevents future collisions (F24) | Docs only | None | Yes |
 
+**Status on 2026-10-22 (§19, on the branch, not deployed):** A1, A2, A3 (F38),
+A4 (F39, F40), A6 (F37), A7 (F10, F16–F18) and A9 are done. A5 was done by F01
+and F06, and A8 is `tests/sandbox.py`. A10 is still open.
+
 Not recommended: a procd respawn service for `usque-rs`. The 30 s watchdog plus
 readiness gating already covers crashes, and respawning without the
 route/readiness logic would bypass it.
@@ -660,10 +672,12 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F09 | **Fixed** | `a883824` | Rotation requires `warp=on`/`warp=plus` from Cloudflare's trace through `tun0`, for both families. |
 | F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
-| F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
+| F10, F16, F17, F18 | **Fixed, not deployed** | `ae4a630`, `084e40b`, `f7c5de3`, `21ba75e`, `6dd2346` | Deferred as batch 5, then done on 2026-10-22 once Rust builds were allowed (§19.1). F10 stays off by default until it is measured. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
 | F31 | **Deployed** 2026-10-22 08:39 | `3b3a183` | Found in the 2026-10-22 validation and deployed later that morning (§16). |
 | F32–F34 | **Deployed** 2026-10-22 15:35 | `402b9ac` (tests), `e7131a4`, `dcc7e10` | Fixed test-first, then deployed and verified with a manual start (§18). |
+| F27 (Rust half), F35–F42 | **Fixed, not deployed** | §19.1–§19.2 | Carried over from the 09-19 audit or found on 2026-10-22, fixed test-first on `open-issues-2026-10-22`. |
+| A1, A2, A9 | **Done, not deployed** | `13f0642`, `fec160d`, `fec17de` | Shared defaults, stage-isolation tests, platform check (§19.2). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1633,6 +1647,7 @@ folders that no longer exist. Use the previous versions from git instead:
 | F12 fix (§15.4) | `refresh_blinkit_dns.sh` | `6142896` |
 | F31 (§16.5) | `tunnel.sh`, `ensure_network.sh` | `2ae4750` |
 | F32–F34 (§18.5) | `tunnel.sh` | `49dfedd` |
+| Open issues (§19.6, once deployed) | the 20 replaced files, including `usque-rs`; remove the 6 new files | `72e3abd` |
 
 To roll back:
 1. On the Mac, export the files into an empty folder:
@@ -1768,3 +1783,287 @@ the lock.
 the branch, and the directory holds only its 32 live entries.
 
 **Rollback:** stage `tunnel.sh` from `49dfedd` (§17.3).
+
+## 19. Open issues fixed on 22 October 2026 (branch `open-issues-2026-10-22`, not deployed)
+
+You asked me to tackle the open issues and the optional housekeeping, and
+allowed changes to the Rust binary. Nothing here is deployed: §19.6 is the
+checklist, and it needs your permission. Each finding is one commit, and its
+test failed before the fix.
+
+### 19.1 Rust client (`usque-rs`)
+
+This covers the audit's A7, the Rust half of F27 and two items carried over
+from the 09-19 audit.
+
+| ID | Commit | Change |
+|---|---|---|
+| F27 (Rust) | `b52cb99` | The never-set `pending_pkt` and its dead replay block are gone. |
+| F35 | `fc5b627` | **From 09-19 §4.** Both TUN writes ended in `.ok()`, so a vanished device swallowed every downstream packet while the session looked healthy. A failure now counts as a drop, and 32 in a row end the session. |
+| F18 | `6dd2346` | The key and certificate PEM files are deleted as soon as quiche loads them. SIGTERM skips destructors, so each stop probably left the private key in `/tmp`. |
+| F17 | `21ba75e` | Backoff depends on how long the session was connected. Ten seconds or more counts as stable: a clean close reconnects at once, and a failure restarts at 1 s. A shorter session keeps doubling the delay to 30 s, so a server that accepts and then drops sessions cannot cause a reconnect storm. |
+| F16 | `f7c5de3` | The idle timeout is three keepalives (90 s), and a timed-out session ends as an error. A finished CONNECT stream ends the session cleanly; a reset ends it as an error carrying the code. |
+| F36 | `5dd83dd` | **From 09-19 §3.** The 19 MTU and pipeline tests ran against copies of the production code. They are now unit tests of the real functions, and a mutation check (no TTL decrement) makes them fail. |
+| F10 | `ae4a630`, `084e40b` | `--tun-backpressure N` pauses TUN reads while N datagrams wait to be sent. `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` is set. **It is off by default.** A TUN device may drop at its ring instead of pushing back on the qdisc, so the benefit is unproven until measured (§19.7). |
+| F37 | `9549947` | **A6.** With `--syslog`, the client sends these events to `/dev/log`, where `logread -e usque-rs` shows them: connecting, connected, the end of each session with its error, the reconnect delay, and fatal errors. The socket never blocks, writes to stderr never panic, and the per-second status line is drawn only on a terminal. `tunnel.sh` passes `--syslog` only when the binary lists it, so the rollback binary still starts. |
+
+**Checks.** The pinned toolchain image is the one that reproduced the
+deployed binary byte for byte (rustc 1.95.0).
+- 76 unit and 4 integration tests pass in it.
+- `cargo fmt --check` and `clippy --all-targets -D warnings` are clean,
+  including the pedantic, nursery and cargo lint groups.
+- The candidate binary is described in §19.5.
+
+### 19.2 Shell scripts
+
+| ID | Commit | Change |
+|---|---|---|
+| F38 | `643078a` | **A3.** `fw3 restart` and `fw3 flush` (also `/etc/init.d/firewall stop`) flush every chain and delete every user chain, so all of router-script's rules were gone until the next tick. `fw3 reload` keeps them, because it deletes only rules tagged `!fw3` (checked in firewall3's source). `firewall_hook.sh` is now an fw3 script include, `firewall.router_script`, with `reload 1`. After fw3 rebuilds, and if a WARP client is running, it starts a health check, which already restores every rule involved. The check runs detached and 2 s later, because fw3 holds its lock until its includes return. `install_firewall_hook.sh` registers the include, and `bootstrap_router.sh` runs it. |
+| F39 | `0d9284e` | **A4.** One helper, `lock.sh`, serves every lock holder. The owner file records PID, process start time, uptime at acquisition and script name. The lock is taken over when its owner is dead, when its PID now belongs to another process, or after 600 s of uptime (a hung owner). Before this, ensure took over a live game-mode or rotation lock by clock age. An ownerless lock dated in the future (from a reboot before NTP syncs) was never taken over, so every tick skipped. Takeovers are serialized by a second directory. The lock path is unchanged. |
+| F40 | `58e02aa` | **A4.** `sync_to_router.sh` stages first, with a SHA-256 manifest. `promote_staged.sh` then runs on the router as one process. It verifies every staged file and promotes nothing on a mismatch. It takes the lock as a live owner, stops the tunnel, and moves the files with sourced helpers first. It ignores SIGHUP and SIGPIPE, so a dropped SSH connection cannot stop it halfway. |
+| F42 | `b7ddaca` | **New.** F19's HUP traps were incomplete. When a foreground child that shares the closed terminal dies of the hangup, dash and BusyBox ash report "Hangup" on that terminal. The write raises SIGPIPE, which kills the script before any trap runs. Over non-pty SSH, two scripts were affected: a rotation dropped during its WARP probe never restored the old registration and left `config.json.previous`, which blocks later rotations; game mode left the lock and a half-applied policy. Both scripts now trap PIPE as well. The failure was reproduced, and the fix confirmed, under dash and BusyBox 1.33.1. |
+| F41 | `c394454` | **Known issue closed.** Game mode toggled `filter_aaaa` and reloaded dnsmasq each time, but dnsmasq 2.85 ignores the option, so nothing was ever filtered. IPv6 is in fact hidden by game mode's REJECT: ICMPv6 port unreachable is a hard error, so clients fall back to IPv4 at once. `filter_aaaa` is now 0 in every mode, and the LAN IPv6 check expects 0 in game mode too. |
+| A2 | `fec160d` | Already achieved by F02: LAN IPv6 and Google policy failures only log. New tests pin this; no code changed. |
+| A9 | `fec17de` | A check that runs once per boot, after the WAN checks. It covers the required tools (`conntrack` optional), the radio sections, a WAN default metric that would beat WARP's 5 (skipped in game mode), and the fw3 include. It logs "Platform check passed." or one WARNING naming every problem, and changes nothing. |
+| Tool | `823d8c7` | `measure_load_latency.sh`; see §19.7. |
+| A1 | `13f0642` | `defaults.sh` holds the 39 defaults that 2 to 9 scripts each defined: 125 copies, all still equal, plus 6 inline copies of the same values. 17 scripts source it after `.env`, so `.env` still wins. Tests pin every value, and fail when a default reappears in two scripts. |
+
+A5 (diagnostics policy) was done by F01 and F06, and A8 is
+`tests/sandbox.py`. A10 (mark-bit allocation) is docs-only and still open.
+
+### 19.3 Tests and checks
+
+- **Shell tests.** There were 89 tests at the start of the day; there are 133
+  now. For every commit, both suites ran in full on their own copy of the
+  tree, once under macOS `sh` and once under `dash` as `sh`.
+- **The §16.4 oddity.** It has a likely cause: `tests/sandbox.py` runs scripts
+  under dash whenever dash is installed, so both "modes" exercised dash inside
+  the sandbox.
+- **Real BusyBox.** These ran in a container with BusyBox 1.33.1 ash and a
+  real `/proc` (the router has 1.33.2):
+  - 20 lock checks: identity, takeovers, waiting, and 20 contended races,
+    each with exactly one winner;
+  - the promotion, with a good stage and a corrupt one;
+  - the hangup cases behind F42.
+- **Mutation checks.**
+  - Without its PIPE trap, the promotion stops before moving anything.
+  - With the syslog formatting and delivery stubbed out, the event tests fail.
+- **Shellcheck.** Findings are unchanged except for the expected "not
+  following" notes (SC1091) for the new sourced helpers, and one SC2153
+  note, which is marked where it applies.
+- **Cost.** A healthy tick spawns 295 processes, against 294 on `main`. Recording the
+  lock owner adds two `awk` calls, and reading the owner file no longer needs `cat`.
+
+### 19.4 Invariants
+
+- **Unchanged:**
+  - routes and DNS: defaults through `tun0`; campus prefixes, the WARP
+    endpoints and the campus `/32`s on `eth0`; DNS strict order and the
+    campus forward list;
+  - IPv6 and DNS settings: `ra_default=2`, `block_ipv6=false`, ULA with
+    NAT66, MSS clamping;
+  - Wi-Fi: country IN, HE20 and HE80;
+  - files and rollback: secret file modes and atomic registration writes;
+    the rollback binary;
+  - bounded recovery. The platform check and the hook only log or trigger
+    the existing check, and the lock's 600 s hold limit adds a bound where
+    there was none.
+- **`filter_aaaa=0`** now also holds in game mode.
+
+### 19.5 Candidate binary (`688e216`)
+
+- **Build.** Built twice from clean in the pinned image; the two builds are
+  byte-identical: sha256 `0d1496d353d952b814948cf6479521603a4e0c97de0b6437fda1aacf65a78fef`, 6,035,280 bytes. `--help` lists `--syslog`
+  and `--tun-backpressure`.
+- **Branch.** It replaces the tracked `usque-rs` on this branch only.
+- **Rollback.** `usque-rs-upstream-v0.1.0` stays as the rollback binary, and
+  the deployed `1ee312fc…` stays in git (`main`).
+
+### 19.6 Deployment checklist (needs your permission)
+
+**What changes.** Twenty files are replaced and six are new. `.env`,
+`config.json`, `paths.sh`, the data files, `install_cron_pipeline.sh`,
+`download_emergency_diagnostics.sh` and the rollback binary are untouched.
+- **Replaced:** `bootstrap_router.sh`, `collect_diagnostics.sh`,
+  `configure_dns.sh`, `configure_lan_ipv6.sh`, `configure_wifi.sh`,
+  `diagnose.sh`, `dns_flow.sh`, `ensure_network.sh`, `game_mode.sh`,
+  `google_wan_policy.sh`, `login.sh`, `monitor_game_network.sh`,
+  `refresh_blinkit_dns.sh`, `rotate_logs.sh`, `rotate_tunnel_ip.sh`,
+  `stop_tunnel.sh`, `tunnel.sh`, `PROJECT_CONTEXT.md`, `README.md` and
+  `usque-rs`.
+- **New:** `defaults.sh`, `lock.sh`, `firewall_hook.sh`,
+  `install_firewall_hook.sh`, `promote_staged.sh` and
+  `measure_load_latency.sh`.
+
+**Two rules for this deployment only.**
+- **Take the lock the old way.** Until its file is replaced, the cron health
+  check runs the old lock code. That code treats an owner file it cannot
+  parse as stale, so it would take over a lock held by `promote_staged.sh`.
+  Hold the lock with an ownerless `mkdir` instead; old and new code both
+  respect that for 180 s. Later deployments can use `sync_to_router.sh`.
+- **Turn game mode off first** (F41). A router left at `filter_aaaa=1` would
+  get one LAN IPv6 repair, which reloads the LAN.
+
+**0. Pre-flight (read-only, on the router).**
+
+```sh
+cd /root/router-script
+sha256sum bootstrap_router.sh collect_diagnostics.sh configure_dns.sh configure_lan_ipv6.sh configure_wifi.sh diagnose.sh dns_flow.sh ensure_network.sh game_mode.sh google_wan_policy.sh login.sh monitor_game_network.sh refresh_blinkit_dns.sh rotate_logs.sh rotate_tunnel_ip.sh stop_tunnel.sh tunnel.sh PROJECT_CONTEXT.md README.md usque-rs
+ls -d .ensure_network.lock .stage-oi 2>/dev/null; [ ! -f /tmp/router-script-game-mode ] && echo "game mode off"
+uci -q get dhcp.@dnsmasq[0].filter_aaaa; uci -q show firewall.router_script || echo "no include yet"
+pidof usque-rs; df -h /overlay /tmp
+grep -h 'Blinkit DNS: records changed' logs/ensure.log* logs/tunnel.log* 2>/dev/null | cut -c1-16 | sort    # §19.7
+```
+
+- **Hashes.** Every hash must equal `git show main:<file> | shasum -a 256` on
+  the Mac (`usque-rs`: `1ee312fc…`).
+- **State.** Expect no lock and no stage, game mode off, `filter_aaaa` 0 and
+  no include yet.
+- **Stop if** anything differs.
+
+**1. Stage from the Mac** (file names written out; zsh does not split
+variables):
+
+```sh
+cd /Users/atharva/projects/router-script
+tar -cf - defaults.sh lock.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh bootstrap_router.sh collect_diagnostics.sh configure_dns.sh configure_lan_ipv6.sh configure_wifi.sh diagnose.sh dns_flow.sh ensure_network.sh game_mode.sh google_wan_policy.sh login.sh monitor_game_network.sh refresh_blinkit_dns.sh rotate_logs.sh rotate_tunnel_ip.sh stop_tunnel.sh tunnel.sh PROJECT_CONTEXT.md README.md usque-rs | ssh -o BatchMode=yes root@192.168.8.1 'umask 077; cd /root/router-script && mkdir .stage-oi && tar -xf - -C .stage-oi && cp -p usque-rs .stage-oi/usque-rs.previous'
+shasum -a 256 defaults.sh lock.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh bootstrap_router.sh collect_diagnostics.sh configure_dns.sh configure_lan_ipv6.sh configure_wifi.sh diagnose.sh dns_flow.sh ensure_network.sh game_mode.sh google_wan_policy.sh login.sh monitor_game_network.sh refresh_blinkit_dns.sh rotate_logs.sh rotate_tunnel_ip.sh stop_tunnel.sh tunnel.sh PROJECT_CONTEXT.md README.md usque-rs
+```
+
+The previous binary is copied into the stage on the router, so a binary
+rollback is a local copy.
+
+**2. Verify on the router.**
+
+```sh
+cd /root/router-script
+for f in .stage-oi/*.sh; do sh -n "$f" || echo "SYNTAX FAIL $f"; done
+sha256sum .stage-oi/*      # equal to the Mac's list; usque-rs.previous is 1ee312fc...
+.stage-oi/usque-rs nativetun --help | grep -c -e --syslog -e --tun-backpressure    # 2
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+promote() { for f in "$@"; do cp ".stage-oi/$f" "$f.new" && chmod 755 "$f.new" && mv "$f.new" "$f"; done; }
+```
+
+**3. Promote the scripts.** This uses the ownerless lock, puts the helpers
+first and registers the include before releasing the lock:
+
+```sh
+take_lock && {
+  promote defaults.sh lock.sh
+  promote firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh bootstrap_router.sh collect_diagnostics.sh configure_dns.sh configure_lan_ipv6.sh configure_wifi.sh diagnose.sh dns_flow.sh ensure_network.sh game_mode.sh google_wan_policy.sh login.sh monitor_game_network.sh refresh_blinkit_dns.sh rotate_logs.sh rotate_tunnel_ip.sh stop_tunnel.sh tunnel.sh
+  cp .stage-oi/PROJECT_CONTEXT.md .stage-oi/README.md .
+  sh install_firewall_hook.sh
+  sync
+  rmdir .ensure_network.lock
+} || echo "lock busy: nothing changed, retry"
+```
+
+**4. Verify the scripts** (WARP keeps running):
+- **Next tick (≤ 30 s).** `tail -n 5 logs/ensure.log` shows "Platform check
+  passed." (or one WARNING to read) and "Health check passed.".
+- **Include.** `uci show firewall.router_script` shows the type `script`,
+  the hook's path and `reload '1'`.
+- **No disruption.** WARP keeps its PID. The `tun0` drop rules, NAT and
+  FORWARD rules are unchanged.
+
+**5. Restart WARP on the new binary.** Expect an outage of 5–25 s:
+
+```sh
+take_lock && {
+  sh stop_tunnel.sh
+  cp .stage-oi/usque-rs usque-rs.new && chmod 755 usque-rs.new && mv usque-rs.new usque-rs
+  sh tunnel.sh
+  rmdir .ensure_network.lock
+}
+```
+
+- **Start.** `logs/tunnel.log` shows "[SUCCESS] Full tunnel active", with no
+  "cannot log connection events" warning.
+- **Events.** `logread -e usque-rs` shows "Config loaded", "[connecting]" and
+  "[connected] MASQUE tunnel established".
+- **Binary.** `sha256sum usque-rs` prints `0d1496d3…`, the candidate (§19.5).
+- **Health.** The next ticks pass, and the Cloudflare trace through `tun0`
+  reports `warp=on`.
+- **Stop rule.** If the start fails, restore the binary at once, then report:
+
+  ```sh
+  take_lock && { sh stop_tunnel.sh; cp .stage-oi/usque-rs.previous usque-rs.new && chmod 755 usque-rs.new && mv usque-rs.new usque-rs; sh tunnel.sh; rmdir .ensure_network.lock; }
+  ```
+
+**6. Optional: exercise the hook.** Run `fw3 reload`. It keeps
+router-script's rules and runs the include. Within a few seconds,
+`logs/ensure.log` shows "Starting health check: the firewall was rebuilt."
+and then "Health check passed.". A reload rebuilds only fw3's own chains,
+which also happens on every WAN DHCP event. For a few milliseconds the
+chain policies are DROP.
+
+**7. Optional: measure loaded latency** (§19.7).
+
+**8. Wrap up.**
+- Remove `.stage-oi` once the new binary is accepted.
+- Check that all deploy-set files match the branch.
+- Merge the branch into `main`, so `main` matches the router again.
+
+**Rollback.**
+- **Scripts.** On the Mac, export the previous versions with
+  `git archive main <files> | tar -x -C <folder>`. Stage them and promote
+  them under an ownerless lock, as above. Then delete the six new files: the
+  old scripts do not source them.
+- **Include.** Run
+  `uci delete firewall.router_script && uci commit firewall`.
+- **Binary.** Use the stop-rule command in step 5.
+
+### 19.7 Loaded latency (F10) and Blinkit route retention
+
+**F10 measurement.** Run this after step 5, with your permission. It takes
+about five minutes and includes two short WARP restarts. Each run saturates
+the uplink and then the downlink for about 20 s, which other LAN users will
+notice.
+1. **Baseline.** Run `sh measure_load_latency.sh 20`. It appends idle,
+   upload and download lines to `logs/latency.log`.
+2. **With backpressure.**
+   - Restart WARP with backpressure on:
+     `take_lock && { sh stop_tunnel.sh; WARP_TUN_BACKPRESSURE=64 sh tunnel.sh; rmdir .ensure_network.lock; }`
+   - Measure again. The log line names `--tun-backpressure 64`.
+   - Optionally, try 256 the same way.
+3. **Restore the default.** Run the same restart without the variable. A
+   healthy client is never restarted by the health check, so the setting
+   stays until you restart.
+
+**Decision rule.**
+- **Adopt N as the default only if:**
+  - the upload phase's median round trip falls clearly, by a third or at
+    least 50 ms;
+  - upload throughput stays within about 10 %;
+  - the download phase is unchanged;
+  - and this holds in two runs, since campus load varies.
+- **Otherwise,** keep it off.
+
+**Blinkit route retention (open since §15.2).** The question is whether a
+replaced address's route should stay for a while, for clients that cached the
+old answer. Pre-flight step 0 counts F13's "records changed" lines. They show
+how often the answers change; F13 has logged since 22 October 00:42.
+- **Changes are rare** (a few a day): immediate removal is fine. A stale
+  cached answer only lasts its DNS TTL.
+- **Changes come several times an hour:** keep the previous generation's
+  routes for an hour. That would be a small change to
+  `refresh_blinkit_dns.sh`.
+
+### 19.8 What I could not verify
+
+- **Nothing ran on the router.** The new binary has run only `--help` in the
+  build container. Its connection behaviour, and whether logd accepts its
+  `<priority>tag[pid]: message` datagrams, are checked in step 5.
+- **F38.** The fw3 behaviour comes from upstream firewall3, not from the
+  GL.iNet build. I don't know whether GL.iNet's own includes remove foreign
+  rules on a plain reload; the hook runs then too, so they would still be
+  restored.
+- **BusyBox.** The tests ran BusyBox 1.33.1 from a container. The router's
+  1.33.2 may be configured with different applets.
+- **F16 versus Cloudflare's timeout.** It is unknown how the 90 s idle
+  timeout interacts with Cloudflare's own idle timeout; QUIC uses the shorter
+  of the two.
+- **F10** is unmeasured (§19.7).
+- **Old key files.** PEM files that earlier stops left in `/tmp` are not
+  checked. `/tmp` is RAM-backed, so a reboot clears them; removing them
+  earlier is your call.

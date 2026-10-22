@@ -32,6 +32,12 @@ Campus-specific domains (`internet.iitb.ac.in`, `sso.iitb.ac.in`,
 - `login.sh` — captive portal authentication
 - `tunnel.sh` — start WARP as the full public IPv4/IPv6 gateway
 - `stop_tunnel.sh` — stop tunnel and revert routes
+- `firewall_hook.sh` — fw3 include: a health check right after fw3 rebuilds the firewall
+
+### Shared helpers (sourced)
+- `paths.sh` — log and diagnostics locations
+- `defaults.sh` — every default more than one script uses (after `.env`, so `.env` wins)
+- `lock.sh` — the maintenance lock: owner-aware, never taken from a live owner by age
 
 ### Configuration scripts
 - `configure_wifi.sh` — enforce India regulatory domain and stable channel widths
@@ -39,6 +45,7 @@ Campus-specific domains (`internet.iitb.ac.in`, `sso.iitb.ac.in`,
 - `configure_lan_ipv6.sh` — enable LAN IPv6 advertisements and DHCPv6
 - `ensure_network.sh` — health-check pipeline (DNS, login, tunnel, IPv6)
 - `install_cron_pipeline.sh` — install recurring cron jobs
+- `install_firewall_hook.sh` — register `firewall_hook.sh` as fw3 include `firewall.router_script`
 - `bootstrap_router.sh` — one-shot setup entrypoint
 
 ### Diagnostic scripts
@@ -46,9 +53,12 @@ Campus-specific domains (`internet.iitb.ac.in`, `sso.iitb.ac.in`,
 - `collect_diagnostics.sh` — save timestamped diagnostic report (`--emergency` for emergency prefix)
 - `dns_flow.sh` — show active DNS listeners, config, and live tests
 - `download_emergency_diagnostics.sh` — from Mac: run emergency capture on router and download
+- `measure_load_latency.sh` — round trips through WARP idle and under upload/download load
+- `logread -e usque-rs` — the WARP client's connection events and why sessions ended
 
 ### Utility scripts
-- `sync_to_router.sh` — push local files to router
+- `sync_to_router.sh` — push local files to router (staged with a manifest, then `promote_staged.sh`)
+- `promote_staged.sh` — runs on the router: verifies the stage, promotes it under the lock
 - `sync_from_router.sh` — pull runtime state from router
 - `rotate_logs.sh` — rotate logs and trim old diagnostics
 - `rotate_tunnel_ip.sh` — re-register WARP for fresh IP

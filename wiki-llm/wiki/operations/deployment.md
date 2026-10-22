@@ -5,17 +5,28 @@ is `root@192.168.8.1:/root/router-script`; environment overrides are supported.
 
 ## Safe synchronization
 
-The sync process checks whether the tunnel is running, acquires the same remote
-maintenance lock used by health checks. It uploads the complete deployment set
-into a private mode-`0700` staging directory while WARP remains running. Only
-after successful transfer does it stop WARP for promotion.
+The sync process records whether the tunnel is running, then uploads the
+complete deployment set into a private mode-`0700` staging directory while WARP
+keeps running, with a SHA-256 manifest of every file. Staging needs no lock.
 
-Only after every transfer succeeds are staged files moved into the live
-directory. Scripts, the executable and the rollback binary
-`usque-rs-upstream-v0.1.0` receive mode `0755`; `.env` and `config.json` receive
-mode `0600`. The promotion ends with `sync`, so a power cut right after a deploy
-cannot leave zero-length files. A trap removes staging state, releases the
-lock, and restarts a previously running tunnel after failures.
+`promote_staged.sh` then runs on the router as one process (audit F40):
+- it checks every staged file against the manifest and promotes nothing on a
+  mismatch;
+- it takes the maintenance lock through `lock.sh`, so the lock's owner is alive
+  for the whole step and no health check takes it over by age; a busy lock
+  ends it with status 75 after `SYNC_LOCK_WAIT` (30 s);
+- it stops WARP and moves the files in manifest order, sourced helpers first;
+- scripts, the executable and the rollback binary `usque-rs-upstream-v0.1.0`
+  receive mode `0755`, and `.env` and `config.json` mode `0600`;
+- it ends with `sync`, so a power cut right after a deploy cannot leave
+  zero-length files;
+- it ignores SIGHUP and SIGPIPE and does not stop on a failed write, so a
+  dropped SSH connection cannot end it halfway.
+
+On the Mac, a trap removes staging state and restarts a previously running
+tunnel after failures. The first deployment that introduces `lock.sh` must hold
+the lock the old way, with an ownerless `mkdir`: the old health check treats
+`lock.sh`'s owner file as stale (report section 19.6).
 
 The router copy of `blocked_sites.txt` may be edited independently. Sync refuses
 to overwrite divergent content unless `--force` is explicitly supplied. Use
@@ -29,8 +40,8 @@ router without a registration (first deploy) is not blocked.
 ## First-time bootstrap
 
 `bootstrap_router.sh` runs, in order, `configure_wifi.sh`, `configure_dns.sh`,
-`configure_lan_ipv6.sh`, `install_cron_pipeline.sh`, and one `ensure_network.sh`
-pass. It does not call `login.sh` or `tunnel.sh` directly; that health pass
+`configure_lan_ipv6.sh`, `install_cron_pipeline.sh`, `install_firewall_hook.sh`
+(the fw3 include, [[health-recovery]]) and one `ensure_network.sh` pass. It does not call `login.sh` or `tunnel.sh` directly; that health pass
 performs portal login recovery and starts WARP when required.
 `install_cron_pipeline.sh` installs the twice-per-minute health check plus six-hour log
 rotation and diagnostic snapshot tasks.
@@ -44,10 +55,12 @@ rotation and diagnostic snapshot tasks.
 - Confirm campus destinations use `eth0`.
 - Confirm public IPv4 and IPv6 Cloudflare traces report WARP enabled.
 - Confirm `/tmp` has space and no unintended capture process is running.
+- Confirm `uci get firewall.router_script.path` names `firewall_hook.sh`.
+- Confirm `logread -e usque-rs` shows the client's connection events.
 
 ## Sources
 
-- `../../../sync_to_router.sh`
+- `../../../sync_to_router.sh`, `../../../promote_staged.sh`, `../../../lock.sh`
 - `../../../sync_from_router.sh`
 - `../../../bootstrap_router.sh`
-- `../../../install_cron_pipeline.sh`
+- `../../../install_cron_pipeline.sh`, `../../../install_firewall_hook.sh`

@@ -30,7 +30,9 @@ Other IPv6 destinations retain WARP. IPv6-only Google clients cannot connect.
 sets, and installs only missing rules. Tunnel startup and every health run invoke
 it. DNS configuration creates sets before dnsmasq starts and retains other sets.
 Policy failure is logged separately rather than restarting a working WARP tunnel.
-Firewall resets can leave a gap until the next existing 30-second health run.
+A firewall restart or flush removes the marks and rejects. The fw3 include
+`firewall_hook.sh` starts a health check about two seconds later, which restores
+them; before, the gap lasted until the next 30-second run.
 
 ## Maintenance and limitations
 

@@ -73,8 +73,11 @@ Target behavior:
 - Portal recovery requires two failed direct probes and performs three bounded
   post-token checks before logout. Tunnel health uses one pre-restart result and
   one post-restart result, avoiding contradictory flapping-probe decisions.
-- Deployments use a router maintenance lock and private staging directory, so a
-  failed transfer leaves the installed set intact and restores a prior tunnel.
+- Deployments stage into a private directory with a SHA-256 manifest.
+  `promote_staged.sh` then promotes the set on the router only if every file
+  checks out, as the live owner of the maintenance lock, and a dropped SSH
+  connection cannot stop it halfway. A failed transfer leaves the installed set
+  intact and restores a prior tunnel.
 - WARP registration rotation refuses to overwrite prior recovery state and
   restores the previous registration/tunnel if failure or interruption occurs.
 
@@ -125,12 +128,16 @@ Target behavior:
 - This exception policy is router-only. Client devices require no host routes or
   network-service-order changes when they use the router connection.
 
-### Stale lock file (2026-03-16)
+### Stale lock file (2026-03-16, reworked 2026-10-22)
 
-- `ensure_network.sh` uses a `mkdir`-based lock to prevent concurrent runs.
-- The lock records its owning PID. A live health-check process is never evicted;
-  dead recorded owners recover immediately and ownerless maintenance locks must
-  be older than 180 seconds before recovery.
+- Every script that changes routing or firewall state takes one `mkdir` lock,
+  `.ensure_network.lock`, through `lock.sh`.
+- The owner file records PID, process start time, uptime and script name. A live
+  owner is never evicted by age; a dead one, or a PID that now belongs to another
+  process, is taken over at once; an owner holding it for 600 s of uptime is
+  taken over as hung.
+- Only a lock that records no owner (taken by hand) still ages by the clock:
+  180 seconds, or at once if it is dated in the future after a clock reset.
 
 ### Tunnel teardown on persistent internet failure (2026-03-18)
 
@@ -250,3 +257,21 @@ MASQUE edge desynchronized the second fragment, causing `SSL_ERROR_BAD_MAC_READ`
 `tunnel.sh`, `stop_tunnel.sh`, and `ensure_network.sh` now install and maintain
 bidirectional MSS clamping (`--set-mss 1240` IPv4, `--set-mss 1220` IPv6 on
 `-i tun0`).
+
+## Client events, firewall hook and locking — 2026-10-22
+
+- `usque-rs --syslog` (passed by `tunnel.sh` when supported) logs connection
+  events and why each session ended: `logread -e usque-rs`. The client also
+  detects a dead path (90 s idle timeout), backs off after short sessions,
+  deletes its PEM files once loaded, and ends a session whose TUN writes keep
+  failing.
+- `firewall_hook.sh` (fw3 include `firewall.router_script`, registered by
+  `install_firewall_hook.sh`) starts a health check right after fw3 rebuilds the
+  firewall; `fw3 restart` removes every rule router-script adds.
+- `defaults.sh` holds every default more than one script uses; source it after
+  `.env`. The health check also checks platform assumptions once per boot.
+- Game mode no longer toggles `filter_aaaa` (dnsmasq 2.85 ignores it); its IPv6
+  REJECT is what hides IPv6.
+- `measure_load_latency.sh` measures round trips through WARP under load;
+  `WARP_TUN_BACKPRESSURE` turns on the client's TUN-read backpressure.
+- See `audit/2026-10-20-full-review/REPORT.md` §19.

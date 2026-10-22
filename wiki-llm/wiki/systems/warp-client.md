@@ -14,6 +14,8 @@ HTTP/3 and QUIC.
 - `tunnel.rs`: QUIC/H3 handshake, CONNECT-IP session, retry, stats, and I/O loop.
 - `packet.rs`: IPv4/IPv6 parsing, checksums, and packet rewrite helpers.
 - `icmp.rs`: ICMP Packet Too Big / Fragmentation Needed generation.
+- `events.rs`: connection events on stderr and, with `--syslog`, in the system
+  log.
 
 ## Registration lifecycle
 
@@ -32,10 +34,30 @@ writes a PID readiness marker. `tunnel.sh` waits for that marker before replacin
 the public default routes, and removes partial state if startup fails.
 
 An explicit QUIC ACK-eliciting frame is sent at the configured keepalive period;
-the former timer merely woke the loop and generated no traffic. A scoped task
-guard aborts the statistics task on every disconnect. Reconnect delay grows
-from one to thirty seconds during repeated failures and resets after a session
-that reached readiness.
+the former timer merely woke the loop and generated no traffic. quiche's idle
+timeout is three keepalive periods (90 s by default), so a dead path ends the
+session as an error ("no packets from the server for 90s"). A finished CONNECT
+stream ends the session cleanly; a reset ends it as an error with the code
+(audit F16). A failed TUN write counts as a dropped packet, and 32 consecutive
+failures end the session (F35).
+
+Reconnect delay follows how long the session was connected (F17). Ten seconds or
+more counts as stable: a clean close reconnects at once, and a failure restarts
+the delay at one second. Anything shorter keeps doubling up to thirty seconds,
+so a server that accepts and drops sessions cannot cause a reconnect storm.
+
+With `--syslog`, which `tunnel.sh` passes when the binary lists it, the client
+sends connecting, connected, each session's end with its error, the reconnect
+delay and fatal errors to `/dev/log` (F37): `logread -e usque-rs`. The socket is
+unconnected and non-blocking, so a stopped or busy logd drops messages instead
+of stalling the tunnel, and writes to stderr never panic. The per-second status
+line runs only when stderr is a terminal; a scoped task guard aborts it on every
+disconnect.
+
+`--tun-backpressure N` pauses TUN reads while N datagrams wait in quiche's send
+queue, so the excess waits in the kernel instead (F10). It is off by default,
+and `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` asks: whether it
+lowers latency under load is unmeasured (`measure_load_latency.sh`).
 
 The established-session event loop applies a five-millisecond floor to expired
 quiche timers. Without that floor, a persistent zero-duration loss-recovery
@@ -66,9 +88,13 @@ instead of being sliced or checksummed incorrectly.
 
 ## Build and tests
 
-The deployed artifact targets `aarch64-unknown-linux-musl`. The 2026-08-09 build
-passed formatting, strict Clippy, 44 unit tests, and 23 integration tests under
-the ARM64 Linux target. `tests/tunnel_mtu.rs` checks behavior around tunnel MTU.
+The deployed artifact targets `aarch64-unknown-linux-musl` (sha256 `1ee312fc…`).
+A clean build in the pinned image `messense/rust-musl-cross:aarch64-musl`
+(rustc 1.95.0) reproduces it byte for byte. On the `open-issues-2026-10-22`
+branch the client passes formatting, strict Clippy, 76 unit tests and 4
+integration tests in that image; its candidate binary, commit `688e216`, has sha256 `0d1496d3…`. The packet
+pipeline tests (`src/pipeline_tests.rs`) call the production functions (F36);
+`tests/tunnel_mtu.rs` keeps the TUN-device write tests.
 Native macOS compilation is not a valid test because Linux TUN/netlink APIs are
 required.
 
@@ -78,6 +104,7 @@ required.
 - `../../../usque-rs-optimized/src/config.rs`
 - `../../../usque-rs-optimized/src/register.rs`
 - `../../../usque-rs-optimized/src/tls.rs`
+- `../../../usque-rs-optimized/src/events.rs`
 - `../../../usque-rs-optimized/src/tun_device.rs`
 - `../../../usque-rs-optimized/src/tunnel.rs`
 - `../../../usque-rs-optimized/src/packet.rs`

@@ -685,3 +685,47 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - [[operations/health-recovery]], [[operations/portal-login]], [[systems/host-routes]]
+
+## 2026-10-22 — Fixed the open issues on a branch (not deployed)
+
+- **WARP client** ([[systems/warp-client]]):
+  - F35: a session whose TUN writes keep failing now ends.
+  - F18: the key and certificate PEM files are deleted once loaded.
+  - F17: backoff depends on how long the session was connected.
+  - F16: a 90 s idle timeout, and the CONNECT stream's end is handled.
+  - F36: the pipeline tests run against the production code.
+  - F27: the dead `pending_pkt` is removed.
+  - F10: opt-in `--tun-backpressure`, off by default.
+  - F37: `--syslog`, so `logread -e usque-rs` shows why sessions end.
+- **Scripts:**
+  - F38: the fw3 include `firewall_hook.sh` restores the rules right after a
+    firewall restart ([[flows/boot-and-recovery]]).
+  - F39: `lock.sh` records the lock's owner, so a live owner is never displaced
+    by age.
+  - F40: `promote_staged.sh` checks a manifest, then promotes as one process
+    ([[operations/deployment]]).
+  - F42: PIPE traps, so an SSH drop still runs the cleanup.
+  - F41: game mode no longer toggles `filter_aaaa`
+    ([[bugs/known-issues]]).
+  - A1: `defaults.sh` holds the shared defaults.
+  - A2: isolation tests.
+  - A9: a once-per-boot platform check.
+  - `measure_load_latency.sh`.
+- **Checks:**
+  - 133 shell tests pass under `sh` and `dash`, and 76 + 4 Rust tests pass in
+    the pinned image.
+  - The lock, the promotion and the hangup cases also pass under BusyBox 1.33.1.
+  - The candidate binary was built twice, byte-identical (sha256 `0d1496d3…`).
+- **Deployment.** Not deployed; the steps are in the report's section 19.6.
+  This first deployment must hold the lock with an ownerless `mkdir`, and game
+  mode must be off.
+- **Pages updated:**
+  - [[systems/warp-client]], [[systems/script-map]], [[systems/dns]],
+    [[systems/google-wan]];
+  - [[operations/health-recovery]], [[operations/deployment]];
+  - [[flows/boot-and-recovery]], [[security/secrets-and-trust]],
+    [[bugs/known-issues]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 19)

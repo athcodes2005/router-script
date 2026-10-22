@@ -14,6 +14,15 @@ its lock, validates configuration and active paths, clears any expired failure
 marker after success, logs the outcome, and releases the lock. An already
 running tunnel can have its routes repaired without replacing its process.
 
+## Firewall rebuild
+
+`fw3 restart` and `fw3 flush` remove every rule router-script added: NAT, MSS,
+LAN↔`tun0` forwarding, the `tun0` input drop, the Google marks and rejects, and
+the game-session chain. `fw3 reload` keeps them. After every fw3 start, restart
+and reload, the fw3 include `firewall_hook.sh` starts a health check about two
+seconds later if a WARP client runs, and that check restores whatever is
+missing. At boot no client runs yet, so the include does nothing.
+
 ## WAN or portal failure
 
 Missing WAN lease causes tunnel teardown followed by WAN interface cycling.
@@ -25,8 +34,10 @@ direct WAN.
 ## WARP failure
 
 A failed tunnel validation causes one bounded stop/start attempt. The Rust client
-also limits its own handshake duration and exponentially backs off repeated
-session errors.
+also limits its own handshake duration, ends a session after 90 s without a
+packet from the server, and backs off after failed or short-lived sessions
+([[../systems/warp-client]]). `logread -e usque-rs` shows why each session
+ended.
 
 If restart validation still fails, shell control removes tunnel defaults and
 leaves direct IPv4 active for a five-minute cooldown. Later health runs retry.
