@@ -4,7 +4,7 @@ import signal
 import time
 import unittest
 
-from sandbox import Sandbox, SHELL
+from sandbox import Sandbox
 
 ORIGINAL = '{"dummy": "original-registration"}\n'
 BLOCK = ': > "$SIM_STATE/blocked"\nexec /bin/sleep 30\n'
@@ -46,8 +46,23 @@ class HangupTests(unittest.TestCase):
         self.assertEqual((proj / 'config.json').read_text(), ORIGINAL)
         self.assertFalse((proj / 'config.json.previous').exists())
 
+    # F42: a foreground child killed by the hangup is reported on the closed
+    # terminal; the write raised SIGPIPE, which killed the script before its
+    # cleanup ran. Here the drop comes during the probe of the new identity.
+    def test_rotation_restores_the_registration_after_a_drop_during_its_probe(self):
+        proj = self.box.proj
+        (proj / 'config.json').write_text(ORIGINAL)
+        (proj / 'stop_tunnel.sh').write_text('exit 0\n')
+        (proj / 'tunnel.sh').write_text(
+            '[ -f "$(dirname "$0")/config.json" ] || echo new > "$(dirname "$0")/config.json"\n')
+        self.box.flag('curl_blocks')  # the WARP trace probe
+        self.assertEqual(self.hang_up(self.box.start('rotate_tunnel_ip.sh')), 129)
+        self.assertFalse((proj / '.ensure_network.lock').exists())
+        self.assertEqual((proj / 'config.json').read_text(), ORIGINAL)
+        self.assertFalse((proj / 'config.json.previous').exists())
+
     def test_game_mode_releases_the_lock(self):
-        (self.box.sysroot / 'etc/init.d/dnsmasq').write_text('#!%s\n%s' % (SHELL, BLOCK))
+        self.box.flag('curl_blocks')  # game mode's closing status probe
         self.assertEqual(self.hang_up(self.box.start('game_mode.sh', 'on')), 129)
         self.assertFalse((self.box.proj / '.ensure_network.lock').exists())
 

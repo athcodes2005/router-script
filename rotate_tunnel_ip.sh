@@ -38,7 +38,7 @@ fi
 
 cleanup() {
     STATUS=$?
-    trap - EXIT HUP INT TERM
+    trap - EXIT HUP PIPE INT TERM
 
     if [ "$STATUS" -ne 0 ] && [ "$BACKUP_CREATED" -eq 1 ] && [ -f "$BACKUP_FILE" ]; then
         # After an SSH drop the terminal is gone and tee fails; under set -e
@@ -59,7 +59,10 @@ cleanup() {
 }
 
 trap cleanup EXIT
+# After an SSH drop the shell reports a child killed by the hangup on the
+# closed terminal; that raises SIGPIPE, which must restore the registration too.
 trap 'exit 129' HUP
+trap 'exit 141' PIPE
 trap 'exit 130' INT
 trap 'exit 143' TERM
 

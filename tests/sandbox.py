@@ -156,6 +156,7 @@ for a in "$@"; do
   [ "$prev" = -o ] && body_to=$a
   prev=$a
 done
+flag curl_blocks && { : > "$SIM_STATE/blocked"; exec /bin/sleep 30; }
 code=204; t=0.050
 [ "$iface" = tun0 ] && flag tunnel_slow && t=2.400
 case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac

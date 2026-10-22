@@ -43,7 +43,10 @@ case "$CMD" in
             exit 1
         fi
         trap 'release_maintenance_lock' EXIT
+        # After an SSH drop the shell reports a child killed by the hangup on
+        # the closed terminal; that raises SIGPIPE, which must clean up too.
         trap 'exit 129' HUP
+        trap 'exit 141' PIPE
         trap 'exit 130' INT
         trap 'exit 143' TERM
         ;;
