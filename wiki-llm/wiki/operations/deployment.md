@@ -24,9 +24,9 @@ keeps running, with a SHA-256 manifest of every file. Staging needs no lock.
   dropped SSH connection cannot end it halfway.
 
 On the Mac, a trap removes staging state and restarts a previously running
-tunnel after failures. The first deployment that introduces `lock.sh` must hold
-the lock the old way, with an ownerless `mkdir`: the old health check treats
-`lock.sh`'s owner file as stale (report section 19.6).
+tunnel after failures. The deployment that introduced `lock.sh` (2026-10-23)
+held the lock the old way, with an ownerless `mkdir`, because the old health
+check treated `lock.sh`'s owner file as stale (report section 19.6).
 
 The router copy of `blocked_sites.txt` may be edited independently. Sync refuses
 to overwrite divergent content unless `--force` is explicitly supplied. Use

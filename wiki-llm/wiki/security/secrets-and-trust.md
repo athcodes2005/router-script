@@ -42,7 +42,9 @@ A missing certificate or mismatched key terminates the session.
 quiche loads the client key and certificate from temporary PEM files. The client
 deletes both as soon as they are loaded (audit F18). Before, they lived for the
 whole session, and the SIGTERM that stops the client skips destructors, so each
-stop probably left a copy of the key in `/tmp` (root-only, mode `0600`).
+stop left a copy of the key in `/tmp` (root-only, mode `0600`). On 2026-10-23,
+before the fix was deployed, `/tmp` held 14 such files (key and certificate
+pairs from 8 to 22 October). `/tmp` is RAM-backed, so a reboot clears them.
 
 ## Router services and the tunnel
 

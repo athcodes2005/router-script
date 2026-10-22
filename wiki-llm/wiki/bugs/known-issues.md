@@ -64,8 +64,8 @@ IPv4 management/fallback, while campus and Cloudflare outages remain external.
 bounded live verification. Rare game spikes are not yet proven resolved.
 The remaining source-review findings were copied Rust integration-test logic,
 discarded client lifecycle output, nontransactional full-sync promotion and
-ownerless long-running maintenance locks. All four are fixed on the
-`open-issues-2026-10-22` branch (audit F36, F37, F40, F39), not yet deployed.
+ownerless long-running maintenance locks. All four are fixed (audit F36, F37,
+F40, F39) and were deployed on 2026-10-23.
 No speculative SQM cap was deployed; loaded latency is still unmeasured, and
 `measure_load_latency.sh` now measures it.
 

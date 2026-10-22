@@ -554,14 +554,14 @@ plausible but unproven.
 
 | From | Item | Relation to this review |
 |---|---|---|
-| 09-19 §3 | Client stdout/stderr discarded, so no disconnect reasons | Fixed on the branch as F37 (A6), not deployed (§19) |
-| 09-19 §3 | MTU integration tests copy production logic | Fixed on the branch as F36, not deployed (§19) |
-| 09-19 §4 | ICMPv4 quote fixed at 28 bytes; TUN write errors ignored; CONNECT stream close ignored | TUN writes: F35; stream close and idle timeout: F16 (§19, not deployed). The 28-byte ICMPv4 quote is still open |
-| 09-19 §5 | Non-transactional promotion; ownerless locks reclaimable after 180 s | Fixed on the branch as F40 and F39, with F42 for the hangup case (§19, not deployed) |
+| 09-19 §3 | Client stdout/stderr discarded, so no disconnect reasons | Fixed as F37 (A6); deployed 2026-10-23 (§19.9) |
+| 09-19 §3 | MTU integration tests copy production logic | Fixed as F36; deployed 2026-10-23 (§19.9) |
+| 09-19 §4 | ICMPv4 quote fixed at 28 bytes; TUN write errors ignored; CONNECT stream close ignored | TUN writes: F35; stream close and idle timeout: F16 (deployed 2026-10-23, §19.9). The 28-byte ICMPv4 quote is still open |
+| 09-19 §5 | Non-transactional promotion; ownerless locks reclaimable after 180 s | Fixed as F40 and F39, with F42 for the hangup case; deployed 2026-10-23 (§19.9) |
 | 09-19 §6 | `tunnel.sh` clears dynamic routes before resolving and doesn't share the refresh code | Fixed as F32–F34 (§18). The two scripts still resolve the names separately, but no longer conflict: `tunnel.sh` only adds. |
 | 09-19 §2 | Loaded latency / SQM unmeasured | Still unmeasured; `measure_load_latency.sh` measures it (§19.7). F10 is the in-tunnel counterpart |
-| google-wan.md | Firewall resets leave a gap until the next tick | F03 covered the FORWARD ACCEPTs; F38 closes the gap (§19, not deployed) |
-| known-issues | dnsmasq 2.85 ignores `filter_aaaa`, so game-mode AAAA filtering is ineffective | The dead toggle is gone (F41, §19, not deployed); game mode's IPv6 REJECT is what hides IPv6 |
+| google-wan.md | Firewall resets leave a gap until the next tick | F03 covered the FORWARD ACCEPTs; F38 closes the gap; deployed 2026-10-23 (§19.9) |
+| known-issues | dnsmasq 2.85 ignores `filter_aaaa`, so game-mode AAAA filtering is ineffective | The dead toggle is gone (F41, deployed 2026-10-23, §19.9); game mode's IPv6 REJECT is what hides IPv6 |
 
 ## 5. Considered and decided NOT bugs
 
@@ -629,7 +629,7 @@ plausible but unproven.
 | A9 | Platform-assumption check once per boot: WAN metric, radio section names, required binaries (`ipset`, `iptables`, `conntrack`, `jsonfilter`, `timeout`) | Clear "platform changed" errors after firmware updates | Small | Low | Yes |
 | A10 | Documented mark-bit and rule-priority allocation, including GL.iNet's | Prevents future collisions (F24) | Docs only | None | Yes |
 
-**Status on 2026-10-22 (§19, on the branch, not deployed):** A1, A2, A3 (F38),
+**Status on 2026-10-23 (§19, deployed):** A1, A2, A3 (F38),
 A4 (F39, F40), A6 (F37), A7 (F10, F16–F18) and A9 are done. A5 was done by F01
 and F06, and A8 is `tests/sandbox.py`. A10 is still open.
 
@@ -672,12 +672,12 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F09 | **Fixed** | `a883824` | Rotation requires `warp=on`/`warp=plus` from Cloudflare's trace through `tun0`, for both families. |
 | F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
-| F10, F16, F17, F18 | **Fixed, not deployed** | `ae4a630`, `084e40b`, `f7c5de3`, `21ba75e`, `6dd2346` | Deferred as batch 5, then done on 2026-10-22 once Rust builds were allowed (§19.1). F10 stays off by default until it is measured. |
+| F10, F16, F17, F18 | **Deployed** 2026-10-23 01:02 | `ae4a630`, `084e40b`, `f7c5de3`, `21ba75e`, `6dd2346` | Deferred as batch 5, then done on 2026-10-22 once Rust builds were allowed (§19.1). F10 stays off by default until it is measured. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
 | F31 | **Deployed** 2026-10-22 08:39 | `3b3a183` | Found in the 2026-10-22 validation and deployed later that morning (§16). |
 | F32–F34 | **Deployed** 2026-10-22 15:35 | `402b9ac` (tests), `e7131a4`, `dcc7e10` | Fixed test-first, then deployed and verified with a manual start (§18). |
-| F27 (Rust half), F35–F42 | **Fixed, not deployed** | §19.1–§19.2 | Carried over from the 09-19 audit or found on 2026-10-22, fixed test-first on `open-issues-2026-10-22`. |
-| A1, A2, A9 | **Done, not deployed** | `13f0642`, `fec160d`, `fec17de` | Shared defaults, stage-isolation tests, platform check (§19.2). |
+| F27 (Rust half), F35–F42 | **Deployed** 2026-10-23 01:01–01:02 | §19.1–§19.2 | Carried over from the 09-19 audit or found on 2026-10-22, fixed test-first on `open-issues-2026-10-22`. |
+| A1, A2, A9 | **Deployed** 2026-10-23 01:01 | `13f0642`, `fec160d`, `fec17de` | Shared defaults, stage-isolation tests, platform check (§19.2). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1647,7 +1647,7 @@ folders that no longer exist. Use the previous versions from git instead:
 | F12 fix (§15.4) | `refresh_blinkit_dns.sh` | `6142896` |
 | F31 (§16.5) | `tunnel.sh`, `ensure_network.sh` | `2ae4750` |
 | F32–F34 (§18.5) | `tunnel.sh` | `49dfedd` |
-| Open issues (§19.6, once deployed) | the 20 replaced files, including `usque-rs`; remove the 6 new files | `72e3abd` |
+| Open issues (§19.9) | the 20 replaced files, including `usque-rs`; remove the 6 new files | `72e3abd` |
 
 To roll back:
 1. On the Mac, export the files into an empty folder:
@@ -1784,11 +1784,11 @@ the branch, and the directory holds only its 32 live entries.
 
 **Rollback:** stage `tunnel.sh` from `49dfedd` (§17.3).
 
-## 19. Open issues fixed on 22 October 2026 (branch `open-issues-2026-10-22`, not deployed)
+## 19. Open issues fixed on 22 October 2026, deployed on 23 October (§19.9)
 
 You asked me to tackle the open issues and the optional housekeeping, and
-allowed changes to the Rust binary. Nothing here is deployed: §19.6 is the
-checklist, and it needs your permission. Each finding is one commit, and its
+allowed changes to the Rust binary. With your permission, it was deployed on
+23 October following the checklist in §19.6 (record: §19.9). Each finding is one commit, and its
 test failed before the fix.
 
 ### 19.1 Rust client (`usque-rs`)
@@ -1875,11 +1875,11 @@ A5 (diagnostics policy) was done by F01 and F06, and A8 is
 - **Build.** Built twice from clean in the pinned image; the two builds are
   byte-identical: sha256 `0d1496d353d952b814948cf6479521603a4e0c97de0b6437fda1aacf65a78fef`, 6,035,280 bytes. `--help` lists `--syslog`
   and `--tun-backpressure`.
-- **Branch.** It replaces the tracked `usque-rs` on this branch only.
+- **Deployed** on 23 October (§19.9); it replaced the tracked `usque-rs`.
 - **Rollback.** `usque-rs-upstream-v0.1.0` stays as the rollback binary, and
   the deployed `1ee312fc…` stays in git (`main`).
 
-### 19.6 Deployment checklist (needs your permission)
+### 19.6 Deployment checklist (done on 23 October, §19.9)
 
 **What changes.** Twenty files are replaced and six are new. `.env`,
 `config.json`, `paths.sh`, the data files, `install_cron_pipeline.sh`,
@@ -2051,9 +2051,10 @@ how often the answers change; F13 has logged since 22 October 00:42.
 
 ### 19.8 What I could not verify
 
-- **Nothing ran on the router.** The new binary has run only `--help` in the
-  build container. Its connection behaviour, and whether logd accepts its
-  `<priority>tag[pid]: message` datagrams, are checked in step 5.
+- **Since checked on the router (§19.9):** logd accepts the client's
+  `<priority>tag[pid]: message` datagrams, and the hook runs after a real
+  `fw3 reload`. The new client's behaviour over days (idle timeouts, backoff,
+  write failures) is not yet observed.
 - **F38.** The fw3 behaviour comes from upstream firewall3, not from the
   GL.iNet build. I don't know whether GL.iNet's own includes remove foreign
   rules on a plain reload; the hook runs then too, so they would still be
@@ -2067,3 +2068,68 @@ how often the answers change; F13 has logged since 22 October 00:42.
 - **Old key files.** PEM files that earlier stops left in `/tmp` are not
   checked. `/tmp` is RAM-backed, so a reboot clears them; removing them
   earlier is your call.
+
+### 19.9 Deployment record — 23 October 2026, 01:00–01:04 IST
+
+You authorised this deployment and asked for the Blinkit change rate in the
+pre-flight. It followed §19.6. `.env` and `config.json` were never read.
+
+**Pre-flight (01:00).**
+- All 20 files to be replaced matched `main`, including `usque-rs`
+  (`1ee312fc…`).
+- Game mode was off, `filter_aaaa` was 0 and no include existed.
+- A lock was present at 01:00:00. It belonged to the cron check that started
+  that second, which passed at 01:00:02; the lock was gone 18 s later.
+- WARP was PID 20421. `/overlay` was 11 % used, `/tmp` 0 %, and the load 0.41.
+- **Blinkit:** F13 has logged no "records changed" line since it was deployed
+  (22 October 00:42), and no routes were removed. The records last changed on
+  21 October at 05:36. Changes are rare, so by §19.7's rule immediate removal
+  stays and no retention change is needed.
+
+**Staging (01:01).**
+- 26 files went into `.stage-oi`, plus the running binary as
+  `usque-rs.previous`.
+- BusyBox `sh -n` passed for every staged script, and all 26 hashes matched
+  the Mac.
+- The new binary's `--help` listed both new options.
+
+**Promotion (01:01:27–01:01:28),** under an ownerless lock, in this order: the
+two helpers, 21 scripts, the two docs, `install_firewall_hook.sh`, `sync`.
+- The 01:01:30 check was the first on the new code. It logged "Platform check
+  passed." and "Health check passed.".
+- `firewall.router_script` is registered with `reload '1'`.
+- WARP kept PID 20421, and every `tun0` drop, NAT and FORWARD rule was in place.
+
+**New binary (01:02:12–01:02:16):** `stop_tunnel.sh`, then the swap, then
+`tunnel.sh`.
+- CONNECT-IP was ready after 2 s, so WARP was down for about 4 s.
+- WARP is PID 22623 on `0d1496d3…`, started with `--syslog`. `logread`
+  shows "Config loaded", "[connecting] 162.159.198.1:443" and "[connected]
+  MASQUE tunnel established".
+- Both `tun0` defaults are back, and the Cloudflare trace reports `warp=on` for
+  IPv4 and IPv6. Every check since passed.
+- **F18 confirmed live.** `/tmp` holds 14 temporary PEM files: key-sized
+  (241 bytes) and certificate-sized (~497 bytes) pairs, one pair per earlier
+  client start, dated 8 to 22 October. The new client left none.
+
+**Hook test (01:03:06):** `/etc/init.d/firewall reload`.
+- fw3 ran the include last, after GL.iNet's four (`firewall.nat6`,
+  `firewall.ethernet_ttl`, `firewall.dns_order`, `gl_block.sh`).
+- The hook's check started at 01:03:09 ("the firewall was rebuilt") and passed
+  at 01:03:10.
+- Every rule survived the reload, as firewall3's source says, the game-session
+  jump stayed first, and WARP kept its PID.
+- Pre-existing and unrelated to this deploy: fw3's configuration warnings, and
+  GL.iNet's `firewall.ethernet_ttl` include failing for lack of an
+  `ETHERNET_TTL` target.
+
+**Wrap-up.**
+- All 34 deploy-set files other than `.env` and `config.json` match the
+  branch.
+- `.stage-oi` still holds `usque-rs.previous` for a quick binary rollback.
+- The branch is merged into `main`.
+
+**Not done:** the loaded-latency measurement (§19.7), which needs your
+go-ahead.
+
+**Rollback:** §19.6.

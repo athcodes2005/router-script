@@ -88,11 +88,12 @@ instead of being sliced or checksummed incorrectly.
 
 ## Build and tests
 
-The deployed artifact targets `aarch64-unknown-linux-musl` (sha256 `1ee312fc…`).
-A clean build in the pinned image `messense/rust-musl-cross:aarch64-musl`
-(rustc 1.95.0) reproduces it byte for byte. On the `open-issues-2026-10-22`
-branch the client passes formatting, strict Clippy, 76 unit tests and 4
-integration tests in that image; its candidate binary, commit `688e216`, has sha256 `0d1496d3…`. The packet
+The deployed artifact targets `aarch64-unknown-linux-musl`. Since 2026-10-23
+it is commit `688e216`, sha256 `0d1496d3…`. Clean builds in the pinned image
+`messense/rust-musl-cross:aarch64-musl` (rustc 1.95.0) reproduce it byte for
+byte, as they did its predecessor (`1ee312fc…`). The client passes
+formatting, strict Clippy, 76 unit tests and 4 integration tests in that
+image. The packet
 pipeline tests (`src/pipeline_tests.rs`) call the production functions (F36);
 `tests/tunnel_mtu.rs` keeps the TUN-device write tests.
 Native macOS compilation is not a valid test because Linux TUN/netlink APIs are

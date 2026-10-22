@@ -729,3 +729,24 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19)
+
+## 2026-10-23 — Deployed the open-issues batch
+
+- With the user's authorisation, promoted 21 scripts, the two docs and the
+  six new files under an ownerless lock at 01:01:27, and registered the fw3
+  include. The first check on the new code passed, including the new
+  "Platform check passed.".
+- Restarted WARP on the new binary (`0d1496d3…`) at 01:02:13. It was ready
+  in 2 s, so WARP was down for about 4 s. `logread -e usque-rs` now shows the
+  client's connection events.
+- A `fw3 reload` ran the include. Its health check passed at 01:03:10, and
+  every rule survived the reload.
+- Blinkit answers have not changed since F13 began logging, so immediate route
+  removal stays. Fourteen PEM files left in `/tmp` by earlier client stops
+  confirm F18.
+- All deploy-set files match the repo; the branch is merged into `main`. The
+  loaded-latency measurement is still to do (report section 19.7).
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 19.9)
