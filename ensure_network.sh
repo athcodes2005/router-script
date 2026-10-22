@@ -648,7 +648,11 @@ tunnel_healthy_confirmed() {
 sh "$DIR/google_wan_policy.sh" >> "$LOG_FILE" 2>&1 ||
     log "Google WAN policy deferred until the WAN is available."
 
-log "Starting health check."
+if [ "${ROUTER_SCRIPT_TRIGGER:-}" = firewall ]; then
+    log "Starting health check: the firewall was rebuilt."
+else
+    log "Starting health check."
+fi
 
 # After a reboot the clock can be months behind until NTP syncs (86 days was
 # seen), which breaks lock ageing and TLS. The log was just written, so its

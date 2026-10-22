@@ -11,6 +11,7 @@ cd "$DIR"
 ./configure_dns.sh
 ./configure_lan_ipv6.sh
 ./install_cron_pipeline.sh
+./install_firewall_hook.sh
 ./ensure_network.sh
 
 echo "Bootstrap complete."

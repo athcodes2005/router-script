@@ -139,6 +139,7 @@ case "$key" in
   'network.lan.ip6ifaceid') echo ::1 ;;
   'network.globals.ula_prefix') echo 'fd63:3b28:d1ea::/48' ;;
   wireless.mt798111|wireless.mt798112) flag wifi_sections_missing || echo wifi-device ;;
+  firewall.router_script.path) flag firewall_hook_missing && exit 1; echo "$SIM_PROJ/firewall_hook.sh" ;;
   wireless.*.country) echo IN ;;
   wireless.mt798111.htmode) echo HE20 ;;
   wireless.mt798112.htmode) if flag wifi_drift; then echo HE160; else echo HE80; fi ;;

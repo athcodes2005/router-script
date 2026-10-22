@@ -7,6 +7,7 @@ never read or copied.
 """
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -85,6 +86,13 @@ class SyncTests(unittest.TestCase):
 
     def mode(self, name):
         return stat.S_IMODE((self.router / name).stat().st_mode)
+
+    def test_every_script_that_runs_on_the_router_is_deployed(self):
+        # A script missing from FILES fails on the router as soon as another one uses it.
+        files = re.search(r'^FILES="([^"]*)"', (ROOT / 'sync_to_router.sh').read_text(), re.M).group(1).split()
+        mac_only = {'sync_to_router.sh', 'sync_from_router.sh'}
+        missing = sorted(p.name for p in ROOT.glob('*.sh') if p.name not in mac_only and p.name not in files)
+        self.assertEqual(missing, [])
 
     def test_rollback_binary_is_deployed(self):
         # F25: README's rollback copies usque-rs-upstream-v0.1.0, which sync never shipped.
