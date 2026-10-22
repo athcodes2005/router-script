@@ -15,6 +15,11 @@ use crate::tls;
 const MAX_DATAGRAM_SIZE: usize = 1350;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
+// A session connected at least this long counts as having worked: a clean close
+// reconnects at once and a failure restarts the backoff. Anything shorter keeps
+// backing off, so a server that accepts and then drops sessions cannot cause a
+// reconnect storm.
+const STABLE_SESSION: Duration = Duration::from_secs(10);
 // quiche can report a zero-duration timeout while loss recovery is pending.
 // Passing that directly to tokio::time::sleep creates a hot loop that can pin
 // one router CPU core even when the tunnel is carrying little traffic.
@@ -26,6 +31,25 @@ const MAX_FORWARDING_BATCH: usize = 64;
 // A failed TUN write loses that one packet. Writes that keep failing mean the
 // device is gone, so the session ends instead of silently dropping all traffic.
 const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
+
+/// Returns how long to wait before reconnecting, and the delay to use after that.
+fn reconnect_backoff(
+    connected_for: Option<Duration>,
+    clean: bool,
+    delay: Duration,
+) -> (Duration, Duration) {
+    let stable = connected_for.is_some_and(|lived| lived >= STABLE_SESSION);
+    let delay = if stable {
+        Duration::from_secs(1)
+    } else {
+        delay
+    };
+    if clean && stable {
+        (Duration::ZERO, delay)
+    } else {
+        (delay, (delay * 2).min(MAX_RECONNECT_DELAY))
+    }
+}
 
 fn event_loop_timeout(quic_timeout: Option<Duration>, keepalive: Duration) -> Duration {
     quic_timeout
@@ -192,33 +216,32 @@ pub async fn maintain_tunnel(
     loop {
         eprintln!("\r\x1b[2K[connecting] {} ...", tunnel_cfg.endpoint);
 
-        let session_result =
-            run_tunnel_session(config, tunnel_cfg, &mut tun_reader, &mut tun_writer).await;
-        let was_ready = tunnel_cfg
-            .ready_file
-            .as_deref()
-            .is_some_and(|path| Path::new(path).is_file());
+        let mut connected_at = None;
+        let session_result = run_tunnel_session(
+            config,
+            tunnel_cfg,
+            &mut tun_reader,
+            &mut tun_writer,
+            &mut connected_at,
+        )
+        .await;
         clear_ready_file(tunnel_cfg.ready_file.as_deref());
 
-        match session_result {
-            Ok(()) => {
-                eprintln!("\r\x1b[2K[disconnected] Session ended");
-                reconnect_delay = Duration::from_secs(1);
-            }
-            Err(e) => {
-                if was_ready {
-                    reconnect_delay = Duration::from_secs(1);
-                }
-                eprintln!("\r\x1b[2K[error] {e:#}");
-                eprintln!(
-                    "\r\x1b[2K[retry] Waiting {}s before reconnecting",
-                    reconnect_delay.as_secs()
-                );
-                tokio::time::sleep(reconnect_delay).await;
-                reconnect_delay = (reconnect_delay * 2).min(MAX_RECONNECT_DELAY);
-            }
+        match &session_result {
+            Ok(()) => eprintln!("\r\x1b[2K[disconnected] Session ended"),
+            Err(e) => eprintln!("\r\x1b[2K[error] {e:#}"),
         }
-        // Loop back to idle
+        let connected_for = connected_at.as_ref().map(Instant::elapsed);
+        let (wait, next_delay) =
+            reconnect_backoff(connected_for, session_result.is_ok(), reconnect_delay);
+        if !wait.is_zero() {
+            eprintln!(
+                "\r\x1b[2K[retry] Waiting {}s before reconnecting",
+                wait.as_secs()
+            );
+            tokio::time::sleep(wait).await;
+        }
+        reconnect_delay = next_delay;
     }
 }
 
@@ -227,6 +250,7 @@ async fn run_tunnel_session<R, W>(
     tunnel_cfg: &TunnelConfig,
     tun_reader: &mut R,
     tun_writer: &mut W,
+    connected_at: &mut Option<Instant>,
 ) -> Result<()>
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -453,6 +477,7 @@ where
 
     eprintln!("\r\x1b[2K[connected] MASQUE tunnel established");
     mark_ready(tunnel_cfg.ready_file.as_deref())?;
+    *connected_at = Some(Instant::now());
 
     let stats = Stats::new();
     let session_start = Instant::now();
@@ -851,6 +876,49 @@ mod tests {
         assert!(!forwarding_batch_limit_reached(0));
         assert!(!forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 2));
         assert!(forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 1));
+    }
+
+    // ---- reconnect backoff ----
+
+    #[test]
+    fn a_long_session_that_closes_cleanly_reconnects_at_once() {
+        let (wait, next) = reconnect_backoff(Some(STABLE_SESSION), true, Duration::from_secs(8));
+        assert_eq!(wait, Duration::ZERO);
+        assert_eq!(next, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_short_session_that_closes_cleanly_backs_off() {
+        // F17: a server that accepted and then closed at once caused a reconnect storm.
+        let short = Some(Duration::from_secs(2));
+        let (wait, next) = reconnect_backoff(short, true, Duration::from_secs(1));
+        assert_eq!(
+            (wait, next),
+            (Duration::from_secs(1), Duration::from_secs(2))
+        );
+        let (wait, next) = reconnect_backoff(short, true, next);
+        assert_eq!(
+            (wait, next),
+            (Duration::from_secs(2), Duration::from_secs(4))
+        );
+    }
+
+    #[test]
+    fn a_long_session_that_fails_restarts_the_backoff() {
+        let (wait, next) = reconnect_backoff(Some(STABLE_SESSION), false, Duration::from_secs(16));
+        assert_eq!(
+            (wait, next),
+            (Duration::from_secs(1), Duration::from_secs(2))
+        );
+    }
+
+    #[test]
+    fn failures_before_or_soon_after_connecting_keep_backing_off_to_the_cap() {
+        let (wait, next) = reconnect_backoff(None, false, Duration::from_secs(16));
+        assert_eq!((wait, next), (Duration::from_secs(16), MAX_RECONNECT_DELAY));
+        let soon = Some(Duration::from_secs(1));
+        let (wait, next) = reconnect_backoff(soon, false, MAX_RECONNECT_DELAY);
+        assert_eq!((wait, next), (MAX_RECONNECT_DELAY, MAX_RECONNECT_DELAY));
     }
 
     // ---- TUN write failures ----
