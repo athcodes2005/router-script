@@ -1567,3 +1567,72 @@ brief requires.
 - `tunnel.sh`'s copy of the rule takes effect at the next WARP start.
 
 **Rollback:** §16.3 step 4.
+
+## 17. Cleanup — 22 October 2026, 08:44–08:52 IST
+
+You asked me to delete the deployment backups, and then to clean up the project
+on the router and the Mac. Only non-live files were removed. No live script,
+data file, secret, log or snapshot was touched, and `.env` and `config.json`
+were never read.
+
+### 17.1 Router
+
+**Result.** The directory went from 33.3 MB (8 folders, 53 files) to 21.2 MB.
+It now holds exactly the 28 deploy-set files, `.env`, `config.json`, `logs/`
+and `diagnostics/`. `/overlay` dropped from 16 % to 11 % used.
+
+**Removed:**
+- the four deployment backups (`backup-20261020`, `backup-batch4`,
+  `backup-f12`, `backup-f31`). Every script copy matched a git commit; the two
+  old doc copies were strict subsets of the 10-20 baseline docs;
+- 17 August `*.rollback-*` script copies and two old `usque-rs.rollback-*`
+  binaries;
+- five older backup folders and one staging folder, dated 09-19 to 10-08;
+- the router's stale copies of the Mac-side `sync_to_router.sh` and
+  `sync_from_router.sh`;
+- a `.DS_Store`, and an old `.env` copy, which was deleted unread.
+
+**Checks before deleting.** Nothing live referenced these files: no script,
+crontab, init file or UCI entry. The two UCI matches were LuCI's own
+apply-rollback keys. I hashed every file against git history: 27 were already
+in git.
+
+**Archive.** The other 27 are in a private archive on the Mac, outside the repo:
+`~/router-script-archive/router-leftovers-2026-10-22.tar.gz` (mode 0600,
+3.0 MB). It was extracted and found byte-identical, and a manifest of paths and
+hashes sits beside it. Delete it whenever you like.
+
+**After the cleanup.** The 08:51:00 and 08:51:30 checks passed, WARP kept PID
+20421, and both cron entries are intact.
+
+### 17.2 Mac
+
+Removed a `.DS_Store` and the `__pycache__` folders under `tests/` and
+`tools/`. The tracked tree is unchanged.
+
+Left in place on purpose, all ignored by git:
+- `.env` and `config.json`;
+- your `.claude/settings.local.json`;
+- `logs/` and `diagnostics/`, which the report and wiki cite as evidence;
+- `usque-rs-optimized/target/`, 3.3 GB of Rust build output. Recreating it
+  needs Docker and a full build, so whether to delete it is your call.
+
+### 17.3 Rolling back now that the backups are gone
+
+The rollback commands in §11, §14.4, §15.3 and §16.3 copy from `backup-*`
+folders that no longer exist. Use the previous versions from git instead:
+
+| Deployment | Files | Previous version |
+|---|---|---|
+| 2026-10-20 (§13) | `diagnose.sh`, `collect_diagnostics.sh`, `login.sh`, `google_wan_policy.sh`, `rotate_tunnel_ip.sh`, `ensure_network.sh` | `2ba81fe` |
+| Batch 4 (§15.1) | `ensure_network.sh`, `stop_tunnel.sh`, `game_mode.sh`, `refresh_blinkit_dns.sh`, `login.sh`, `rotate_tunnel_ip.sh` | `41828c5` |
+| F12 fix (§15.4) | `refresh_blinkit_dns.sh` | `6142896` |
+| F31 (§16.5) | `tunnel.sh`, `ensure_network.sh` | `2ae4750` |
+
+To roll back:
+1. On the Mac, export the files into an empty folder:
+   `git archive <commit> <files> | tar -x -C <folder>`.
+2. Stage, verify and promote them from that folder, exactly as in §14.4.
+3. Undoing F31 also needs its rules removed (§16.3 step 4).
+
+The binary rollback (`usque-rs-upstream-v0.1.0`) is unaffected.

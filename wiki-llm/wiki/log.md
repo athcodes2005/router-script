@@ -612,3 +612,24 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 16.5)
 - `../../tunnel.sh`, `../../ensure_network.sh`
+
+## 2026-10-22 — Cleaned up the router and Mac project directories
+
+- At the user's request, deleted the four deployment backups, then cleaned the
+  router directory. Removed: 17 August rollback script copies, two old rollback
+  binaries, six backup and staging folders, stale router copies of the Mac sync
+  tools, a `.DS_Store`, and an old `.env` copy (deleted unread).
+- Nothing live referenced these files. 27 of them were already in git; the
+  other 27 are in a private archive on the Mac (`~/router-script-archive/`),
+  verified byte-identical.
+- The router directory now holds only the deploy set, the secrets, logs and
+  diagnostics: 33.3 MB down to 21.2 MB, `/overlay` 16 % down to 11 %. Health
+  checks kept passing, and WARP did not restart.
+- On the Mac, removed `.DS_Store` and two `__pycache__` folders. Kept logs,
+  diagnostics and the 3.3 GB Rust build cache.
+- Rollback now uses git versions (report section 17.3). Seven wiki pages that
+  described the removed copies as still on the router were updated.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 17)

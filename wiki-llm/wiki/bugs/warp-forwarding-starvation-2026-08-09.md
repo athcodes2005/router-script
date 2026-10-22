@@ -69,8 +69,10 @@ only `4.2 Mbps` through the degraded WARP session.
   `66.0 Mbps` down, `40.2 Mbps` up, and `19 ms` idle latency.
 - A final 48 MB soak completed six consecutive transfers without failure;
   settled CPU was 45 ticks per ten seconds and UDP `Recv-Q` remained zero.
-- The former binary and health script remain on the router as explicit
-  rollback copies, including the pre-pacing build.
+- The former binary and health script remained on the router as explicit
+  rollback copies, including the pre-pacing build, until 2026-10-22. They were
+  then archived off the router and removed ([[../log]]). The documented binary
+  rollback is `usque-rs-upstream-v0.1.0`.
 
 ## Related pages
 

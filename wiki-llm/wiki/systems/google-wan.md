@@ -53,7 +53,9 @@ can retain their old source/NAT state. No router-wide connection flush was used.
   unrelated Cloudflare IPv6 returned 204. Google IPv6 rejected in about 4 ms.
 - LAN match counters increased, repeat installs did not duplicate policy rules,
   complete health check passed, and WARP PID remained unchanged.
-- Router backup: `/root/router-script/google-backup-20260923/`. Restore original
+- Router backup: `/root/router-script/google-backup-20260923/`, removed on
+  2026-10-22. Its scripts are in git history; its DHCP config and first-deploy
+  copies are in the off-router archive ([[../log]]). Restore original
   scripts and DHCP configuration, remove the helper's exact firewall rules,
   rules 690/710 and table 102, then restart dnsmasq. Restore health scripts before
   removing policy so the next health run does not recreate it. See deployment

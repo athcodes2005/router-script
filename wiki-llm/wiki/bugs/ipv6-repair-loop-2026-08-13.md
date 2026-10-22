@@ -46,7 +46,8 @@ the twice-per-minute watchdog repeated the disruptive LAN reload indefinitely.
 - Consecutive watchdog runs passed without another LAN reload.
 - Wi-Fi-bound client probes returned HTTP `204` for IPv4 and IPv6 in about
   `42 ms`; direct campus, campus DNS, and tunnel routing also passed.
-- Timestamped rollback copies are retained on the router. No Mac configuration
+- Timestamped rollback copies were retained on the router until 2026-10-22,
+  when they were archived off the router and removed ([[../log]]). No Mac configuration
   was modified.
 
 ## Related pages

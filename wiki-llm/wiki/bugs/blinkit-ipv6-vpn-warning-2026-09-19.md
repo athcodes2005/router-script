@@ -59,6 +59,8 @@ once per policy deployment. The phone was asked to refresh Wi-Fi and retry.
 
 Backups: `/root/router-script/blinkit-backup-20260919/` for the first change and
 `/root/router-script/blinkit-backup-20260919-followup/` for the legacy-API change.
+Both were removed on 2026-10-22: their scripts are in git history and their DHCP
+configs are in the off-router archive ([[../log]]).
 Only relevant hostname/route findings are retained in documentation; bounded
 captures are removed after inspection.
 

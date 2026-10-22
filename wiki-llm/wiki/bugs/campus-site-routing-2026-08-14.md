@@ -44,8 +44,9 @@ and clients could retain previously cached public answers.
 - WARP process and readiness PIDs remained unchanged and matching.
 - Public WARP IPv4 and IPv6 probes returned HTTP `204`, and subsequent health
   runs continued to pass.
-- Shell syntax and ShellCheck passed; deployment hashes matched and timestamped
-  rollback copies remain on the router. No Mac configuration was changed.
+- Shell syntax and ShellCheck passed, and deployment hashes matched.
+  Timestamped rollback copies remained on the router until 2026-10-22, when they
+  were archived off it ([[../log]]). No Mac configuration was changed.
 
 ## Related pages
 

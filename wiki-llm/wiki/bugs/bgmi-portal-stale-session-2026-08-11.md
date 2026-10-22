@@ -56,7 +56,8 @@ time-sensitive match bootstrap to fail at 65 percent.
 ## Verification
 
 Shell syntax and ShellCheck passed before deployment. Timestamped rollback
-copies were retained on the router. Consecutive start-of-minute and 30-second
+copies were retained on the router until 2026-10-22, when they were archived off
+the router and removed ([[../log]]). Consecutive start-of-minute and 30-second
 health runs passed after deployment, while the live core match flow remained
 bidirectional and `ASSURED`.
 

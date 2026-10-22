@@ -29,8 +29,8 @@ healthy public Internet, WARP, and campus connectivity.
   router and `43 ms` from the Wi-Fi client.
 - WARP process/readiness PIDs remained unchanged and the health pipeline kept
   passing.
-- Shell syntax and ShellCheck passed; timestamped rollback copies remain on the
-  router.
+- Shell syntax and ShellCheck passed. Timestamped rollback copies remained on
+  the router until 2026-10-22, when they were archived off it ([[../log]]).
 
 ## Sources
 
