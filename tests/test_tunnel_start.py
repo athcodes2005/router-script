@@ -33,6 +33,14 @@ class TunnelStartTests(unittest.TestCase):
         self.assertIn('[SUCCESS] Full tunnel active', log)
         self.assertEqual(self.box.count('ip route add default dev tun0 metric 5'), 1)
 
+    # F33: the first default that is not tun0 can belong to another uplink.
+    def test_gateway_comes_from_the_wan_interface(self):
+        self.box.flag('extra_default')
+        status, log = self.start()
+        self.assertEqual(status, 0, log)
+        self.assertFalse([c for c in self.box.calls() if 'via 192.168.100.1' in c])
+        self.assertIn('ip route replace 10.0.0.0/8 via 10.1.40.250 dev eth0 metric 1', self.box.calls())
+
 
 if __name__ == '__main__':
     unittest.main()

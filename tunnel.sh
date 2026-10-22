@@ -161,7 +161,8 @@ echo "[SUCCESS] usque-rs CONNECT-IP is ready with PID $PID after ${WAIT_COUNT}s.
 
 echo "[INFO] Configuring full-tunnel routing..."
 
-DEFAULT_GW="$(ip route show default | grep -v "dev $TUN_IF" | head -n 1 | awk '/default/ {print $3}')"
+# The WAN's own gateway: the first other default can belong to another uplink.
+DEFAULT_GW="$(ip -4 route show default dev "$WAN_IF" | awk '/via/ {print $3; exit}')"
 
 if [ -z "$DEFAULT_GW" ]; then
     echo "[ERROR] No direct WAN gateway is available; refusing to install a recursive WARP default route."
