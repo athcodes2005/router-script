@@ -551,3 +551,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 15)
 - `../../refresh_blinkit_dns.sh`
 - `../../tests/test_blinkit_dns.py`, `../../tests/test_pipeline.py`
+
+## 2026-10-22 — Deployed the F12 fix and removed the leaked Blinkit routes
+
+- With the user's authorisation, promoted `refresh_blinkit_dns.sh` (commit
+  `775bcd4`) under the maintenance lock at 07:25. WARP was not restarted (PID
+  20421) and every health tick passed. Backup:
+  `/root/router-script/backup-f12`.
+- At 07:27, removed the 20 leaked CloudFront routes once, deleting only
+  addresses on the recorded list that were still unowned: all 20 went. The
+  ownership check now finds only the two WARP endpoints. All 8 current Blinkit
+  addresses remain routed on `eth0`.
+- The new cleanup acts only on the next Blinkit record change; its log line
+  ("replaced-address routes removed") has not appeared yet.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 15.4)
+- `../../refresh_blinkit_dns.sh`

@@ -657,7 +657,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
-| F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22, except the F12 fix (§15). |
+| F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1211,7 +1211,7 @@ manual merge; the backup copy is the fastest emergency path.
 - **Deferred:** the Rust items (F10, F16–F18, and F27's `pending_pkt`) are
   unbuilt and untested.
 
-## 15. Deployment record — 22 October 2026, 00:42–00:47 IST, and F12 reopened
+## 15. Deployment records — 22 October 2026: batch 4 (00:42–00:47 IST) and the F12 fix (07:25–07:28)
 
 ### 15.1 Batch 4 deployment
 
@@ -1277,7 +1277,7 @@ The staging directory was removed.
 - F14 under real latency.
 - F23 and F25 over the real link (`sync_to_router.sh` was not run).
 
-### 15.2 F12 reopened and fixed (`775bcd4`, not deployed)
+### 15.2 F12 reopened and fixed (`775bcd4`, deployed at 07:25, §15.4)
 
 **Why §14's correction was wrong.** It rested on a sandbox test of healthy
 ticks, where the public refresher deletes a replaced address's route.
@@ -1364,3 +1364,37 @@ re-adds whatever it still needs on its next run.
 **4. Rollback**, under the lock:
 `cp -p backup-f12/refresh_blinkit_dns.sh refresh_blinkit_dns.sh.old && mv refresh_blinkit_dns.sh.old refresh_blinkit_dns.sh`.
 The fix creates no new state.
+
+### 15.4 F12 fix deployment record — 07:25–07:28 IST
+
+You authorised SSH access for this deployment, and it followed §15.3. `.env`
+and `config.json` were never read.
+
+- **Pre-flight (07:25):**
+  - The router's `refresh_blinkit_dns.sh` was the batch-4 version.
+  - No lock was held, game mode was off, and WARP was still PID 20421.
+  - Every tick since 00:46 had passed with no warnings.
+  - The Blinkit records had not changed since 2026-10-21 05:36 (no F13
+    lines), and the same 22 unowned routes were present.
+- **Stage and backup:** one file. BusyBox `sh -n` passed and the hash matched
+  `775bcd4`. The backup is `/root/router-script/backup-f12`: mode 700, the
+  batch-4 version, and the WARP PID.
+- **Promotion** under the lock at 07:25:36. The file is root-owned with mode
+  `0755`, and its hash matches. The 07:26:00 and 07:26:30 ticks passed and
+  the PID was unchanged. No Blinkit lines were logged, as expected while the
+  records were unchanged.
+- **One-time removal** at 07:27:03, running the §15.3 snippet extracted
+  verbatim from this report: all 20 removed, none kept, none already absent.
+- **Ownership check:** only the two WARP endpoints remain unowned.
+  - None of the 20 is left in the table.
+  - All 8 current Blinkit addresses are routed on `eth0`.
+  - Both WARP endpoint routes are intact, and `1.1.1.1` still routes via
+    `tun0`.
+  - The 07:27:30 and 07:28:00 ticks passed and the PID was unchanged.
+  - The staging directory was removed.
+- **Not yet exercised in production:** the new cleanup acts only when the
+  Blinkit records change. The next change should log "Blinkit DNS: records
+  changed …" and then "replaced-address routes removed: …". Run §14.4's
+  ownership check after it; expect only the WARP endpoints.
+- **Rollback:** §15.3 step 4 (`backup-f12`). The removed routes need no
+  restoring.

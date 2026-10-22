@@ -94,9 +94,9 @@ it. `refresh_blinkit_dns.sh` runs on every tick, including during WARP
 fallback and game mode, when the public refresher does not run. So when the
 Blinkit record set changes, it removes the dropped addresses' routes itself,
 after publishing the new set. Routes another refresher still lists are left to
-that refresher (commit `775bcd4`). Before that commit, sets replaced in those
-states kept their routes until reboot: the router held 20 such routes on
-2026-10-22.
+that refresher (commit `775bcd4`, deployed on 2026-10-22). Before that, sets
+replaced in those states kept their routes until reboot; the router held 20 such
+routes, which were removed by hand when the fix was deployed.
 
 `game_mode.sh on` prefers direct campus WAN. Policy toggles share the maintenance
 lock, and disabling game mode preserves the WAN gateway before removing its

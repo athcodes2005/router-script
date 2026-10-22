@@ -31,14 +31,14 @@ HTTP 403 on both WAN and WARP; unauthenticated requests are not an app test.
   installation prevents publishing a new record set. Changed hosts trigger HUP,
   which also clears dnsmasq's cache; since 2026-10-22 each change logs one
   timestamped line with the number of dnsmasq PIDs signalled.
-- Deployed up to 2026-10-22: the refresher never deletes routes, and only the
-  healthy-tick public refresher removes a replaced address's route. A set
-  replaced during WARP fallback or game mode therefore kept its routes. On
-  2026-10-22 the router held 20 such CloudFront routes from earlier
-  `api3.blinkit.com` answers.
-- Commit `775bcd4` (not yet deployed) makes the refresher remove the dropped
-  addresses' routes after publishing a new set, unless another refresher still
-  lists them. It also resolves every name before installing any route.
+- Until 2026-10-22 07:25 the refresher never deleted routes, and only the
+  healthy-tick public refresher removed a replaced address's route. A set
+  replaced during WARP fallback or game mode therefore kept its routes. The
+  router held 20 such CloudFront routes from earlier `api3.blinkit.com`
+  answers; they were removed by hand at 07:27.
+- Since then (commit `775bcd4`) the refresher removes the dropped addresses'
+  routes after publishing a new set, unless another refresher still lists
+  them. It also resolves every name before installing any route.
 - The installed dnsmasq 2.85 rejects `--filter-AAAA`, and its init script ignores
   `filter_aaaa`; setting that UCI flag alone does not implement filtering.
 
