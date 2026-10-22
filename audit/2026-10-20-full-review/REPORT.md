@@ -213,7 +213,7 @@ plausible but unproven.
 | F09 | Medium | Confirmed (sandbox) | Correctness | `rotate_tunnel_ip.sh:84-87` | WARP rotation always rolls back: the IPv6 probe hits Google (rejected) and the IPv4 probe bypasses WARP |
 | F10 | Medium | Likely | Performance (Rust) | `tunnel.rs:240,528-546` | A 1,000-datagram unmanaged FIFO inside `usque-rs` can add hundreds of ms of latency during uploads |
 | F11 | Low | Confirmed (measured) | Resource | `google_wan_policy.sh:35-42` | `check-dns` costs 165 process execs per tick (36 % of a healthy tick) |
-| F12 | Low | Confirmed | Correctness | `refresh_blinkit_dns.sh:34-37` | Blinkit `/32` routes are never removed (**corrected in §14: mostly not a defect**) |
+| F12 | Low | Confirmed | Correctness | `refresh_blinkit_dns.sh:34-37` | Blinkit `/32` routes are never removed (§14 wrongly called this mostly harmless; **confirmed live and fixed in §15**) |
 | F13 | Low | Likely | Resource | `refresh_blinkit_dns.sh:49-54` | Every Blinkit address change SIGHUPs dnsmasq, flushing its whole cache; the change rate is not logged |
 | F14 | Low | Confirmed (history) | Observability | `ensure_network.sh:137-143` | Slow-tunnel detection (the 08-09 safety net) was removed on 09-19; a reachable-but-slow tunnel passes |
 | F15 | Low | Confirmed | Observability | `diagnose.sh:157`; `ensure_network.sh:145-151` | The diagnostic WARP-IPv6 probe targets Google and has always failed since 09-23; `tunnel_internet_v6_ok` is dead code |
@@ -657,7 +657,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F11 | **Fixed** | `9968823` | One `awk` pass; equivalence tests for the complete and missing-domain cases. |
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
-| F12–F14, F19–F30 | See §14 | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Implemented and tested; not deployed. |
+| F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22, except the F12 fix (§15). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -970,18 +970,18 @@ Cloudflare's trace reporting `warp=on` through `tun0`.
   were exercised. They are covered only by the sandbox tests.
 - **The rest of the first hour:** the §11 watch list is yours to follow.
 
-## 14. Batch 4 — approved 21 October 2026, implemented, not deployed
+## 14. Batch 4 — approved 21 October 2026, deployed 22 October (§15)
 
 You approved batch 4 and decided the three open items: F21 log only, F24
 documentation only, F25 ship the rollback binary. Each code change landed as
-one commit with a test that fails before it. Nothing in this batch has been
-deployed; the router still runs the 2026-10-20 set (§13).
+one commit with a test that fails before it. It was deployed on 22 October;
+§15 records that, and the F12 fix that followed.
 
 ### 14.1 Outcome per finding
 
 | ID | Status | Commit | Notes |
 |---|---|---|---|
-| F12 | **Finding corrected; no script change** | `0e3ad17` (test) | Phase 1 judged `refresh_blinkit_dns.sh` alone. The health pipeline's public refresher resolves the Blinkit names through dnsmasq, which serves the Blinkit hosts file, so a replaced address loses its route on the same tick. A sandbox test pins this and fails if the names leave `DIRECT_PUBLIC_DOMAINS`. The approved fix (keep two generations) would have kept old routes *longer* than today, so it was not built. Residual: a run that installs routes, then exits before publishing (a name with no answer and no saved record), leaves those routes unowned. |
+| F12 | **Correction withdrawn; fixed in §15** | `0e3ad17` (test), `775bcd4` (fix) | This row first said the finding was mostly not a defect: on a healthy tick the public refresher removes a replaced address's route. That holds only on healthy ticks. The post-deploy check on 2026-10-22 found 20 leaked routes, and the fix followed (§15). |
 | F13 | **Fixed (log only)** | `172c205` | One timestamped `ensure.log` line per record change, with the number of dnsmasq PIDs actually signalled. Its rate answers F12's open question: is removal within one tick too fast for clients that cached the old answer? |
 | F14 | **Fixed (log only)** | `99eab50` | The passing probe's `time_total` is kept. Three consecutive checks over 1.5 s log a WARNING and take one `tunnel-slow` snapshot; one fast check resets the count. It never restarts. Tunables: `TUNNEL_SLOW_SECONDS`, `TUNNEL_SLOW_CHECKS`. |
 | F19 | **Fixed** | `3994808` | `trap 'exit 129' HUP` in both scripts. The trap alone was not enough for rotation: the test showed `cleanup`'s first `log` (a `tee`) failing on the lost terminal, and `set -e` aborting the restore with status 141. That log call is now non-fatal. `game_mode.sh` only releases its lock; partial game-mode state remains, and F07's warning reports it. |
@@ -1195,10 +1195,8 @@ manual merge; the backup copy is the fastest emergency path.
 - **F14's threshold against real latency.** Healthy probes took 69–75 ms on
   08-09. The live distribution of `time_total`, and so the false-warning
   rate, are unknown.
-- **F12's correction.** It depends on dnsmasq answering the public
-  refresher's `127.0.0.1` query from the Blinkit hosts file. This was
-  modelled in the sandbox and verified as a design on 09-19, but not
-  re-checked live. The ownership check in §14.4 tests it.
+- **F12's correction (withdrawn).** The ownership check in §14.4 tested it
+  live on 2026-10-22 and disproved it; see §15.
 - **F19 against a real dropbear session:**
   - The test closes the pipes and sends SIGHUP to the process group. A real
     pty hangup gives EIO, not SIGPIPE, and which processes receive SIGHUP was
@@ -1212,3 +1210,157 @@ manual merge; the backup copy is the fastest emergency path.
   presence there.
 - **Deferred:** the Rust items (F10, F16–F18, and F27's `pending_pkt`) are
   unbuilt and untested.
+
+## 15. Deployment record — 22 October 2026, 00:42–00:47 IST, and F12 reopened
+
+### 15.1 Batch 4 deployment
+
+You authorised SSH access for this deployment, and it followed §14.4. `.env`
+and `config.json` were never read.
+
+**Pre-flight (00:42), all read-only:**
+- All six router scripts matched `41828c5` byte for byte.
+- The rollback binary was already present (since 30 July), mode `0755`,
+  with the Mac copy's SHA-256 (`e27256fe…`).
+- `/overlay` was 17 % used (128 MB free) and `/tmp` 0 %. No lock was held,
+  game mode was off, and the router and Mac clocks agreed to the second.
+- WARP ran as PID 20421; uptime was 13.6 days. `ensure.log` showed one real
+  WARP restart at 00:08 (both tunnel probes failed twice, then recovered) and
+  three single probe failures that cleared on the re-check. The 10-20 code
+  handled all of them as designed.
+- **F22 gate:** passed on the live list, run by BusyBox `awk`. The list has
+  14 entries: 4 upstreams, 3 Blinkit zones and 7 campus forwards. A control
+  with two servers swapped failed, as it should.
+
+**Staging and backup.**
+- I staged the six scripts; the rollback binary needed none. The archive was
+  built with `COPYFILE_DISABLE`, so it held no AppleDouble files.
+- All six passed BusyBox `sh -n`, and their hashes matched the Mac.
+- The backup is `/root/router-script/backup-batch4`: mode 700, six scripts
+  matching `41828c5`, and the WARP PID.
+
+**Step A** went in under the lock at 00:44:04: `stop_tunnel.sh`,
+`game_mode.sh`, `refresh_blinkit_dns.sh`, `login.sh` and
+`rotate_tunnel_ip.sh`. They are root-owned with mode `0755`, and their hashes
+match. The 00:44:30 and 00:45:00 ticks passed, and the PID was unchanged.
+
+**Step B** (`ensure_network.sh`) went in at 00:45:21, and its hash matches. A
+manual run with the lock released passed in 2 s (exit 0) with no new
+warnings, and the PID was unchanged. The ticks at 00:45:30, 00:46:00 and
+00:46:30 passed.
+
+**Step C** had nothing to install, since the identical binary was present.
+The staging directory was removed.
+
+**Post-deploy checks:**
+- No DNS drift (F22), clock warnings (F21), slow checks (F14) or
+  route-preference warnings (F07).
+- F13 logged no change lines: the records had last changed on 2026-10-21 at
+  05:36.
+- BusyBox `test -nt` gave the right answer for three file pairs of known age.
+- F08 still holds: rule 700 exists once, the chain has 5 rules, and the jump
+  is the first PREROUTING rule.
+- **Unexpected result.** The ownership check found 22 metric-1 host routes on
+  `eth0` that no state file owns:
+  - Two are the WARP endpoints, as expected.
+  - The other 20 are CloudFront addresses in five groups of four, each group
+    in one `/24`. That is the shape of `api3.blinkit.com`'s answers.
+  - All 8 current Blinkit addresses were owned by the public route file.
+  - The records predate the deploy, so the deploy did not create these
+    routes. I stopped there, as instructed.
+
+**Now verified on the router:** BusyBox `awk` `split()` (the F22 gate),
+`test -nt` (F21), and the staged promotion of six scripts.
+**Still unverified:**
+- F19's HUP trap under ash.
+- F13's PID count, since no change has happened yet.
+- F14 under real latency.
+- F23 and F25 over the real link (`sync_to_router.sh` was not run).
+
+### 15.2 F12 reopened and fixed (`775bcd4`, not deployed)
+
+**Why §14's correction was wrong.** It rested on a sandbox test of healthy
+ticks, where the public refresher deletes a replaced address's route.
+`refresh_blinkit_dns.sh` runs on every tick, but the public refresher runs only
+after a healthy tunnel check. Two common states skip it:
+- **WARP fallback.** `stop_tunnel.sh` deletes the public routes and the route
+  file. The Blinkit script then re-adds its current routes on every tick, and
+  no file records them.
+- **Game mode.** `ensure_network.sh` exits before the optional route refresh.
+
+A record set replaced in either state kept its routes until reboot. Two rarer
+cases leak the same way:
+- two quick changes, where dnsmasq had not yet reloaded on the first;
+- a run that installed routes and then stopped before publishing.
+
+**Fix.** The script now owns the records it publishes:
+- It resolves every name before changing any route, so a run that cannot
+  publish installs nothing.
+- When the set changes, it computes the dropped addresses from the old hosts
+  file and publishes the new set (HUP). It then removes the dropped
+  addresses' routes, with the same spec they were installed with, except those
+  another refresher's file still lists.
+- On healthy ticks the public refresher still removes those routes, so timing
+  there is unchanged.
+- One log line counts the removals.
+
+**Tests and checks.**
+- Tests: two whole-pipeline tests (the WARP-down and game-mode paths) and
+  three unit tests (the shared-route rule and unpublish-before-remove order,
+  no removal while unchanged, and no routes from a run that stops early).
+  All five fail before the fix.
+- 77 tests pass under macOS `sh` and `dash`; the dash suite was also re-run on
+  its own.
+- Shellcheck findings are unchanged, and a healthy tick still costs 292
+  processes.
+
+**Invariants.** The script deletes only `/32`s it published itself, never
+defaults, campus prefixes, NAT, DNS or Wi-Fi state.
+
+**Residual risk.** If a CDN answer ever equalled a WARP endpoint address,
+this refresher (like the public one today) could delete that endpoint's route.
+Blinkit's answers are in other ranges, so this is theoretical.
+
+**Still open.** Should the previous generation be kept for clients with cached
+answers? F13's change rate will show.
+
+### 15.3 Deploying the F12 fix and removing the 20 leaked routes
+
+The fix cannot see the 20 routes, because no file records them, so the deploy
+removes them once, explicitly. It needs your SSH authorisation, as before.
+
+**0. Pre-flight (read-only).** The router's `refresh_blinkit_dns.sh` must
+have the hash of `git show 6142896:refresh_blinkit_dns.sh | shasum -a 256`,
+and no lock may be held.
+
+**1. Stage, verify and back up**, as in §14.4 steps 1–2. Use one file, the
+stage `.stage-f12` and the backup `backup-f12`.
+
+**2. Promote under the lock**, using §14.4's `take_lock`/`promote`. The next
+ticks must pass. The next Blinkit change logs "replaced-address routes
+removed: …".
+
+**3. Remove the leaked routes once.** This deletes only addresses that are on
+the list recorded at 00:46 and still unowned at that moment, with the same
+route spec:
+
+```sh
+cd /root/router-script
+LEAKED="13.32.251.6 13.32.251.50 13.32.251.79 13.32.251.129 99.86.182.6 99.86.182.26 99.86.182.75 99.86.182.118 108.158.61.55 108.158.61.65 108.158.61.119 108.158.61.128 108.158.245.15 108.158.245.34 108.158.245.74 108.158.245.124 108.159.28.9 108.159.28.11 108.159.28.25 108.159.28.49"
+GW="$(ip -4 route show default dev eth0 | awk '/via/ {print $3; exit}')"
+owned() { cat /tmp/router-script-*-host-routes 2>/dev/null | grep -qxF "$1/32" || awk -v a="$1" '$1 == a { f = 1 } END { exit !f }' /etc/router-script/blinkit-hosts/hosts; }
+[ -n "$GW" ] && for a in $LEAKED; do
+    if owned "$a"; then echo "kept $a (owned again)"
+    elif ip route del "$a/32" via "$GW" dev eth0 metric 1 2>/dev/null; then echo "removed $a"
+    else echo "not present $a"; fi
+done || echo "no WAN gateway: nothing removed"
+```
+
+Then re-run §14.4's ownership check. Only the two WARP endpoints should
+remain. A flow that is using one of these addresses at that moment moves to
+WARP and may reset once. Nothing needs restoring afterwards: every refresher
+re-adds whatever it still needs on its next run.
+
+**4. Rollback**, under the lock:
+`cp -p backup-f12/refresh_blinkit_dns.sh refresh_blinkit_dns.sh.old && mv refresh_blinkit_dns.sh.old refresh_blinkit_dns.sh`.
+The fix creates no new state.

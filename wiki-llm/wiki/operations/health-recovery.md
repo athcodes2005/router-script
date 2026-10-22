@@ -90,9 +90,13 @@ all configured names produced IPv4 answers and route installation succeeded.
 This avoids CDN-answer races and partial-DNS-induced tunnel restarts. The campus,
 public and game-session refreshers can share a `/32` (a game server can also be
 a listed public name), so a route is deleted only once no refresher's file lists
-it. Replaced Blinkit addresses are removed by the public refresher, which
-resolves those names through dnsmasq's Blinkit hosts file; this depends on the
-names staying in `DIRECT_PUBLIC_DOMAINS`.
+it. `refresh_blinkit_dns.sh` runs on every tick, including during WARP
+fallback and game mode, when the public refresher does not run. So when the
+Blinkit record set changes, it removes the dropped addresses' routes itself,
+after publishing the new set. Routes another refresher still lists are left to
+that refresher (commit `775bcd4`). Before that commit, sets replaced in those
+states kept their routes until reboot: the router held 20 such routes on
+2026-10-22.
 
 `game_mode.sh on` prefers direct campus WAN. Policy toggles share the maintenance
 lock, and disabling game mode preserves the WAN gateway before removing its

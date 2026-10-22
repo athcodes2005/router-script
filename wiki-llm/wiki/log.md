@@ -524,3 +524,30 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - [[systems/policy-routing]]
 - `../../ensure_network.sh`, `../../sync_to_router.sh`, `../../rotate_tunnel_ip.sh`, `../../refresh_blinkit_dns.sh`
 - `../../tests/test_sync.py`, `../../tests/test_hangup.py`
+
+## 2026-10-22 — Deployed batch 4; F12 confirmed live and fixed (fix not deployed)
+
+- With the user's authorisation, deployed the six batch-4 router scripts
+  (step A at 00:44, `ensure_network.sh` at 00:45) under the maintenance lock.
+  WARP was not restarted (PID 20421 throughout), and every health tick
+  passed. The rollback binary was already on the router and identical, so
+  nothing was installed for F25. Backup: `/root/router-script/backup-batch4`.
+- The read-only DNS-order gate for F22 passed on the live list.
+- **Correction to the previous entry:** its F12 statement was wrong. The
+  post-deploy ownership check found 20 leaked CloudFront routes from earlier
+  `api3.blinkit.com` answers. The public refresher removes replaced Blinkit
+  routes only on healthy ticks, so sets replaced during WARP fallback or game
+  mode kept their routes.
+- Fixed in commit `775bcd4`: `refresh_blinkit_dns.sh` now removes the routes
+  of the addresses it drops, after publishing, unless another refresher still
+  lists them. There are new end-to-end tests for both leak paths. The fix and
+  a one-time removal of the 20 routes await deployment; the user chose to
+  leave the routes until then.
+- Updated [[operations/health-recovery]] and
+  [[bugs/blinkit-ipv6-vpn-warning-2026-09-19]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 15)
+- `../../refresh_blinkit_dns.sh`
+- `../../tests/test_blinkit_dns.py`, `../../tests/test_pipeline.py`
