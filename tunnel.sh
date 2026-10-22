@@ -119,8 +119,10 @@ echo "[INFO] Proceeding to start tunnel..."
 NATIVETUN_HELP="$("$EXECUTABLE" nativetun --help 2>&1 || true)"
 SUPPORTS_CC=0
 SUPPORTS_READY=0
+SUPPORTS_SYSLOG=0
 echo "$NATIVETUN_HELP" | grep -q 'congestion-control' && SUPPORTS_CC=1
 echo "$NATIVETUN_HELP" | grep -q 'ready-file' && SUPPORTS_READY=1
+echo "$NATIVETUN_HELP" | grep -q -- '--syslog' && SUPPORTS_SYSLOG=1
 
 # These settings are routing state, not process state; reapply them even when
 # an existing usque-rs process is reused to repair drift.
@@ -135,8 +137,9 @@ if pidof "$(basename "$EXECUTABLE")" >/dev/null 2>&1; then
     fi
     echo "[INFO] Reusing the running usque-rs process and repairing routing state."
 else
-    # usque-rs redraws a status line every second. Keep it off persistent flash;
-    # liveness and active traffic checks are handled by ensure_network.sh.
+    # Keep the client's output off persistent flash. With --syslog its
+    # connection events (and why a session ended) go to the RAM log instead:
+    # logread -e usque-rs. Liveness checks are ensure_network.sh's job.
     echo "[INFO] Starting usque-rs native TUN in the background..."
     rm -f "$WARP_READY_FILE"
     set -- "$EXECUTABLE" --config "$CONFIG_FILE" nativetun --interface-name "$TUN_IF"
@@ -149,6 +152,11 @@ else
         set -- "$@" --ready-file "$WARP_READY_FILE"
     else
         echo "[WARNING] This usque-rs binary cannot signal CONNECT-IP readiness."
+    fi
+    if [ "$SUPPORTS_SYSLOG" -eq 1 ]; then
+        set -- "$@" --syslog
+    else
+        echo "[WARNING] This usque-rs binary cannot log connection events."
     fi
     "$@" >/dev/null 2>&1 &
     PID=$!

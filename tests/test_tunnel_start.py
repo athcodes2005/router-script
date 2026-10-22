@@ -1,4 +1,5 @@
-"""tunnel.sh's start path, taken through its "reuse the running client" branch."""
+"""tunnel.sh's start path: reusing a running client, and launching a new one."""
+import shutil
 import subprocess
 import unittest
 
@@ -75,6 +76,47 @@ class TunnelStartTests(unittest.TestCase):
         self.assertIn('[WARNING] Could not install the host route 198.51.100.10/32', log)
         self.assertIn('[SUCCESS] Full tunnel active', log)
         self.assertEqual(self.box.count('ip route add default dev tun0 metric 5'), 1)
+
+
+class TunnelLaunchTests(unittest.TestCase):
+    """tunnel.sh launching a new client, with only the options the binary lists."""
+
+    def setUp(self):
+        self.box = Sandbox.fresh(self)
+        (self.box.proj / 'config.json').write_text('{"dummy": "registration"}\n')
+        sleeper = subprocess.Popen(['sleep', '300'])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        (self.box.state / 'usque_pid').write_text('%d\n' % sleeper.pid)
+        self.box.flag('client_absent_once')
+        # The readiness wait polls once a second; the dummy client needs that time.
+        (self.box.bin / 'sleep').unlink()
+        (self.box.bin / 'sleep').symlink_to(shutil.which('sleep'))
+
+    def launch(self, options, **env):
+        """Run tunnel.sh with a dummy client listing `options`; return its arguments."""
+        client = self.box.proj / 'usque-rs'
+        client.write_text('#!%s\n' % SHELL
+                          + 'case "$*" in *--help*) echo "%s"; exit 0 ;; esac\n' % options
+                          + 'printf "%s\\n" "$*" > "$SIM_STATE/usque_args"\n'
+                          + 'while [ $# -gt 0 ]; do [ "$1" = --ready-file ] && echo 456 > "$2"; shift; done\n')
+        client.chmod(0o755)
+        result = self.box.run('tunnel.sh', **env)
+        log = self.box.log('tunnel')
+        self.assertEqual(result.returncode, 0, log)
+        self.assertIn('[SUCCESS] Full tunnel active', log)
+        return (self.box.state / 'usque_args').read_text().split(), log
+
+    # F37: with stdout and stderr discarded, nothing recorded why a session ended.
+    def test_connection_events_go_to_syslog_when_supported(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog')
+        self.assertIn('--syslog', args)
+        self.assertNotIn('cannot log connection events', log)
+
+    def test_older_client_starts_without_syslog(self):
+        args, log = self.launch('--congestion-control --ready-file')
+        self.assertNotIn('--syslog', args)
+        self.assertIn('[WARNING] This usque-rs binary cannot log connection events.', log)
 
 
 if __name__ == '__main__':

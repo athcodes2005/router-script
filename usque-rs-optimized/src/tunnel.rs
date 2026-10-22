@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::events::{self, Severity};
 use crate::icmp;
 use crate::packet;
 use crate::tls;
@@ -254,7 +255,10 @@ pub async fn maintain_tunnel(
     clear_ready_file(tunnel_cfg.ready_file.as_deref());
 
     loop {
-        eprintln!("\r\x1b[2K[connecting] {} ...", tunnel_cfg.endpoint);
+        events::event(
+            Severity::Info,
+            &format!("[connecting] {} ...", tunnel_cfg.endpoint),
+        );
 
         let mut connected_at = None;
         let session_result = run_tunnel_session(
@@ -268,16 +272,16 @@ pub async fn maintain_tunnel(
         clear_ready_file(tunnel_cfg.ready_file.as_deref());
 
         match &session_result {
-            Ok(()) => eprintln!("\r\x1b[2K[disconnected] Session ended"),
-            Err(e) => eprintln!("\r\x1b[2K[error] {e:#}"),
+            Ok(()) => events::event(Severity::Info, "[disconnected] Session ended"),
+            Err(e) => events::event(Severity::Warning, &format!("[error] {e:#}")),
         }
         let connected_for = connected_at.as_ref().map(Instant::elapsed);
         let (wait, next_delay) =
             reconnect_backoff(connected_for, session_result.is_ok(), reconnect_delay);
         if !wait.is_zero() {
-            eprintln!(
-                "\r\x1b[2K[retry] Waiting {}s before reconnecting",
-                wait.as_secs()
+            events::event(
+                Severity::Info,
+                &format!("[retry] Waiting {}s before reconnecting", wait.as_secs()),
             );
             tokio::time::sleep(wait).await;
         }
@@ -515,17 +519,18 @@ where
         bail!("timed out waiting for CONNECT response");
     }
 
-    eprintln!("\r\x1b[2K[connected] MASQUE tunnel established");
+    events::event(Severity::Info, "[connected] MASQUE tunnel established");
     mark_ready(tunnel_cfg.ready_file.as_deref())?;
     *connected_at = Some(Instant::now());
 
     let stats = Stats::new();
     let session_start = Instant::now();
 
-    // Spawn stats display task
-    let stats_display = stats.clone();
-    let stats_handle =
-        tokio::spawn(async move {
+    // The status line is redrawn every second: useful on a terminal, but noise
+    // in a log, and a wakeup and write per second when stderr is discarded.
+    let _stats_guard = events::stderr_is_terminal().then(|| {
+        let stats_display = stats.clone();
+        AbortTaskOnDrop(tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
@@ -537,16 +542,20 @@ where
                 let lost = stats_display.quic_lost.load(Ordering::Relaxed);
                 let retrans = stats_display.quic_retrans.load(Ordering::Relaxed);
                 let uptime = session_start.elapsed();
-                eprint!(
-                "\r\x1b[2K[connected {}] tx: {} ({})  rx: {} ({})  drop: {}  lost: {}  retrans: {}",
-                format_duration(uptime),
-                tx_p, format_bytes(tx_b),
-                rx_p, format_bytes(rx_b),
-                dropped, lost, retrans,
-            );
+                events::status(&format!(
+                    "[connected {}] tx: {} ({})  rx: {} ({})  drop: {}  lost: {}  retrans: {}",
+                    format_duration(uptime),
+                    tx_p,
+                    format_bytes(tx_b),
+                    rx_p,
+                    format_bytes(rx_b),
+                    dropped,
+                    lost,
+                    retrans,
+                ));
             }
-        });
-    let _stats_guard = AbortTaskOnDrop(stats_handle);
+        }))
+    });
 
     // Build the flow_id varint prefix + context_id zero
     let mut flow_prefix = Vec::with_capacity(16);

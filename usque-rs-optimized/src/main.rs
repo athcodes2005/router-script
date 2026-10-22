@@ -26,6 +26,7 @@
 //! usque-rs - MASQUE (CONNECT-IP) client for Cloudflare WARP.
 
 mod config;
+mod events;
 mod icmp;
 mod packet;
 mod register;
@@ -38,6 +39,8 @@ mod pipeline_tests;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use events::Severity;
+use std::path::Path;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -103,6 +106,10 @@ enum Commands {
         /// sent, so the excess queues in the kernel instead (0 disables)
         #[arg(long, default_value_t = 0)]
         tun_backpressure: usize,
+        /// Also send connection events (connecting, connected, why a session
+        /// ended, fatal errors) to the system log
+        #[arg(long, default_value_t = false)]
+        syslog: bool,
     },
 }
 
@@ -132,8 +139,17 @@ async fn main() -> Result<()> {
             interface_name,
             ready_file,
             tun_backpressure,
+            syslog,
         } => {
-            cmd_nativetun(
+            if syslog {
+                match events::Syslog::new(Path::new(events::SYSLOG_SOCKET)) {
+                    Ok(syslog) => events::enable_syslog(syslog),
+                    Err(error) => {
+                        events::event(Severity::Warning, &format!("syslog unavailable: {error}"));
+                    }
+                }
+            }
+            let result = cmd_nativetun(
                 &cli.config,
                 connect_port,
                 ipv6,
@@ -148,7 +164,12 @@ async fn main() -> Result<()> {
                 ready_file,
                 tun_backpressure,
             )
-            .await
+            .await;
+            // main reports the error on stderr itself; syslog needs a copy.
+            if let Err(error) = &result {
+                events::syslog(Severity::Warning, &format!("[fatal] {error:#}"));
+            }
+            result
         }
     }
 }
@@ -218,7 +239,7 @@ async fn cmd_nativetun(
         anyhow::bail!("keepalive period must be at least one second");
     }
     let cfg = config::Config::load(config_path)?;
-    eprintln!("Config loaded from {config_path}");
+    events::event(Severity::Info, &format!("Config loaded from {config_path}"));
 
     let endpoint_ip: std::net::IpAddr = if use_ipv6 {
         cfg.endpoint_v6.parse()?
@@ -245,7 +266,7 @@ async fn cmd_nativetun(
     let tun_dev = tun_device::create_tun(&tun_cfg)?;
 
     if no_iproute2 {
-        eprintln!("Skipping address setup (--no-iproute2)");
+        events::event(Severity::Info, "Skipping address setup (--no-iproute2)");
     } else {
         tun_device::configure_tun(&tun_cfg, &tun_dev).await?;
     }

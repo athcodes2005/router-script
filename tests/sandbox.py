@@ -177,7 +177,10 @@ STUBS = {
     'timeout': 'shift; exec "$@"',
     'sha256sum': 'echo "simhash  $1"',
     'pidof': r'''case "$1" in
-  usque-rs) flag warp_down && exit 1; @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
+  usque-rs) flag warp_down && exit 1
+    # Absent for one check, as when tunnel.sh must launch a new client.
+    if flag client_absent_once; then @RM@ -f "$SIM_STATE/client_absent_once"; exit 1; fi
+    @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
   dnsmasq) flag dnsmasq_down && exit 1; echo 123 ;;
   *) exit 1 ;;
 esac''',
