@@ -164,13 +164,16 @@ code=204; t=0.050
 case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = eth0 ] && flag direct_down && code=000
 [ "$iface" = tun0 ] && flag warp_down && code=000
+case "$url" in http://1.1.1.1/*) flag rtt_fail && code=000 ;; esac
+tc=0.021; [ "$code" != 000 ] || tc=0.000  # curl reports no connect time for a failed connection
 case "$url" in *google.com*) [ "$v6" = 1 ] && flag google_v6_rejected && code=000 ;; esac
 if [ "$code" != 000 ] && [ -z "$body_to" ]; then
   case "$url" in */cdn-cgi/trace)
     if flag warp_trace_off; then printf 'fl=1\nwarp=off\n'; else printf 'fl=1\nwarp=on\n'; fi ;;
   esac
 fi
-out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g")
+out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g" \
+  -e "s/%{time_connect}/$tc/g" -e "s/%{speed_upload}/4000000/g" -e "s/%{speed_download}/12500000/g")
 printf '%b' "$out"
 [ "$code" = 000 ] && exit 7
 exit 0
