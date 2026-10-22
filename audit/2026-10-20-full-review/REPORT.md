@@ -232,6 +232,7 @@ plausible but unproven.
 | F28 | Nit | Confirmed | Observability | `ensure_network.sh:469,520` | Misleading log text |
 | F29 | Nit | Confirmed | Maintainability | `ensure_network.sh:351`; `game_mode.sh:130` | Hard-coded LAN prefix and WAN metric |
 | F30 | Nit | Confirmed | Resource | `tunnel.sh:286`; `ensure_network.sh:670` | odhcpd is restarted twice per WARP restart |
+| F31 | Low | Confirmed (config); reachability unverified | Security | fw3 `INPUT`; `tunnel.sh` | New connections arriving on `tun0` reach SSH, the admin UI and DNS (found 2026-10-22, §16) |
 
 ### F01 — Wi-Fi passphrases in every diagnostic (High, Confirmed)
 
@@ -658,6 +659,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
+| F31 | Implemented, not deployed | `3b3a183` | Found in the 2026-10-22 validation; you asked for a test-first fix without deploying it (§16). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1398,3 +1400,125 @@ and `config.json` were never read.
   ownership check after it; expect only the WARP endpoints.
 - **Rollback:** §15.3 step 4 (`backup-f12`). The removed routes need no
   restoring.
+
+## 16. Final validation — 22 October 2026, 07:31–07:42 IST, and F31
+
+You asked for a full check of the router after the deployments. Everything
+was read-only, apart from one 10 MB download through WARP. `.env` and
+`config.json` were checked for mode only.
+
+### 16.1 Results
+
+| Area | Result |
+|---|---|
+| System | Up 13 d 20 h; load 0.19 on 2 cores; 279 of 491 MB available; `/overlay` 16 %, `/tmp` 0 %; 307 of 16,384 conntrack entries |
+| Temperature | CPU 68.5 °C; the fan is off by design until 76 °C (`glfan`) |
+| Kernel (≈18 h of ring buffer) | No OOM, segfault, panic, hung task, conntrack overflow, flash error, watchdog or `eth0` link change |
+| Syslog (00:15–07:32) | 134 `kern.err` lines, all MediaTek Wi-Fi driver notices (single TX failures, `CheckRxError`); 2 dnscrypt-proxy NOTICE lines logged at error level |
+| WAN | Up on a 119 h lease; gateway 0 % loss, 0.8 ms; no interface errors |
+| Routes | Every invariant holds: defaults via `tun0`, campus prefixes and WARP endpoints on `eth0` |
+| WARP | `warp=on` for both families (BOM); HTTPS 71–74 ms; 0 % loss, 3.8 ms; 56.8 Mbps; queue empty when idle; no `tun0` errors |
+| Direct path | Google 62–65 ms over `eth0`; portal reachable |
+| DNS | All three upstreams answer; pins, split-horizon and Blinkit IPv4-only correct; server order and all DNS invariants intact; Google ipsets populated |
+| Firewall and policy | WAN input admits only DHCP renewal, IGMP and port forwards; NAT, MSS, `FORWARD` rules, rules 690/700/710 and the game chain intact |
+| Wi-Fi | Both radios up (IN, HE20/HE80); 8 clients on 5 GHz, −18 to −46 dBm |
+| Health pipeline | 720 of 720 checks passed in 6 h, with no gap over 90 s; no lock, cooldown or warning markers |
+| Integrity | 28 of 30 deploy-set files match `2ae4750`; `README.md` and `PROJECT_CONTEXT.md` differ (docs were not deployed); secrets and all 30 snapshots are 0600 |
+
+**Benign observations:**
+- The 56.8 Mbps download used 81 % of one core, so WARP is CPU-bound around
+  60–70 Mbps on this hardware. That matches the 66 Mbps measured on 08-09, and
+  it explains a momentary 87 % CPU reading taken during a client download.
+- Campus filters ICMP beyond the gateway. Ping fails to 8.8.8.8, 1.1.1.1 and
+  campus DNS, while DNS and HTTPS to them work.
+- Short-lived zombie cron children come and go every minute (BusyBox `crond`
+  reaps them on its next wake-up).
+- The suspicious log readings were artifacts:
+  - Undated `stop_tunnel.sh` lines come from the restarts on 19 Oct and at
+    00:08 on 22 Oct.
+  - `tunnel.log`'s last `[ERROR]` dates from 19 September.
+
+### 16.2 F31 — new connections over `tun0` reach router services
+
+**Evidence.** The router's `INPUT` chains (IPv4 and IPv6) have policy
+`ACCEPT`. Zone dispatch exists only for `br-lan` and `eth0`, and `tun0` is in
+no fw3 zone. Services listen on all addresses: SSH on 22, the GL.iNet UI on
+80, 443, 8080 and 8443, and dnsmasq on 53, including on the tunnel addresses.
+So a packet that reaches the router over the tunnel can open a connection to
+any of them. The audit checked `FORWARD` (§1.1) but not `INPUT` for `tun0`.
+
+**Exposure.** It is not known whether WARP ever delivers unsolicited inbound
+traffic to a consumer client; it is not expected to. F31 is therefore a missing
+safeguard (Low), not a known open door. After deployment, the new rule's packet
+counter will show whether anything arrives.
+
+**Fix (`3b3a183`).** The rule is `INPUT -i tun0 -m conntrack --ctstate NEW -j DROP`
+for both IPv4 and IPv6.
+- `tunnel.sh` adds the rules at start. It warns rather than failing a
+  `set -e` start.
+- `ensure_network.sh` re-checks them on every tick, before the game-mode exit,
+  and restores them after a firewall reload. It logs, and never restarts WARP
+  for them.
+- `stop_tunnel.sh` keeps the rules: they match nothing without `tun0`, and the
+  next start has no window without them.
+- Replies, including ICMP errors for path MTU, are not NEW, so the router's
+  own tunnel traffic is unaffected. Forwarded LAN traffic uses `FORWARD`.
+
+**Tests and checks.**
+- Six new tests, all failing before the fix:
+  - the rule is present after a tick;
+  - it is restored once after a simulated firewall reload;
+  - it is kept in game mode;
+  - a failure to add it warns but never restarts WARP;
+  - only a missing rule is added;
+  - `tunnel.sh` uses the same spec without risking the start.
+- 83 tests pass under macOS `sh` (bash) and `dash`. Each suite was run on its
+  own; see §16.4.
+- Shellcheck findings are unchanged. A healthy tick costs 294 processes
+  (+2: one `-C` per family).
+- Invariants are unaffected: only `INPUT` changes.
+
+### 16.3 Deploying F31 (not deployed; needs your SSH authorisation)
+
+**0. Pre-flight (read-only).**
+- The router's `tunnel.sh` and `ensure_network.sh` must match
+  `git show 2ae4750:<file> | shasum -a 256`.
+- No lock may be held.
+- Record that the rule is absent:
+  `iptables -C INPUT -i tun0 -m conntrack --ctstate NEW -j DROP; echo $?`
+  (and the same for `ip6tables`) prints 1.
+
+**1. Stage, verify and back up** both files, as in §14.4 steps 1–2. Use the
+stage `.stage-f31` and the backup `backup-f31`.
+
+**2. Promote both files under the lock**, with §14.4's `take_lock`/`promote`.
+- `ensure_network.sh` adds the rules on its first tick and logs "Added the
+  missing iptables rule dropping new inbound connections on tun0." (and the
+  same for ip6tables).
+- `tunnel.sh` takes effect at the next WARP start.
+
+**3. Verify.**
+- Both `-C` checks print 0.
+- The next ticks pass, and the WARP PID is unchanged.
+- LAN browsing works, and the health probes through `tun0` keep passing.
+- After a day, `iptables -L INPUT -v -n | grep tun0` (and `ip6tables`) shows
+  whether any unsolicited connection actually arrived.
+
+**4. Rollback.**
+- Restore both files from `backup-f31` under the lock.
+- Remove the rules:
+  `while iptables -C INPUT -i tun0 -m conntrack --ctstate NEW -j DROP 2>/dev/null; do iptables -D INPUT -i tun0 -m conntrack --ctstate NEW -j DROP; done`
+  (and the same for `ip6tables`).
+
+### 16.4 Testing note
+
+Twice today (the F12 and F31 runs), the scratchpad runner that starts the
+`sh` and `dash` suites in parallel produced byte-identical output files, with
+the same duration to the millisecond. That is implausible for two independent
+runs, and the cause is unexplained. Both times the suites were re-run on their
+own:
+- F12: dash 144.7 s;
+- F31: `sh` 154.3 s and dash 152.6 s.
+
+They passed each time. Treat that runner's parallel output as unverified until
+the cause is found.

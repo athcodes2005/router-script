@@ -38,6 +38,25 @@ verification is disabled for this special endpoint flow, but the peer certificat
 is mandatory and its SPKI must match the public key delivered by registration.
 A missing certificate or mismatched key terminates the session.
 
+## Router services and the tunnel
+
+SSH, the GL.iNet admin UI (80, 443, 8080, 8443) and dnsmasq listen on all
+addresses. fw3 filters input only from `br-lan` and `eth0`. WAN input admits
+only DHCP renewal, IGMP and port forwards, so campus hosts cannot reach these
+services, and dnsmasq is not an open resolver.
+
+`tun0` is in no fw3 zone, and `INPUT`'s policy is `ACCEPT`. A connection
+arriving over the tunnel therefore reached these services (audit F31, found on
+2026-10-22). Commit `3b3a183` drops new inbound connections on `tun0` for
+IPv4 and IPv6:
+- `tunnel.sh` adds the rule at start.
+- `ensure_network.sh` restores it after a firewall reload. It never restarts
+  WARP for it.
+- `stop_tunnel.sh` leaves it in place, because it is inert without `tun0`.
+
+Replies are not NEW and still pass. As of 2026-10-22 this commit is **not
+deployed**; whether WARP ever delivers such connections is unverified.
+
 ## Diagnostic boundary
 
 Metadata such as file modes, routes, and endpoint reachability may be recorded.
@@ -49,6 +68,7 @@ Packet captures are considered sensitive even when they contain no payload.
 ## Sources
 
 - `../../../login.sh`
+- `../../../tunnel.sh`, `../../../ensure_network.sh` (tun0 input rule)
 - `../../../sync_to_router.sh`
 - `../../../rotate_tunnel_ip.sh`
 - `../../../usque-rs-optimized/src/config.rs`

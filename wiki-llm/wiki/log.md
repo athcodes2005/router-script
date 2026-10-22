@@ -569,3 +569,27 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 15.4)
 - `../../refresh_blinkit_dns.sh`
+
+## 2026-10-22 — Final read-only validation; new finding F31 (fix not deployed)
+
+- Ran a read-only check of the router at the user's request. Every check
+  passed:
+  - load 0.19, 279 MB RAM free, `/overlay` 16 %;
+  - no kernel errors;
+  - WAN up on a 119 h lease;
+  - WARP on for both families: HTTPS 71–74 ms, 56.8 Mbps, 0 % loss;
+  - DNS and all invariants intact;
+  - 720 of 720 health checks passed in 6 h;
+  - all deployed scripts and binaries match the repo.
+- Benign: MediaTek Wi-Fi driver log noise, campus ICMP filtering beyond the
+  gateway, transient cron zombies. The WARP client is CPU-bound at about
+  60–70 Mbps.
+- New finding F31: `tun0` is in no fw3 zone and `INPUT` accepts by default, so
+  connections arriving over the tunnel reached SSH, the admin UI and DNS. The
+  test-first fix (commit `3b3a183`) drops new inbound connections on `tun0`.
+  Per the user, it is not deployed. See [[security/secrets-and-trust]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 16)
+- `../../tunnel.sh`, `../../ensure_network.sh`
