@@ -201,9 +201,7 @@ dns_runtime_ok() {
 }
 
 lan_ipv6_config_ok() {
-    if [ ! -f "$GAME_MODE_MARKER" ]; then
-        [ "$(uci -q get dhcp.@dnsmasq[0].filter_aaaa 2>/dev/null || echo "")" = "0" ] || return 1
-    fi
+    [ "$(uci -q get dhcp.@dnsmasq[0].filter_aaaa 2>/dev/null || echo "")" = "0" ] || return 1
     [ "$(uci -q get dhcp.lan.ra 2>/dev/null || echo "")" = "server" ] || return 1
     [ "$(uci -q get dhcp.lan.ra_slaac 2>/dev/null || echo "")" = "1" ] || return 1
     [ "$(uci -q get dhcp.lan.dhcpv6 2>/dev/null || echo "")" = "server" ] || return 1

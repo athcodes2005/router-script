@@ -116,7 +116,7 @@ UCI = r'''key=; for a in "$@"; do key=$a; done
 case "$1 ${2:-}" in '-q get'|'get '*) ;; *) exit 0 ;; esac
 case "$key" in
   'dhcp.@dnsmasq[0].strictorder'|'dhcp.@dnsmasq[0].noresolv') echo 1 ;;
-  'dhcp.@dnsmasq[0].filter_aaaa') echo 0 ;;
+  'dhcp.@dnsmasq[0].filter_aaaa') if flag filter_aaaa_on; then echo 1; else echo 0; fi ;;
   'dhcp.@dnsmasq[0].server')
     if flag dns_order_drift; then printf '10.200.1.11 8.8.8.8 8.8.4.4 127.0.0.1#5453'
     else printf '8.8.8.8 8.8.4.4 10.200.1.11 127.0.0.1#5453'; fi

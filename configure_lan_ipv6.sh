@@ -50,11 +50,8 @@ if [ -e "/proc/sys/net/ipv6/conf/$LAN_IF/disable_ipv6" ]; then
     sysctl -w "net.ipv6.conf.$LAN_IF.disable_ipv6=0" >> "$LOG_FILE" 2>&1
 fi
 
-if [ -f "${GAME_MODE_MARKER:-/tmp/router-script-game-mode}" ]; then
-    uci set dhcp.@dnsmasq[0].filter_aaaa='1'
-else
-    uci set dhcp.@dnsmasq[0].filter_aaaa='0'
-fi
+# Never filtered, game mode included: this dnsmasq ignores the option anyway.
+uci set dhcp.@dnsmasq[0].filter_aaaa='0'
 uci set dhcp.lan.ra='server'
 uci set dhcp.lan.ra_slaac='1'
 uci set dhcp.lan.dhcpv6='server'

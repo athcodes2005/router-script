@@ -135,7 +135,7 @@ class LockTests(unittest.TestCase):
             self.assertFalse(self.lock.exists())
 
     def test_game_mode_owns_the_lock_while_it_works(self):
-        (self.box.sysroot / 'etc/init.d/dnsmasq').write_text('#!%s\n%s' % (SHELL, BLOCK))
+        self.box.flag('curl_blocks')  # game mode's closing status probe
         process = self.box.start('game_mode.sh', 'on')
         self.addCleanup(lambda: process.poll() is None and os.killpg(process.pid, signal.SIGKILL))
         deadline = time.time() + 30

@@ -99,6 +99,10 @@ case "$CMD" in
         fi
         # Demote WARP IPv6 default and reject LAN->tun0 IPv6 forwarding during game mode
         # to prevent games from blackholing match UDP packets over unreplied IPv6/NAT64.
+        # The rejection is also how IPv6 stays hidden: the ICMPv6 port-unreachable
+        # is a hard error, so dual-stack clients fall back to IPv4 at once. DNS
+        # cannot help here: dnsmasq 2.85 has no --filter-AAAA, and its init script
+        # ignores filter_aaaa.
         if ip -6 route show default dev "$TUN_IF" 2>/dev/null | grep -q default; then
             ip -6 route del default dev "$TUN_IF" 2>/dev/null || true
             ip -6 route add default dev "$TUN_IF" metric 50 2>/dev/null || true
@@ -106,24 +110,16 @@ case "$CMD" in
         ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j REJECT 2>/dev/null || \
             ip6tables -I FORWARD -i "$LAN_IF" -o "$TUN_IF" -j REJECT 2>/dev/null || true
 
-        # Enable AAAA filtering in dnsmasq so game clients use IPv4 directly
-        uci set dhcp.@dnsmasq[0].filter_aaaa='1'
-        uci commit dhcp
-        /etc/init.d/dnsmasq reload >/dev/null 2>&1 || true
-
         # Pause aggressive tunnel restarts while gaming: ensure_network still
         # repairs WAN/DNS/portal, but must not yank the default back to tun0.
         printf 'on\n' > "$MARKER"
-        log "game_mode ON: public IPv4 prefers $WAN_IF (WARP demoted, IPv6 isolated, filter_aaaa=1)."
+        log "game_mode ON: public IPv4 prefers $WAN_IF (WARP demoted, IPv6 isolated)."
         "$0" status
         ;;
     off)
         rm -f "$MARKER"
         # Restore normal full-tunnel preference and IPv6.
         while ip6tables -D FORWARD -i "$LAN_IF" -o "$TUN_IF" -j REJECT 2>/dev/null; do :; done
-        uci set dhcp.@dnsmasq[0].filter_aaaa='0'
-        uci commit dhcp
-        /etc/init.d/dnsmasq reload >/dev/null 2>&1 || true
 
         # Save the gateway before removing metric 1: it may be the only WAN
         # default after a DHCP renewal while game mode was active.
@@ -141,7 +137,7 @@ case "$CMD" in
             ip -6 route del default dev "$TUN_IF" 2>/dev/null || true
             ip -6 route add default dev "$TUN_IF" metric 5 2>/dev/null || \
                 ip -6 route replace default dev "$TUN_IF" metric 5
-            log "game_mode OFF: WARP default restored (metric 5, IPv6 active, filter_aaaa=0)."
+            log "game_mode OFF: WARP default restored (metric 5, IPv6 active)."
         else
             log "game_mode OFF: marker cleared; tunnel not running — start via ensure_network/tunnel.sh."
             sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
