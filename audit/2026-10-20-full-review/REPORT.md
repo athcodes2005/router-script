@@ -663,7 +663,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
 | F31 | **Deployed** 2026-10-22 08:39 | `3b3a183` | Found in the 2026-10-22 validation and deployed later that morning (§16). |
-| F32–F34 | Implemented, not deployed | `402b9ac` (tests), `e7131a4`, `dcc7e10` | You asked for a test-first fix without deploying it (§18). |
+| F32–F34 | **Deployed** 2026-10-22 15:35 | `402b9ac` (tests), `e7131a4`, `dcc7e10` | Fixed test-first, then deployed and verified with a manual start (§18). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1632,6 +1632,7 @@ folders that no longer exist. Use the previous versions from git instead:
 | Batch 4 (§15.1) | `ensure_network.sh`, `stop_tunnel.sh`, `game_mode.sh`, `refresh_blinkit_dns.sh`, `login.sh`, `rotate_tunnel_ip.sh` | `41828c5` |
 | F12 fix (§15.4) | `refresh_blinkit_dns.sh` | `6142896` |
 | F31 (§16.5) | `tunnel.sh`, `ensure_network.sh` | `2ae4750` |
+| F32–F34 (§18.5) | `tunnel.sh` | `49dfedd` |
 
 To roll back:
 1. On the Mac, export the files into an empty folder:
@@ -1641,7 +1642,7 @@ To roll back:
 
 The binary rollback (`usque-rs-upstream-v0.1.0`) is unaffected.
 
-## 18. `tunnel.sh` start path (F32–F34) — 22 October 2026, not deployed
+## 18. `tunnel.sh` start path (F32–F34) — 22 October 2026, deployed (§18.5)
 
 You asked me to write up the three open start-path issues from the 09-19
 audit (§4) and fix them test-first, without deploying.
@@ -1714,7 +1715,7 @@ audit (§4) and fix them test-first, without deploying.
   endpoints, NAT, MSS, DNS, IPv6 and secrets handling are untouched, and the
   start still fails for a mandatory route.
 
-### 18.4 Deploying (not deployed; needs your SSH authorisation)
+### 18.4 Deploying (done on 22 October, §18.5)
 
 Only `tunnel.sh` changes, and it runs only when WARP starts.
 
@@ -1732,3 +1733,38 @@ Only `tunnel.sh` changes, and it runs only when WARP starts.
      `ip route del` of host routes.
    - Otherwise, the next natural start exercises it.
 4. **Rollback.** Stage `tunnel.sh` from `49dfedd` (§17.3).
+
+### 18.5 Deployment record — 15:34–15:37 IST
+
+You authorised this deployment. It followed §18.4, including the optional
+verification run. `.env` and `config.json` were never read.
+
+**Pre-flight.**
+- The router's `tunnel.sh` matched `49dfedd`.
+- No lock was held, game mode was off, and WARP was PID 20421.
+- There had been no non-routine health-check line since 08:51.
+
+**Staging.** I staged the new `tunnel.sh` with the previous version beside it
+(from git `49dfedd`), so a rollback would be a local copy. Both passed BusyBox
+`sh -n`. The new file matched the branch, and the previous copy matched both
+git and the live file.
+
+**Promotion** under the lock at 15:35:20; the hash matches.
+
+**Dry run, read-only.** On the router, the new gateway lookup returned
+`10.1.40.250`. The exact resolution pipeline resolved all 5 campus names and
+all 11 public names.
+
+**Verification run** at 15:36:05: `tunnel.sh` through its reuse path, under
+the lock.
+- It exited 0 with "[SUCCESS] Full tunnel active", and no host route failed.
+- Nothing was removed: the campus routes stayed at 5, the public routes at 37,
+  and the metric-1 host routes at 45.
+- WARP kept PID 20421. Both `tun0` defaults, rule 700, the game chain (5
+  rules, jump first) and both F31 drop rules are intact.
+- The 15:36:30 check passed.
+
+**Wrap-up.** The staging directory was removed. All 28 deploy-set files match
+the branch, and the directory holds only its 32 live entries.
+
+**Rollback:** stage `tunnel.sh` from `49dfedd` (§17.3).

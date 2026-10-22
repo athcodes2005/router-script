@@ -652,3 +652,18 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 18)
 - `../../tunnel.sh`, `../../tests/test_tunnel_start.py`
+
+## 2026-10-22 — Deployed the tunnel.sh start-path fixes (F32–F34)
+
+- With the user's authorisation, promoted the new `tunnel.sh` under the
+  maintenance lock at 15:35. A read-only dry run on the router first
+  confirmed the new gateway lookup and the resolution pipeline.
+- A verification run through the reuse path exited 0, and no host route was
+  removed (5 campus, 37 public, 45 metric-1 routes before and after). WARP
+  kept its PID, and the next health check passed.
+- The router's 28 deploy-set files match the repo. The previous `tunnel.sh` is
+  in git (`49dfedd`).
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 18.5)
