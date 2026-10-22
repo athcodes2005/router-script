@@ -24,6 +24,7 @@ class BlinkitTests(unittest.TestCase):
         self.command('nslookup', '''
         printf '%s %s\n' "$1" "$2" >> "$TEST_ROOT/queries"
         [ "$DNS_FAIL" = 0 ] || exit 1
+        case " ${DNS_FAIL_DOMAINS:-} " in *" $1 "*) exit 1;; esac
         echo 'Address 1: 192.0.2.10'
         echo 'Address 2: 2001:db8::10'
         ''')
@@ -32,14 +33,22 @@ class BlinkitTests(unittest.TestCase):
           '-4 route show default dev eth0') echo 'default via 10.0.0.1 dev eth0 metric 10';;
           *) [ "$ROUTE_FAIL" = 0 ] || exit 1
              echo "$*" >> "$TEST_ROOT/routes"
-             test ! -f "$TEST_ROOT/hosts/hosts" || cat "$TEST_ROOT/hosts/hosts" >> "$TEST_ROOT/at-route-time";;
+             case "${1:-} ${2:-}" in
+               'route replace') snapshot=at-route-time;;
+               'route del') snapshot=at-del-time;;
+               *) snapshot=other;;
+             esac
+             test ! -f "$TEST_ROOT/hosts/hosts" || cat "$TEST_ROOT/hosts/hosts" >> "$TEST_ROOT/$snapshot";;
         esac
         ''')
         self.env = dict(os.environ, PATH=str(self.bin)+':'+os.environ['PATH'],
                         TEST_ROOT=str(self.root), DNS_FAIL='0', ROUTE_FAIL='0',
                         WAN_IF='eth0', BLINKIT_HOSTS_DIR=str(self.hostdir),
                         BLINKIT_IPV4_DOMAINS='api3.blinkit.com jumbo.blinkit.com',
-                        BLINKIT_DNS_SERVERS='8.8.8.8 8.8.4.4', DNSMASQ_PID_DIR=str(self.root/'pids'))
+                        BLINKIT_DNS_SERVERS='8.8.8.8 8.8.4.4', DNSMASQ_PID_DIR=str(self.root/'pids'),
+                        CAMPUS_ROUTES_FILE=str(self.root/'campus-routes'),
+                        DIRECT_PUBLIC_ROUTES_FILE=str(self.root/'public-routes'),
+                        GAME_SESSION_ROUTES_FILE=str(self.root/'game-routes'))
 
     def command(self, name, body):
         path=self.bin/name
@@ -97,6 +106,35 @@ class BlinkitTests(unittest.TestCase):
         timestamp=self.hosts.stat().st_mtime_ns
         self.assertEqual(self.run_update().returncode,0)
         self.assertEqual(self.hosts.stat().st_mtime_ns,timestamp)
+
+    # F12: no other refresher runs while WARP is down or game mode is on, so
+    # the replaced set's routes are this script's to remove, unless another
+    # refresher still lists them (it removes those itself).
+    def test_replaced_records_lose_routes_no_refresher_lists(self):
+        self.hosts.write_text('192.0.2.1 api3.blinkit.com\n192.0.2.2 jumbo.blinkit.com\n')
+        (self.root/'public-routes').write_text('192.0.2.2/32\n')
+        result=self.run_update()
+        self.assertEqual(result.returncode,0,result.stderr)
+        routes=(self.root/'routes').read_text()
+        self.assertIn('route del 192.0.2.1/32 via 10.0.0.1 dev eth0 metric 1',routes)
+        self.assertNotIn('route del 192.0.2.2/32',routes)
+        self.assertNotIn('route del 192.0.2.10/32',routes)
+        self.assertIn('Blinkit DNS: replaced-address routes removed: 1, left to another refresher: 1.',result.stdout)
+        # Unpublished first, so no client is handed an address without its route.
+        self.assertNotIn('192.0.2.1 ',(self.root/'at-del-time').read_text())
+
+    def test_unchanged_records_remove_no_routes(self):
+        self.hosts.write_text('192.0.2.10 api3.blinkit.com\n192.0.2.10 jumbo.blinkit.com\n')
+        self.assertEqual(self.run_update().returncode,0)
+        self.assertNotIn('route del',(self.root/'routes').read_text())
+
+    # F12: a run that stops early must not leave routes for answers it never publishes.
+    def test_run_that_cannot_publish_installs_no_routes(self):
+        self.hosts.write_text('192.0.2.1 api3.blinkit.com\n')  # jumbo has no saved record
+        self.env['DNS_FAIL_DOMAINS']='jumbo.blinkit.com'
+        self.assertNotEqual(self.run_update().returncode,0)
+        self.assertEqual(self.hosts.read_text(),'192.0.2.1 api3.blinkit.com\n')
+        self.assertFalse((self.root/'routes').exists())
 
     # F13: each change HUPs dnsmasq, which also clears its cache; log the rate.
     def test_each_change_is_logged_once_with_a_timestamp(self):
