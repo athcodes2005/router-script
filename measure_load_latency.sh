@@ -25,7 +25,8 @@ fi
 PHASE_SECONDS="${1:-20}"
 RTT_URL="${RTT_URL:-http://1.1.1.1/cdn-cgi/trace}"
 UPLOAD_URL="${UPLOAD_URL:-https://speed.cloudflare.com/__up}"
-DOWNLOAD_URL="${DOWNLOAD_URL:-https://speed.cloudflare.com/__down?bytes=10000000000}"
+# The largest download the speed test serves: it refuses 100 MB and more.
+DOWNLOAD_URL="${DOWNLOAD_URL:-https://speed.cloudflare.com/__down?bytes=75000000}"
 
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
@@ -96,6 +97,32 @@ mbit() {
     awk '{ printf "%.1f Mbit/s", $1 * 8 / 1000000 }' "$1" 2>/dev/null || echo "unknown speed"
 }
 
+# Repeats the download until the phase ends: a fast link finishes one in a few
+# seconds. Each transfer logs "HTTP_CODE BYTES". A refused or failed request
+# ends the load rather than being retried in a tight loop.
+download_load() {
+    DEADLINE=$(($(date +%s) + PHASE_SECONDS))
+    while :; do
+        LEFT=$((DEADLINE - $(date +%s)))
+        [ "$LEFT" -gt 0 ] || break
+        RESULT="$(curl -4 -sS -o /dev/null --interface "$TUN_IF" --max-time "$LEFT" \
+            -w '%{http_code} %{size_download}' "$DOWNLOAD_URL" 2>/dev/null || true)"
+        printf '%s\n' "$RESULT" >> "$WORK/down"
+        case "$RESULT" in 200\ *) ;; *) break ;; esac
+    done
+}
+
+# The download rate over the phase, or why nothing was downloaded.
+download_rate() {
+    awk -v seconds="$PHASE_SECONDS" '
+        $1 == 200 { bytes += $2; n++; next }
+        { code = $1 }
+        END {
+            if (bytes == 0) { printf "no download (HTTP %s)", (code == "" ? "none" : code); exit }
+            printf "%.1f Mbit/s (%d transfer%s)", bytes * 8 / seconds / 1000000, n, (n == 1 ? "" : "s")
+        }' "$WORK/down" 2>/dev/null || echo "unknown speed"
+}
+
 CLIENT_PID="$(pidof usque-rs | awk '{ print $1 }')"
 OPTIONS="$(tr '\000' ' ' < "/proc/$CLIENT_PID/cmdline" 2>/dev/null |
     grep -o -- '--tun-backpressure [0-9]*' || echo 'no --tun-backpressure')"
@@ -114,11 +141,13 @@ wait "$LOAD_PID" 2>/dev/null || true
 LOAD_PID=
 log "Latency upload:   $UPLOAD_RTT; $(mbit "$WORK/up")."
 
-curl -4 -sS -o /dev/null --interface "$TUN_IF" --max-time "$PHASE_SECONDS" \
-    -w '%{speed_download}\n' "$DOWNLOAD_URL" > "$WORK/down" 2>/dev/null &
+# Stopping this loop leaves its current curl to end at that transfer's own
+# --max-time, within the phase.
+: > "$WORK/down"
+download_load &
 LOAD_PID=$!
 sleep 2
 DOWNLOAD_RTT="$(rtt_series "$LOAD_SAMPLES")"
 wait "$LOAD_PID" 2>/dev/null || true
 LOAD_PID=
-log "Latency download: $DOWNLOAD_RTT; $(mbit "$WORK/down")."
+log "Latency download: $DOWNLOAD_RTT; $(download_rate)."

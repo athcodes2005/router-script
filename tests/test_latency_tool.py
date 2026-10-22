@@ -1,4 +1,5 @@
 """measure_load_latency.sh: WARP round trips idle and under load, without reconfiguring."""
+import re
 import unittest
 
 from sandbox import Sandbox
@@ -19,7 +20,8 @@ class LatencyToolTests(unittest.TestCase):
         self.assertIn('client 456 (no --tun-backpressure)', log)
         self.assertIn('Latency idle:     min/median/max = 21/21/21 ms (8 samples, 0 failed).', log)
         self.assertIn('Latency upload:   min/median/max = 21/21/21 ms (4 samples, 0 failed); 32.0 Mbit/s.', log)
-        self.assertIn('Latency download: min/median/max = 21/21/21 ms (4 samples, 0 failed); 100.0 Mbit/s.', log)
+        self.assertRegex(log, r'Latency download: min/median/max = 21/21/21 ms \(4 samples, 0 failed\); '
+                              r'\d+\.\d Mbit/s \(\d+ transfers\)\.')
         curls = [c for c in self.box.calls() if c.startswith('curl ')]
         self.assertTrue(all('--interface tun0' in c for c in curls))
         self.assertEqual(len([c for c in curls if ' -T - ' in c and '--max-time 8' in c]), 1)
@@ -27,6 +29,31 @@ class LatencyToolTests(unittest.TestCase):
         # Measuring changes nothing.
         for prefix in ('ip route', 'ip rule', 'iptables -I', 'iptables -D', 'uci set', 'killall'):
             self.assertEqual(self.box.count(prefix), 0, prefix)
+
+    def download_transfers(self):
+        return [c for c in self.box.calls() if c.startswith('curl ') and '/__down' in c]
+
+    # The speed test refuses 100 MB and more, and a fast link finishes the 75 MB
+    # it serves within seconds, so a single request left most of the phase idle.
+    def test_downloads_repeat_until_the_phase_ends(self):
+        result = self.measure('8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        transfers = self.download_transfers()
+        self.assertGreaterEqual(len(transfers), 3)
+        self.assertTrue(all('bytes=75000000' in c for c in transfers))
+        # Each request gets only the time left in the phase.
+        limits = [int(re.search(r'--max-time (\d+)', c).group(1)) for c in transfers]
+        self.assertLessEqual(limits[0], 8)
+        self.assertEqual(limits, sorted(limits, reverse=True))
+        match = re.search(r'Latency download: .*; \d+\.\d Mbit/s \((\d+) transfers\)\.', self.box.log('latency'))
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), len(transfers))
+
+    def test_a_refused_download_is_reported_not_retried(self):
+        self.box.flag('download_refused')
+        self.assertEqual(self.measure('8').returncode, 0)
+        self.assertEqual(len(self.download_transfers()), 1)
+        self.assertIn('; no download (HTTP 403).', self.box.log('latency'))
 
     def test_failed_round_trips_are_counted(self):
         self.box.flag('rtt_fail')

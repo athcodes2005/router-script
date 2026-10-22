@@ -166,6 +166,12 @@ case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = tun0 ] && flag warp_down && code=000
 case "$url" in http://1.1.1.1/*) flag rtt_fail && code=000 ;; esac
 tc=0.021; [ "$code" != 000 ] || tc=0.000  # curl reports no connect time for a failed connection
+size=0
+# The speed test: each download takes a second, or the request is refused.
+case "$code $url" in
+  000\ *) ;;
+  *'/__down'*) if flag download_refused; then code=403; size=1; else code=200; size=25000000; /bin/sleep 1; fi ;;
+esac
 case "$url" in *google.com*) [ "$v6" = 1 ] && flag google_v6_rejected && code=000 ;; esac
 if [ "$code" != 000 ] && [ -z "$body_to" ]; then
   case "$url" in */cdn-cgi/trace)
@@ -173,7 +179,8 @@ if [ "$code" != 000 ] && [ -z "$body_to" ]; then
   esac
 fi
 out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g" \
-  -e "s/%{time_connect}/$tc/g" -e "s/%{speed_upload}/4000000/g" -e "s/%{speed_download}/12500000/g")
+  -e "s/%{time_connect}/$tc/g" -e "s/%{speed_upload}/4000000/g" -e "s/%{speed_download}/12500000/g" \
+  -e "s/%{size_download}/$size/g")
 printf '%b' "$out"
 [ "$code" = 000 ] && exit 7
 exit 0
