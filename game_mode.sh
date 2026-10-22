@@ -37,16 +37,14 @@ CMD="$1"
 # Serialize policy changes with the watchdog. Status remains read-only.
 case "$CMD" in
     on|off)
-        LOCK_DIR="$DIR/.ensure_network.lock"
-        WAIT_COUNT=0
-        until mkdir "$LOCK_DIR" 2>/dev/null; do
-            [ "$WAIT_COUNT" -lt 30 ] || { log "game_mode: maintenance lock busy"; exit 1; }
-            sleep 1
-            WAIT_COUNT=$((WAIT_COUNT + 1))
-        done
-        trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+        . "$DIR/lock.sh"
+        if ! acquire_maintenance_lock 30; then
+            log "game_mode: $MAINTENANCE_LOCK_BUSY holds the maintenance lock."
+            exit 1
+        fi
+        trap 'release_maintenance_lock' EXIT
         trap 'exit 129' HUP
-trap 'exit 130' INT
+        trap 'exit 130' INT
         trap 'exit 143' TERM
         ;;
     status) ;;

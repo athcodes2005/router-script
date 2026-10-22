@@ -4,8 +4,6 @@ set -eu
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
-LOCK_DIR="$DIR/.ensure_network.lock"
-LOCK_OWNER_FILE="$LOCK_DIR/owner"
 EXECUTABLE="$DIR/usque-rs"
 
 . "$DIR/paths.sh"
@@ -80,52 +78,15 @@ log() {
 }
 
 cleanup() {
-    if [ "$(cat "$LOCK_OWNER_FILE" 2>/dev/null || true)" = "$$" ]; then
-        rm -f "$LOCK_OWNER_FILE"
-        rmdir "$LOCK_DIR" 2>/dev/null || true
-    fi
+    release_maintenance_lock
 }
 
-LOCK_MAX_AGE="${LOCK_MAX_AGE:-180}"
-
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    if [ -d "$LOCK_DIR" ]; then
-        LOCK_OWNER="$(cat "$LOCK_OWNER_FILE" 2>/dev/null || true)"
-        case "$LOCK_OWNER" in
-            ''|*[!0-9]*) LOCK_OWNER_ALIVE=0 ;;
-            *)
-                if kill -0 "$LOCK_OWNER" 2>/dev/null \
-                    && tr '\000' ' ' < "/proc/$LOCK_OWNER/cmdline" 2>/dev/null | grep -q 'ensure_network.sh'; then
-                    LOCK_OWNER_ALIVE=1
-                else
-                    LOCK_OWNER_ALIVE=0
-                fi
-                ;;
-        esac
-        if [ "$LOCK_OWNER_ALIVE" -eq 1 ]; then
-            log "Skipped: health check PID $LOCK_OWNER owns the maintenance lock."
-            exit 0
-        fi
-
-        LOCK_AGE=$(( $(date +%s) - $(date -r "$LOCK_DIR" +%s 2>/dev/null || echo 0) ))
-        if [ -n "$LOCK_OWNER" ] || [ "$LOCK_AGE" -gt "$LOCK_MAX_AGE" ]; then
-            log "WARNING: Stale lock detected (age: ${LOCK_AGE}s). Removing and proceeding."
-            rm -f "$LOCK_OWNER_FILE"
-            if ! rmdir "$LOCK_DIR" 2>/dev/null || ! mkdir "$LOCK_DIR" 2>/dev/null; then
-                log "Skipped: failed to acquire the health-check lock after stale-lock cleanup."
-                exit 0
-            fi
-        else
-            log "Skipped: another ensure_network.sh run is still active."
-            exit 0
-        fi
-    else
-        log "Skipped: another ensure_network.sh run is still active."
-        exit 0
-    fi
+# Never wait: the next tick is at most 30 s away.
+. "$DIR/lock.sh"
+if ! acquire_maintenance_lock 0; then
+    log "Skipped: $MAINTENANCE_LOCK_BUSY holds the maintenance lock."
+    exit 0
 fi
-
-printf '%s\n' "$$" > "$LOCK_OWNER_FILE"
 
 trap cleanup EXIT
 trap 'exit 130' INT

@@ -6,7 +6,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="$DIR/config.json"
 BACKUP_FILE="$DIR/config.json.previous"
 BACKUP_TEMP="$BACKUP_FILE.tmp.$$"
-LOCK_DIR="$DIR/.ensure_network.lock"
 TUN_IF="${TUN_IF:-tun0}"
 WARP_TRACE_URL_V4="${WARP_TRACE_URL_V4:-https://1.1.1.1/cdn-cgi/trace}"
 WARP_TRACE_URL_V6="${WARP_TRACE_URL_V6:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
@@ -31,15 +30,11 @@ warp_trace_ok() {
 
 log "Rotating Cloudflare WARP IP to bypass blocks..."
 
-WAIT_COUNT=0
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    if [ "$WAIT_COUNT" -ge 30 ]; then
-        log "ERROR: Timed out waiting for the network health-check lock."
-        exit 1
-    fi
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-done
+. "$DIR/lock.sh"
+if ! acquire_maintenance_lock 30; then
+    log "ERROR: $MAINTENANCE_LOCK_BUSY holds the maintenance lock; not rotating."
+    exit 1
+fi
 
 cleanup() {
     STATUS=$?
@@ -59,7 +54,7 @@ cleanup() {
     fi
 
     rm -f "$BACKUP_TEMP"
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    release_maintenance_lock
     exit "$STATUS"
 }
 
