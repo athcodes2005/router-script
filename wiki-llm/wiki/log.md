@@ -633,3 +633,22 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 17)
+
+## 2026-10-22 — Fixed three tunnel.sh start-path issues (F32–F34, not deployed)
+
+- F32: every start deleted the campus and public `/32` exceptions before
+  re-resolving them. On a reuse start that moved live traffic to WARP, and on
+  any start a failed lookup lost its route. `tunnel.sh` now only adds routes,
+  and the health check's refresher is the only remover.
+- F33: the WAN gateway now comes from `eth0`'s own default route, not from the
+  first default on any interface.
+- F34: a failed optional host route now warns instead of aborting the WARP
+  start under `set -e`.
+- `tunnel.sh` is now exercised in the sandbox (six new tests). 89 tests pass
+  under `sh` and `dash`. Not deployed; the steps are in the report's
+  section 18.4.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 18)
+- `../../tunnel.sh`, `../../tests/test_tunnel_start.py`

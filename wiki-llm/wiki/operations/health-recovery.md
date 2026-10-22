@@ -92,7 +92,9 @@ Optional campus/public DNS exceptions are resolved once per refresh with
 three-second lookup bounds. They do not determine WARP liveness. Failed or
 partial resolution retains prior routes; stale routes are removed only after
 all configured names produced IPv4 answers and route installation succeeded.
-This avoids CDN-answer races and partial-DNS-induced tunnel restarts. The campus,
+This avoids CDN-answer races and partial-DNS-induced tunnel restarts. `tunnel.sh`
+only adds these routes when WARP starts and never removes any, so this refresher
+is the only remover (commit `dcc7e10`, not deployed as of 2026-10-22). The campus,
 public and game-session refreshers can share a `/32` (a game server can also be
 a listed public name), so a route is deleted only once no refresher's file lists
 it. `refresh_blinkit_dns.sh` runs on every tick, including during WARP

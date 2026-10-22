@@ -233,6 +233,9 @@ plausible but unproven.
 | F29 | Nit | Confirmed | Maintainability | `ensure_network.sh:351`; `game_mode.sh:130` | Hard-coded LAN prefix and WAN metric |
 | F30 | Nit | Confirmed | Resource | `tunnel.sh:286`; `ensure_network.sh:670` | odhcpd is restarted twice per WARP restart |
 | F31 | Low | Confirmed (config); reachability unverified | Security | fw3 `INPUT`; `tunnel.sh` | New connections arriving on `tun0` reach SSH, the admin UI and DNS (found 2026-10-22, §16) |
+| F32 | Low | Confirmed | Correctness | `tunnel.sh:212-261` (before `dcc7e10`) | Each start deleted every campus/public `/32` before re-resolving: live traffic moved to WARP on the reuse path, and failed lookups lost their routes (from 09-19 §6; §18) |
+| F33 | Low | Confirmed (latent) | Robustness | `tunnel.sh:164` (before `e7131a4`) | WAN gateway taken from the first non-`tun0` default on any interface (§18) |
+| F34 | Low | Confirmed | Failure handling | `tunnel.sh:222-261` (before `dcc7e10`) | One failed optional host route aborted the WARP start under `set -e` (§18) |
 
 ### F01 — Wi-Fi passphrases in every diagnostic (High, Confirmed)
 
@@ -547,7 +550,7 @@ plausible but unproven.
 | 09-19 §3 | MTU integration tests copy production logic | Still open |
 | 09-19 §4 | ICMPv4 quote fixed at 28 bytes; TUN write errors ignored; CONNECT stream close ignored | Still open; F16 adds the idle-timeout angle |
 | 09-19 §5 | Non-transactional promotion; ownerless locks reclaimable after 180 s | Still open; F19 and F21 add the HUP and clock angles |
-| 09-19 §6 | `tunnel.sh` clears dynamic routes before resolving and doesn't share the refresh code | Still open. Also: `tunnel.sh:164` picks the default gateway without `dev eth0`, and its `nslookup \| while` pipeline aborts the start under `set -e` if one route insert fails |
+| 09-19 §6 | `tunnel.sh` clears dynamic routes before resolving and doesn't share the refresh code | Fixed as F32–F34 (§18). The two scripts still resolve the names separately, but no longer conflict: `tunnel.sh` only adds. |
 | 09-19 §2 | Loaded latency / SQM unmeasured | Still open; F10 is the in-tunnel counterpart |
 | google-wan.md | Firewall resets leave a gap until the next tick | F03 shows the FORWARD ACCEPTs are not covered at all |
 | known-issues | dnsmasq 2.85 ignores `filter_aaaa`, so game-mode AAAA filtering is ineffective | Unchanged |
@@ -660,6 +663,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
 | F31 | **Deployed** 2026-10-22 08:39 | `3b3a183` | Found in the 2026-10-22 validation and deployed later that morning (§16). |
+| F32–F34 | Implemented, not deployed | `402b9ac` (tests), `e7131a4`, `dcc7e10` | You asked for a test-first fix without deploying it (§18). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1636,3 +1640,95 @@ To roll back:
 3. Undoing F31 also needs its rules removed (§16.3 step 4).
 
 The binary rollback (`usque-rs-upstream-v0.1.0`) is unaffected.
+
+## 18. `tunnel.sh` start path (F32–F34) — 22 October 2026, not deployed
+
+You asked me to write up the three open start-path issues from the 09-19
+audit (§4) and fix them test-first, without deploying.
+
+### 18.1 Findings
+
+- **F32 — host routes deleted before resolving.** Each run deleted every
+  campus and public `/32` listed in the state files, and truncated the files,
+  before re-resolving the 16 names (each lookup can take 3 s).
+  - The automated callers (the health check's restart, rotation, the sync
+    restart, game-mode-off) run `stop_tunnel.sh` first. `tun0` is then not
+    yet the default, so nothing is misrouted.
+  - When a running client is reused, as in a manual `./tunnel.sh` repair,
+    `tun0` is already the default. Those hosts then went over WARP until their
+    names resolved again, and flows NATed on `eth0` broke.
+  - On every path, a name that failed to resolve lost its route until a later
+    refresh. That defeated the health check's rule of keeping routes during a
+    partial DNS outage.
+- **F33 — gateway from any interface.** The script took the first other
+  default from any interface:
+  `ip route show default | grep -v "dev tun0" | head -n 1 | awk '/default/ {print $3}'`.
+  For a default without `via`, it printed a device name instead. A second
+  uplink (wwan, USB tethering) listed first would make every
+  `via GW dev eth0` route fail and abort the start (see F34). This is latent:
+  this router has one WAN.
+- **F34 — optional routes could abort the start.** The resolution loops ran as
+  `nslookup | awk | while` under `set -e`. One failed `ip route replace` in
+  the loop ended the whole WARP start through the revert trap. Causes include
+  a bad gateway, a WAN flap mid-start, or an unroutable answer. The health
+  check then counted a failed restart and fell back to direct WAN with a
+  cooldown.
+- **Not an issue.** The awk filter does not pick up the DNS server's own
+  address line: the router's BusyBox prints it as `Address:	127.0.0.1#53`
+  (checked in the local snapshots).
+
+### 18.2 Fix
+
+- **F33 (`e7131a4`).** The gateway is now the `via` of
+  `ip -4 route show default dev eth0`, as in `ensure_network.sh` and
+  `refresh_blinkit_dns.sh`.
+- **F32 and F34 (`dcc7e10`).** One `add_host_routes` function replaces both
+  loops.
+  - It installs routes for whatever resolves now and appends them to the same
+    state files, never truncating them.
+  - A route that cannot be installed only warns.
+  - The health check's refresher stays the only remover: it removes stale
+    routes once every name resolves, and never one that another refresher
+    lists.
+  - The campus-prefix and WARP-endpoint routes stay mandatory, so their
+    failure still stops the start.
+- **Effect.** After a start, a stale host route can remain until the next
+  healthy check (normally within 30 s) or until `stop_tunnel.sh`. `tunnel.sh`
+  is 16 lines shorter.
+
+### 18.3 Tests and checks
+
+- `402b9ac` makes `tunnel.sh` testable: a dummy client and a live PID take it
+  through the "reuse the running client" branch. It also fixes two stub cases
+  that exited 1 whenever their flag was unset; one of them failed `tunnel.sh`
+  at every start.
+- There are six new tests, and each finding's tests failed before its fix:
+  - the baseline start;
+  - F33: a competing default route on another interface;
+  - F32: no host route removed, routes kept after failed lookups, and the
+    health check still removing stale routes after a start;
+  - F34: a failed host route not aborting the start.
+- At every commit all tests pass under macOS `sh` and `dash`, each suite run on
+  its own: 84, then 85, then 89 tests. Shellcheck findings are unchanged.
+- Invariants: only `tunnel.sh` changed. Defaults, campus prefixes, WARP
+  endpoints, NAT, MSS, DNS, IPv6 and secrets handling are untouched, and the
+  start still fails for a mandatory route.
+
+### 18.4 Deploying (not deployed; needs your SSH authorisation)
+
+Only `tunnel.sh` changes, and it runs only when WARP starts.
+
+0. **Pre-flight.** The router's `tunnel.sh` must match
+   `git show 49dfedd:tunnel.sh | shasum -a 256`, and no lock may be held.
+1. **Stage and verify** as in §14.4 steps 1–2, using the stage `.stage-f32`.
+   No backup folder is needed: the previous version is in git (`49dfedd`).
+2. **Promote under the lock** with `take_lock`/`promote`. Nothing runs the new
+   file until the next WARP start.
+3. **Verify (optional).** A manual `./tunnel.sh` while WARP runs now takes the
+   reuse path safely.
+   - It also restarts odhcpd and rebuilds the game chain, a brief blip for
+     LAN IPv6 and for new game sessions.
+   - Check `logs/tunnel.log` for "[SUCCESS] Full tunnel active" and for no
+     `ip route del` of host routes.
+   - Otherwise, the next natural start exercises it.
+4. **Rollback.** Stage `tunnel.sh` from `49dfedd` (§17.3).
