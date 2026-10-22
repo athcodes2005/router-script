@@ -157,21 +157,14 @@ pub async fn maintain_tunnel(
         .map_err(|e| anyhow::anyhow!("failed to create async TUN device: {e}"))?;
     let (mut tun_reader, mut tun_writer) = tokio::io::split(async_dev);
 
-    let mut pending_pkt: Option<Vec<u8>> = None;
     let mut reconnect_delay = Duration::from_secs(1);
     clear_ready_file(tunnel_cfg.ready_file.as_deref());
 
     loop {
         eprintln!("\r\x1b[2K[connecting] {} ...", tunnel_cfg.endpoint);
 
-        let session_result = run_tunnel_session(
-            config,
-            tunnel_cfg,
-            &mut tun_reader,
-            &mut tun_writer,
-            &mut pending_pkt,
-        )
-        .await;
+        let session_result =
+            run_tunnel_session(config, tunnel_cfg, &mut tun_reader, &mut tun_writer).await;
         let was_ready = tunnel_cfg
             .ready_file
             .as_deref()
@@ -205,7 +198,6 @@ async fn run_tunnel_session<R, W>(
     tunnel_cfg: &TunnelConfig,
     tun_reader: &mut R,
     tun_writer: &mut W,
-    pending_pkt: &mut Option<Vec<u8>>,
 ) -> Result<()>
 where
     R: tokio::io::AsyncRead + Unpin,
@@ -477,19 +469,6 @@ where
         flow_prefix.extend_from_slice(&tmp[..len]);
     }
     flow_prefix.push(0x00);
-
-    if let Some(mut pkt) = pending_pkt.take() {
-        if packet::prepare_outgoing(&mut pkt).is_ok() {
-            let mut dgram = Vec::with_capacity(flow_prefix.len() + pkt.len());
-            dgram.extend_from_slice(&flow_prefix);
-            dgram.extend_from_slice(&pkt);
-            let pkt_len = pkt.len() as u64;
-            if conn.dgram_send_vec(dgram).is_ok() {
-                stats.tx_packets.fetch_add(1, Ordering::Relaxed);
-                stats.tx_bytes.fetch_add(pkt_len, Ordering::Relaxed);
-            }
-        }
-    }
 
     // Main data forwarding loop
     let mtu = tunnel_cfg.mtu as usize;
