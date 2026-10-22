@@ -7,8 +7,9 @@ REMOTE="${ROUTER_SSH_TARGET:-root@192.168.8.1}"
 REMOTE_DIR="${ROUTER_SCRIPT_DIR:-/root/router-script}"
 EXECUTABLE_BASENAME="$(basename "$DIR/usque-rs")"
 WAS_RUNNING=0
-LOCK_HELD=0
 REMOTE_STAGE="$REMOTE_DIR/.sync-stage-$$"
+# How long the promotion waits for a health check or game-mode toggle to finish.
+SYNC_LOCK_WAIT="${SYNC_LOCK_WAIT:-30}"
 
 run_ssh() {
     ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"
@@ -36,10 +37,6 @@ cleanup() {
     if [ "$WAS_RUNNING" -eq 1 ] && ! run_ssh "$REMOTE" "pidof '$EXECUTABLE_BASENAME' >/dev/null 2>&1"; then
         echo "Restarting tunnel."
         run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./tunnel.sh >/dev/null 2>&1" || true
-    fi
-
-    if [ "$LOCK_HELD" -eq 1 ]; then
-        run_ssh "$REMOTE" "rmdir '$REMOTE_DIR/.ensure_network.lock' 2>/dev/null || true" >/dev/null 2>&1 || true
     fi
 
     exit "$STATUS"
@@ -94,45 +91,25 @@ if run_ssh "$REMOTE" "pidof '$EXECUTABLE_BASENAME' >/dev/null 2>&1"; then
     WAS_RUNNING=1
 fi
 
-echo "Acquiring router maintenance lock."
-run_ssh "$REMOTE" "
-    i=0
-    while ! mkdir '$REMOTE_DIR/.ensure_network.lock' 2>/dev/null; do
-        [ \"\$i\" -ge 30 ] && exit 1
-        sleep 1
-        i=\$((i + 1))
-    done
-"
-LOCK_HELD=1
-
 # Sync into a private staging directory first, then promote the complete set.
-# A failed transfer therefore leaves the installed scripts untouched.
-FILES="usque-rs usque-rs-upstream-v0.1.0 config.json .env blocked_sites.txt warp_clients.txt paths.sh lock.sh login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh PROJECT_CONTEXT.md README.md"
+# A failed transfer therefore leaves the installed scripts untouched. The
+# helpers other scripts source come first: promotion follows this order.
+FILES="paths.sh lock.sh usque-rs usque-rs-upstream-v0.1.0 config.json .env blocked_sites.txt warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh PROJECT_CONTEXT.md README.md"
 
 echo "Staging project files on the router."
 run_ssh "$REMOTE" "rm -rf '$REMOTE_STAGE' && mkdir -m 700 '$REMOTE_STAGE'"
+MANIFEST=
 for FILE in $FILES; do
-    [ -f "$DIR/$FILE" ] && run_scp -q "$DIR/$FILE" "$REMOTE:$REMOTE_STAGE/$FILE"
-done
-
-if [ "$WAS_RUNNING" -eq 1 ]; then
-    echo "Tunnel is running. Stopping before sync."
-    run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./stop_tunnel.sh"
-fi
-
-echo "Promoting staged files."
-run_ssh "$REMOTE" "
-    set -e
-    for FILE in $FILES; do
-        [ -f '$REMOTE_STAGE'/\"\$FILE\" ] && mv '$REMOTE_STAGE'/\"\$FILE\" '$REMOTE_DIR'/\"\$FILE\"
-    done
-    rmdir '$REMOTE_STAGE'
-    cd '$REMOTE_DIR'
-    chmod 755 ./*.sh ./usque-rs
-    [ ! -f ./usque-rs-upstream-v0.1.0 ] || chmod 755 ./usque-rs-upstream-v0.1.0
-    chmod 600 ./.env ./config.json
-    # A power cut seconds after a deploy must not leave zero-length files.
-    sync
+    [ -f "$DIR/$FILE" ] || continue
+    MANIFEST="$MANIFEST$(local_sha256 "$DIR/$FILE")  $FILE
 "
+    run_scp -q "$DIR/$FILE" "$REMOTE:$REMOTE_STAGE/$FILE"
+done
+printf '%s' "$MANIFEST" | run_ssh "$REMOTE" "cat > '$REMOTE_STAGE/.manifest'"
+
+# One remote process checks the staged set, then stops the tunnel and promotes
+# it while it owns the maintenance lock; see promote_staged.sh.
+echo "Promoting staged files."
+run_ssh "$REMOTE" "sh '$REMOTE_STAGE/promote_staged.sh' '$REMOTE_DIR' '$SYNC_LOCK_WAIT'"
 
 echo "Router sync complete."

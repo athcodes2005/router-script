@@ -18,19 +18,31 @@ from sandbox import SHELL
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'root@sync-test.invalid'
-TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'dirname', 'grep', 'ls', 'mkdir', 'mv', 'rm', 'rmdir', 'sleep']
+TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'date', 'dirname', 'grep', 'ls', 'mkdir', 'mv', 'rm', 'rmdir',
+         'sleep']
 LOCAL_CONFIG = '{"dummy": "local-registration"}\n'
 
 SSH = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; *) break ;; esac; done
 [ "$1" = "$EXPECTED_TARGET" ] || { echo "unexpected ssh target: $1" >&2; exit 255; }
 shift
 printf 'ssh %s\n' "$*" >> "$CALLS"
+case "$*" in
+  *promote_staged.sh*)
+    if [ -n "${DROP_CONNECTION:-}" ]; then
+      # The connection drops just after the promotion starts: its output goes
+      # nowhere, and ssh reports the failure.
+      { /bin/sleep 0.3; PATH="$RBIN:$PATH" sh -c "$*"; } | true
+      exit 255
+    fi ;;
+esac
 PATH="$RBIN:$PATH" exec sh -c "$*"
 '''
 SCP = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -q) shift ;; *) break ;; esac; done
 case "$2" in "$EXPECTED_TARGET":*) ;; *) echo "unexpected scp target: $2" >&2; exit 1 ;; esac
 printf 'scp %s\n' "${1##*/}" >> "$CALLS"
-exec cp "$1" "${2#"$EXPECTED_TARGET":}"
+cp "$1" "${2#"$EXPECTED_TARGET":}" || exit 1
+# A transfer that went wrong without failing.
+[ "${1##*/}" != "${CORRUPT_FILE:-}" ] || printf 'x' >> "${2#"$EXPECTED_TARGET":}"
 '''
 
 
@@ -49,7 +61,8 @@ class SyncTests(unittest.TestCase):
             path.mkdir()
         self.calls = base / 'calls'
         self.calls.write_text('')
-        shutil.copy(ROOT / 'sync_to_router.sh', self.local)
+        for name in ('sync_to_router.sh', 'lock.sh', 'promote_staged.sh'):
+            shutil.copy(ROOT / name, self.local)
         files = {'usque-rs': 'binary\n', 'usque-rs-upstream-v0.1.0': 'rollback binary\n',
                  'config.json': LOCAL_CONFIG, '.env': 'DUMMY=1\n', 'blocked_sites.txt': '# none\n',
                  'paths.sh': '# dummy\n'}
@@ -72,7 +85,10 @@ class SyncTests(unittest.TestCase):
         else:
             write_exec(rbin / 'sha256sum', 'exec shasum -a 256 "$@"\n')
         write_exec(rbin / 'pidof', 'exit 1\n')
-        write_exec(rbin / 'sync', 'printf "sync\\n" >> "$CALLS"\nls -A "$ROUTER_SCRIPT_DIR" > "$CALLS.at-sync"\n')
+        # At sync time, also record who holds the maintenance lock, and whether it is alive.
+        write_exec(rbin / 'sync', 'printf "sync\\n" >> "$CALLS"\nls -A "$ROUTER_SCRIPT_DIR" > "$CALLS.at-sync"\n'
+                   'cp "$ROUTER_SCRIPT_DIR/.ensure_network.lock/owner" "$CALLS.owner"\n'
+                   'read -r P _ < "$CALLS.owner" && kill -0 "$P" && echo alive >> "$CALLS.owner"\nexit 0\n')
 
         self.env = {'PATH': str(bin_dir), 'HOME': str(base), 'CALLS': str(self.calls), 'RBIN': str(rbin),
                     'EXPECTED_TARGET': TARGET, 'ROUTER_SSH_TARGET': TARGET,
@@ -111,6 +127,49 @@ class SyncTests(unittest.TestCase):
         at_sync = Path(str(self.calls) + '.at-sync').read_text().split()
         self.assertIn('usque-rs', at_sync)
         self.assertFalse([name for name in at_sync if name.startswith('.sync-stage')])
+
+    # F40: the promotion holds the lock with a live owner, so a health check
+    # never takes it over by age, however slow the staging was.
+    def test_the_promotion_owns_the_maintenance_lock(self):
+        self.assertEqual(self.sync().returncode, 0)
+        owner = Path(str(self.calls) + '.owner').read_text().split()
+        self.assertEqual(owner[3], 'sync_to_router.sh')
+        self.assertEqual(owner[-1], 'alive')
+        self.assertFalse((self.router / '.ensure_network.lock').exists())
+
+    def test_nothing_is_promoted_when_a_staged_file_is_corrupt(self):
+        (self.router / 'usque-rs').write_text('old binary\n')
+        self.env['CORRUPT_FILE'] = 'paths.sh'
+        result = self.sync()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('the staged files do not match what was sent; nothing was promoted', result.stdout)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'old binary\n')
+        self.assertFalse((self.router / 'paths.sh').exists())
+        self.assertFalse([p.name for p in self.router.iterdir() if p.name.startswith('.sync-stage')])
+
+    def test_a_busy_lock_stops_the_promotion(self):
+        lock = self.router / '.ensure_network.lock'
+        lock.mkdir()
+        (lock / 'owner').write_text('%d 0 0 game_mode.sh\n' % os.getpid())
+        (self.router / 'usque-rs').write_text('old binary\n')
+        self.env['SYNC_LOCK_WAIT'] = '1'
+        result = self.sync()
+        self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+        self.assertIn('game_mode.sh (PID %d) holds the maintenance lock; nothing was promoted.' % os.getpid(),
+                      result.stdout)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'old binary\n')
+        self.assertTrue((lock / 'owner').exists())
+
+    def test_a_dropped_connection_does_not_stop_the_promotion_halfway(self):
+        self.env['DROP_CONNECTION'] = '1'
+        result = self.sync()
+        self.assertNotEqual(result.returncode, 0)
+        for name in ('usque-rs', 'usque-rs-upstream-v0.1.0', 'paths.sh', 'lock.sh', 'promote_staged.sh'):
+            self.assertTrue((self.router / name).exists(), name)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'binary\n')
+        self.assertEqual(self.mode('usque-rs'), 0o755)
+        self.assertIn('sync', self.calls.read_text().splitlines())
+        self.assertFalse((self.router / '.ensure_network.lock').exists())
 
     def test_registration_rotated_on_the_router_is_not_overwritten(self):
         # F23: rotate_tunnel_ip.sh registers a new identity on the router.
