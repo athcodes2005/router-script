@@ -20,6 +20,9 @@ const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
 // backing off, so a server that accepts and then drops sessions cannot cause a
 // reconnect storm.
 const STABLE_SESSION: Duration = Duration::from_secs(10);
+// A keepalive goes out every period, so three periods without any packet from
+// the server means the path is dead, not that a keepalive or two was lost.
+const IDLE_TIMEOUT_KEEPALIVES: u32 = 3;
 // quiche can report a zero-duration timeout while loss recovery is pending.
 // Passing that directly to tokio::time::sleep creates a hot loop that can pin
 // one router CPU core even when the tunnel is carrying little traffic.
@@ -31,6 +34,33 @@ const MAX_FORWARDING_BATCH: usize = 64;
 // A failed TUN write loses that one packet. Writes that keep failing mean the
 // device is gone, so the session ends instead of silently dropping all traffic.
 const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
+
+fn idle_timeout(keepalive: Duration) -> Duration {
+    keepalive * IDLE_TIMEOUT_KEEPALIVES
+}
+
+/// How the server ended the CONNECT stream that carries the tunnel.
+#[derive(Debug, PartialEq, Eq)]
+enum ConnectStreamEnd {
+    Finished,
+    Reset(u64),
+}
+
+/// Datagrams for the flow are useless once its CONNECT stream is gone.
+const fn connect_stream_end(
+    event_stream: u64,
+    connect_stream: u64,
+    event: &quiche::h3::Event,
+) -> Option<ConnectStreamEnd> {
+    if event_stream != connect_stream {
+        return None;
+    }
+    match event {
+        quiche::h3::Event::Finished => Some(ConnectStreamEnd::Finished),
+        quiche::h3::Event::Reset(code) => Some(ConnectStreamEnd::Reset(*code)),
+        _ => None,
+    }
+}
 
 /// Returns how long to wait before reconnecting, and the delay to use after that.
 fn reconnect_backoff(
@@ -267,7 +297,8 @@ where
         .map_err(|e| anyhow::anyhow!("set ALPN: {e}"))?;
     let endpoint_pub_key_spki_der = tls_material.load_into(&mut quic_config)?;
 
-    quic_config.set_max_idle_timeout(0);
+    let idle = idle_timeout(tunnel_cfg.keepalive_period);
+    quic_config.set_max_idle_timeout(u64::try_from(idle.as_millis()).unwrap_or(u64::MAX));
     quic_config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     quic_config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     quic_config.set_initial_max_data(10_000_000);
@@ -314,9 +345,8 @@ where
         .map_err(|e| anyhow::anyhow!("initial send: {e}"))?;
     send_paced_packet(&socket, &out[..write], send_info).await?;
 
-    // Complete handshake with a hard deadline. quiche's idle timeout is
-    // intentionally disabled for established sessions, so it cannot also be
-    // relied upon to bound a blackholed initial handshake.
+    // Complete handshake with a hard deadline. The idle timeout (three
+    // keepalives) would end a blackholed handshake far later than this.
     let handshake_started = Instant::now();
     loop {
         if handshake_started.elapsed() >= HANDSHAKE_TIMEOUT {
@@ -530,7 +560,7 @@ where
     let mut paced_packet: Option<(Vec<u8>, quiche::SendInfo)> = None;
     let mut tun_write_failures = 0;
 
-    let result: Result<()> = loop {
+    let result: Result<()> = 'session: loop {
         let timeout = event_loop_timeout(conn.timeout(), keepalive_interval);
         let paced_send_delay = paced_packet
             .as_ref()
@@ -650,7 +680,15 @@ where
         // Process H3 events (capsules, etc.)
         for index in 0..MAX_FORWARDING_BATCH {
             match h3_conn.poll(&mut conn) {
-                Ok(_) => {}
+                Ok((sid, event)) => match connect_stream_end(sid, stream_id, &event) {
+                    Some(ConnectStreamEnd::Finished) => break 'session Ok(()),
+                    Some(ConnectStreamEnd::Reset(code)) => {
+                        break 'session Err(anyhow::anyhow!(
+                            "server reset the CONNECT stream (code {code:#x})"
+                        ));
+                    }
+                    None => {}
+                },
                 Err(quiche::h3::Error::Done) => break,
                 Err(e) => {
                     log::warn!("h3 poll error: {e}");
@@ -728,6 +766,12 @@ where
         }
 
         if conn.is_closed() {
+            if conn.is_timed_out() {
+                break Err(anyhow::anyhow!(
+                    "no packets from the server for {}s",
+                    idle.as_secs()
+                ));
+            }
             break Ok(());
         }
     };
@@ -876,6 +920,34 @@ mod tests {
         assert!(!forwarding_batch_limit_reached(0));
         assert!(!forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 2));
         assert!(forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 1));
+    }
+
+    // ---- dead-path detection ----
+
+    #[test]
+    fn idle_timeout_outlasts_two_lost_keepalives() {
+        // F16: with no idle timeout only the shell watchdog noticed a dead path.
+        assert_eq!(
+            idle_timeout(Duration::from_secs(30)),
+            Duration::from_secs(90)
+        );
+        assert!(idle_timeout(Duration::from_secs(1)) > Duration::from_secs(2));
+    }
+
+    #[test]
+    fn only_the_connect_stream_ending_ends_the_session() {
+        use quiche::h3::Event;
+        assert_eq!(
+            connect_stream_end(4, 4, &Event::Finished),
+            Some(ConnectStreamEnd::Finished)
+        );
+        assert_eq!(
+            connect_stream_end(4, 4, &Event::Reset(0x10c)),
+            Some(ConnectStreamEnd::Reset(0x10c))
+        );
+        assert_eq!(connect_stream_end(8, 4, &Event::Finished), None);
+        assert_eq!(connect_stream_end(4, 4, &Event::Data), None);
+        assert_eq!(connect_stream_end(4, 4, &Event::GoAway), None);
     }
 
     // ---- reconnect backoff ----
