@@ -18,6 +18,7 @@ the active topology. This index lists every maintained wiki page.
 - [[systems/dns]] — resolver chain and campus-domain forwarding.
 - [[systems/campus-wan]] — Hostel 01 addressing, gateway, DNS, and campus hops.
 - [[systems/policy-routing]] — rule priorities and mark bits, ours and GL.iNet's.
+- [[systems/host-routes]] — direct-WAN `/32` exceptions, their refreshers and removal rules.
 - [[systems/ipv6]] — LAN IPv6 addressing, advertisement, NAT, and routing.
 - [[systems/wifi]] — radio stability profile and drift repair.
 
@@ -25,6 +26,7 @@ the active topology. This index lists every maintained wiki page.
 
 - [[operations/deployment]] — safe synchronization and bootstrap procedure.
 - [[operations/health-recovery]] — staggered health pipeline and direct fallback.
+- [[operations/portal-login]] — campus portal token login and stale-session recovery.
 - [[operations/diagnostics]] — evidence collection, retention, and triage.
 - [[operations/warp-rotation]] — safe WARP registration rotation and rollback.
 

@@ -50,7 +50,7 @@ servers remained reachable on the internal campus network.
 ## Related pages
 
 See [[../systems/dns]], [[../systems/campus-wan]],
-[[../operations/health-recovery]], and [[bgmi-portal-stale-session-2026-08-11]].
+[[../operations/health-recovery]], [[../operations/portal-login]], and [[bgmi-portal-stale-session-2026-08-11]].
 
 ## Sources
 

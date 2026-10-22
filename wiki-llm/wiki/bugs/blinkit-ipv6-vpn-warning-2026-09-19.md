@@ -67,7 +67,7 @@ captures are removed after inspection.
 ## Related pages
 
 See [[blinkit-warp-egress-2026-09-10]], [[../systems/dns]],
-[[../operations/health-recovery]], and [[game-latency-audit-2026-09-19]].
+[[../operations/health-recovery]], [[../systems/host-routes]], and [[game-latency-audit-2026-09-19]].
 
 ## Sources
 

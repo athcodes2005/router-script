@@ -667,3 +667,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 18.5)
+
+## 2026-10-22 — Housekeeping: page split, merged branches, archive
+
+- Split `operations/health-recovery.md` (125 lines) by topic:
+  - portal token login and stale-session recovery moved to the new
+    [[operations/portal-login]];
+  - the direct-WAN `/32` rules moved to the new [[systems/host-routes]];
+  - the check list absorbed the clock and `tun0` side notes (85 lines now).
+
+  The index lists both new pages, and three incident pages link to them. Fixed
+  a relative link to [[flows/boot-and-recovery]].
+- Deleted the merged `full-review-2026-10-20` and `tunnel-start-fixes`
+  branches, and the off-router archive `~/router-script-archive` (the user is
+  done with it).
+
+## Sources
+
+- [[operations/health-recovery]], [[operations/portal-login]], [[systems/host-routes]]
