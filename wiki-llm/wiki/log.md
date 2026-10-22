@@ -751,7 +751,6 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.9)
 
-
 ## 2026-10-23 — Measured loaded latency; F10 stays off
 
 - At the user's request, ran `measure_load_latency.sh` three times on the
