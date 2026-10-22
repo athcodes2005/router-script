@@ -99,6 +99,10 @@ enum Commands {
         /// Write this marker after CONNECT-IP is ready; remove it on disconnect
         #[arg(long)]
         ready_file: Option<String>,
+        /// Pause reading the TUN device while this many datagrams wait to be
+        /// sent, so the excess queues in the kernel instead (0 disables)
+        #[arg(long, default_value_t = 0)]
+        tun_backpressure: usize,
     },
 }
 
@@ -127,6 +131,7 @@ async fn main() -> Result<()> {
             no_iproute2,
             interface_name,
             ready_file,
+            tun_backpressure,
         } => {
             cmd_nativetun(
                 &cli.config,
@@ -141,6 +146,7 @@ async fn main() -> Result<()> {
                 no_iproute2,
                 interface_name,
                 ready_file,
+                tun_backpressure,
             )
             .await
         }
@@ -206,6 +212,7 @@ async fn cmd_nativetun(
     no_iproute2: bool,
     interface_name: Option<String>,
     ready_file: Option<String>,
+    tun_backpressure: usize,
 ) -> Result<()> {
     if keepalive_period.is_zero() {
         anyhow::bail!("keepalive period must be at least one second");
@@ -250,6 +257,7 @@ async fn cmd_nativetun(
         mtu,
         congestion_control: congestion_control.to_string(),
         ready_file,
+        tun_backpressure,
     };
 
     tunnel::maintain_tunnel(&cfg, &tunnel_cfg, tun_dev).await

@@ -35,6 +35,14 @@ const MAX_FORWARDING_BATCH: usize = 64;
 // device is gone, so the session ends instead of silently dropping all traffic.
 const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
 
+/// Whether to read another packet from the TUN device. With backpressure on,
+/// reads pause once `limit` datagrams wait in quiche's send queue: an unmanaged
+/// queue there (up to 1,000 datagrams) adds latency to every flow during an
+/// upload, where the kernel's qdisc could manage it instead.
+const fn tun_read_allowed(queued: usize, limit: usize) -> bool {
+    limit == 0 || queued < limit
+}
+
 fn idle_timeout(keepalive: Duration) -> Duration {
     keepalive * IDLE_TIMEOUT_KEEPALIVES
 }
@@ -142,6 +150,8 @@ pub struct TunnelConfig {
     pub mtu: u32,
     pub congestion_control: String,
     pub ready_file: Option<String>,
+    /// Pause TUN reads at this many queued datagrams; 0 disables.
+    pub tun_backpressure: usize,
 }
 
 struct AbortTaskOnDrop(tokio::task::JoinHandle<()>);
@@ -570,7 +580,8 @@ where
 
         tokio::select! {
             // Read from TUN -> send to QUIC
-            result = tokio::io::AsyncReadExt::read(tun_reader, &mut tun_buf) => {
+            result = tokio::io::AsyncReadExt::read(tun_reader, &mut tun_buf),
+                if tun_read_allowed(conn.dgram_send_queue_len(), tunnel_cfg.tun_backpressure) => {
                 let n = result?;
                 if n == 0 {
                     bail!("TUN device closed");
@@ -920,6 +931,17 @@ mod tests {
         assert!(!forwarding_batch_limit_reached(0));
         assert!(!forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 2));
         assert!(forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 1));
+    }
+
+    // ---- upload queue backpressure ----
+
+    #[test]
+    fn tun_reads_pause_only_when_backpressure_is_on_and_the_queue_is_full() {
+        // F10: 1,000 queued datagrams (~1.3 MB) is upload latency the qdisc never sees.
+        assert!(tun_read_allowed(1000, 0));
+        assert!(tun_read_allowed(31, 32));
+        assert!(!tun_read_allowed(32, 32));
+        assert!(!tun_read_allowed(1000, 32));
     }
 
     // ---- dead-path detection ----
