@@ -767,3 +767,17 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)
+
+## 2026-10-23 — Fixed the latency tool's download phase (not deployed)
+
+- `measure_load_latency.sh` now repeats a 75 MB download (the largest the
+  speed test serves) until the phase ends.
+- A refused or failed request ends the load and is logged as "no download
+  (HTTP code)". Before, the 10 GB default was refused, the phase ran idle, and
+  the log showed 0.0 Mbit/s.
+- On branch `latency-tool-download-loop`; it needs a deploy of the one file.
+
+## Sources
+
+- `../../measure_load_latency.sh`, `../../tests/test_latency_tool.py`
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)
