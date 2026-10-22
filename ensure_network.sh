@@ -69,6 +69,7 @@ DIRECT_CONFIRM_DELAY="${DIRECT_CONFIRM_DELAY:-2}"
 TUNNEL_CONFIRM_DELAY="${TUNNEL_CONFIRM_DELAY:-3}"
 OVERLAY_WARN_PERCENT="${OVERLAY_WARN_PERCENT:-90}"
 GAME_MODE_MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
+PLATFORM_CHECK_FILE="${PLATFORM_CHECK_FILE:-/tmp/router-script-platform-checked}"
 
 # DNS servers expected by the new config
 DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"
@@ -519,6 +520,41 @@ maintain_persistent_storage() {
     log "Persistent storage after project maintenance: /overlay is ${OVERLAY_USED:-unknown}% used."
 }
 
+# Once per boot (the marker is in /tmp), report what these scripts assume about
+# the firmware, so a change after an upgrade is named plainly instead of showing
+# up as a repair loop. It only logs.
+check_platform_once() {
+    [ ! -f "$PLATFORM_CHECK_FILE" ] || return 0
+    PROBLEMS=
+    for TOOL in fw3 ip iptables ip6tables ipset jsonfilter timeout nslookup curl uci ubus; do
+        command -v "$TOOL" >/dev/null 2>&1 || PROBLEMS="$PROBLEMS; $TOOL is missing"
+    done
+    command -v conntrack >/dev/null 2>&1 ||
+        PROBLEMS="$PROBLEMS; conntrack is missing, so game-session routes are off"
+    for DEVICE in "$WIFI_2G_DEVICE" "$WIFI_5G_DEVICE"; do
+        [ "$(uci -q get "wireless.$DEVICE" 2>/dev/null || true)" = wifi-device ] ||
+            PROBLEMS="$PROBLEMS; there is no radio wireless.$DEVICE"
+    done
+    # Game mode lowers it on purpose.
+    if [ ! -f "$GAME_MODE_MARKER" ]; then
+        WAN_METRIC="$(ip -4 route show default dev "$WAN_IF" 2>/dev/null |
+            awk '{ for (i = 1; i < NF; i++) if ($i == "metric") print $(i + 1) }' | sort -n | head -n 1)"
+        case "$WAN_METRIC" in
+            ''|*[!0-9]*) ;;
+            *) [ "$WAN_METRIC" -gt 5 ] ||
+                PROBLEMS="$PROBLEMS; the WAN default's metric $WAN_METRIC would beat WARP's 5" ;;
+        esac
+    fi
+    [ "$(uci -q get firewall.router_script.path 2>/dev/null || true)" = "$DIR/firewall_hook.sh" ] ||
+        PROBLEMS="$PROBLEMS; the fw3 include is not registered (run install_firewall_hook.sh)"
+    if [ -n "$PROBLEMS" ]; then
+        log "WARNING: platform check:${PROBLEMS#;}."
+    else
+        log "Platform check passed."
+    fi
+    : 2>/dev/null > "$PLATFORM_CHECK_FILE" || true
+}
+
 tunnel_retry_deferred() {
     [ -f "$TUNNEL_RETRY_FILE" ] || return 1
     RETRY_AFTER="$(cat "$TUNNEL_RETRY_FILE" 2>/dev/null || echo 0)"
@@ -725,6 +761,8 @@ if ! campus_core_route_ok; then
     collect_diagnostics_once campus-route
     exit 1
 fi
+
+check_platform_once
 
 if ! internet_v4_ok && [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
     MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || echo 0)"

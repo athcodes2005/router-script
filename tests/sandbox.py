@@ -90,7 +90,9 @@ case "$*" in
     @GREP@ -Fqx -- "$l" "$r" || exit 1
     @AWK@ -v k="$l" '!d && $0 == k { d = 1; next } { print }' "$r" > "$r.tmp" && @MV@ "$r.tmp" "$r" ;;
   '-4 route show default dev eth0'|'route show default dev eth0')
-    flag wan_down || echo 'default via 10.1.40.250 dev eth0 proto static src 10.1.39.202 metric 10' ;;
+    flag wan_down && exit 0
+    if flag wan_metric_low; then echo 'default via 10.1.40.250 dev eth0 proto static src 10.1.39.202 metric 3'
+    else echo 'default via 10.1.40.250 dev eth0 proto static src 10.1.39.202 metric 10'; fi ;;
   '-4 route show default'|'route show default')
     if flag extra_default; then echo 'default via 192.168.100.1 dev wwan0 proto static metric 3'; fi
     flag warp_down || echo 'default dev tun0 scope link metric 5'
@@ -218,7 +220,7 @@ esac''',
     'uci': UCI,
     'curl': CURL,
 }
-NO_OPS = ['sysctl', 'killall', 'ifup', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
+NO_OPS = ['fw3', 'sysctl', 'killall', 'ifup', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
           'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger']
 SERVICES = ['dnsmasq', 'odhcpd', 'dnscrypt-proxy', 'cron', 'firewall']
 
