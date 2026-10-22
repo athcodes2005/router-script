@@ -23,6 +23,9 @@ const MIN_EVENT_LOOP_SLEEP: Duration = Duration::from_millis(5);
 // an unbounded UDP drain can remain readable indefinitely during a download,
 // starving decoded datagrams, TUN writes, and QUIC ACK transmission.
 const MAX_FORWARDING_BATCH: usize = 64;
+// A failed TUN write loses that one packet. Writes that keep failing mean the
+// device is gone, so the session ends instead of silently dropping all traffic.
+const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
 
 fn event_loop_timeout(quic_timeout: Option<Duration>, keepalive: Duration) -> Duration {
     quic_timeout
@@ -37,6 +40,32 @@ const fn forwarding_batch_limit_reached(index: usize) -> bool {
 
 fn pacing_delay(send_at: Instant, now: Instant) -> Duration {
     send_at.saturating_duration_since(now)
+}
+
+async fn write_tun<W>(
+    tun_writer: &mut W,
+    packet: &[u8],
+    stats: &Stats,
+    failures: &mut u32,
+) -> Result<()>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    match tokio::io::AsyncWriteExt::write_all(tun_writer, packet).await {
+        Ok(()) => {
+            *failures = 0;
+            Ok(())
+        }
+        Err(error) => {
+            stats.dropped.fetch_add(1, Ordering::Relaxed);
+            *failures += 1;
+            if *failures >= MAX_CONSECUTIVE_TUN_WRITE_FAILURES {
+                bail!("{failures} consecutive TUN writes failed: {error}");
+            }
+            log::debug!("TUN write failed: {error}");
+            Ok(())
+        }
+    }
 }
 
 async fn send_paced_packet(
@@ -479,6 +508,7 @@ where
     let mut last_quic_stats_update = Instant::now();
     let mut internal_work_pending = false;
     let mut paced_packet: Option<(Vec<u8>, quiche::SendInfo)> = None;
+    let mut tun_write_failures = 0;
 
     let result: Result<()> = loop {
         let timeout = event_loop_timeout(conn.timeout(), keepalive_interval);
@@ -520,7 +550,7 @@ where
                                 stats.dropped.fetch_add(1, Ordering::Relaxed);
                                 log::debug!("datagram send error: {e}, generating ICMP");
                                 if let Some(icmp_pkt) = icmp::compose_icmp_too_large(&tun_buf[..n], 1280) {
-                                    tokio::io::AsyncWriteExt::write_all(tun_writer, &icmp_pkt).await.ok();
+                                    write_tun(tun_writer, &icmp_pkt, &stats, &mut tun_write_failures).await?;
                                 }
                             }
                         }
@@ -622,9 +652,8 @@ where
                             stats
                                 .rx_bytes
                                 .fetch_add(ip_payload.len() as u64, Ordering::Relaxed);
-                            tokio::io::AsyncWriteExt::write_all(tun_writer, ip_payload)
-                                .await
-                                .ok();
+                            write_tun(tun_writer, ip_payload, &stats, &mut tun_write_failures)
+                                .await?;
                         }
                     }
                 }
@@ -827,6 +856,69 @@ mod tests {
         assert!(!forwarding_batch_limit_reached(0));
         assert!(!forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 2));
         assert!(forwarding_batch_limit_reached(MAX_FORWARDING_BATCH - 1));
+    }
+
+    // ---- TUN write failures ----
+
+    struct FailingWriter;
+
+    impl tokio::io::AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            _: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Err(std::io::Error::other("TUN device gone")))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn persistent_tun_write_failures_are_counted_then_end_the_session() {
+        let stats = Stats::new();
+        let mut failures = 0;
+        for _ in 1..MAX_CONSECUTIVE_TUN_WRITE_FAILURES {
+            assert!(
+                write_tun(&mut FailingWriter, b"packet", &stats, &mut failures)
+                    .await
+                    .is_ok()
+            );
+        }
+        assert!(
+            write_tun(&mut FailingWriter, b"packet", &stats, &mut failures)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            stats.dropped.load(Ordering::Relaxed),
+            u64::from(MAX_CONSECUTIVE_TUN_WRITE_FAILURES)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_tun_write_resets_the_failure_count() {
+        let stats = Stats::new();
+        let mut failures = MAX_CONSECUTIVE_TUN_WRITE_FAILURES - 1;
+        let mut sink: Vec<u8> = Vec::new();
+        assert!(write_tun(&mut sink, b"packet", &stats, &mut failures)
+            .await
+            .is_ok());
+        assert_eq!(failures, 0);
+        assert_eq!(sink, b"packet");
+        assert_eq!(stats.dropped.load(Ordering::Relaxed), 0);
     }
 
     #[test]
