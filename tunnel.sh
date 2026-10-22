@@ -41,6 +41,8 @@ GAME_POLICY_MARK="${GAME_POLICY_MARK:-0x40000}"
 GAME_POLICY_MASK="${GAME_POLICY_MASK:-0xf0000}"
 WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
 WARP_CC="${WARP_CC:-cubic}"
+# Datagrams the client may queue before it pauses TUN reads; 0 leaves it off.
+WARP_TUN_BACKPRESSURE="${WARP_TUN_BACKPRESSURE:-0}"
 WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
 WARP_STARTUP_TIMEOUT="${WARP_STARTUP_TIMEOUT:-25}"
 
@@ -120,9 +122,11 @@ NATIVETUN_HELP="$("$EXECUTABLE" nativetun --help 2>&1 || true)"
 SUPPORTS_CC=0
 SUPPORTS_READY=0
 SUPPORTS_SYSLOG=0
+SUPPORTS_BACKPRESSURE=0
 echo "$NATIVETUN_HELP" | grep -q 'congestion-control' && SUPPORTS_CC=1
 echo "$NATIVETUN_HELP" | grep -q 'ready-file' && SUPPORTS_READY=1
 echo "$NATIVETUN_HELP" | grep -q -- '--syslog' && SUPPORTS_SYSLOG=1
+echo "$NATIVETUN_HELP" | grep -q -- '--tun-backpressure' && SUPPORTS_BACKPRESSURE=1
 
 # These settings are routing state, not process state; reapply them even when
 # an existing usque-rs process is reused to repair drift.
@@ -158,6 +162,17 @@ else
     else
         echo "[WARNING] This usque-rs binary cannot log connection events."
     fi
+    case "$WARP_TUN_BACKPRESSURE" in
+        0) ;;
+        ''|*[!0-9]*) echo "[WARNING] Ignoring WARP_TUN_BACKPRESSURE=$WARP_TUN_BACKPRESSURE: not a number." ;;
+        *)
+            if [ "$SUPPORTS_BACKPRESSURE" -eq 1 ]; then
+                set -- "$@" --tun-backpressure "$WARP_TUN_BACKPRESSURE"
+            else
+                echo "[WARNING] This usque-rs binary does not support TUN-read backpressure."
+            fi
+            ;;
+    esac
     "$@" >/dev/null 2>&1 &
     PID=$!
 fi

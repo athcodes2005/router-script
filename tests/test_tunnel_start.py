@@ -118,6 +118,26 @@ class TunnelLaunchTests(unittest.TestCase):
         self.assertNotIn('--syslog', args)
         self.assertIn('[WARNING] This usque-rs binary cannot log connection events.', log)
 
+    # F10: TUN-read backpressure stays off unless WARP_TUN_BACKPRESSURE asks for it.
+    def test_backpressure_is_off_by_default(self):
+        args, _ = self.launch('--congestion-control --ready-file --syslog --tun-backpressure')
+        self.assertNotIn('--tun-backpressure', args)
+
+    def test_backpressure_is_passed_when_configured(self):
+        args, _ = self.launch('--congestion-control --ready-file --syslog --tun-backpressure',
+                              WARP_TUN_BACKPRESSURE='64')
+        self.assertEqual(args[args.index('--tun-backpressure') + 1], '64')
+
+    def test_backpressure_is_skipped_when_unsupported_or_invalid(self):
+        args, log = self.launch('--congestion-control --ready-file', WARP_TUN_BACKPRESSURE='64')
+        self.assertNotIn('--tun-backpressure', args)
+        self.assertIn('[WARNING] This usque-rs binary does not support TUN-read backpressure.', log)
+        self.box.flag('client_absent_once')
+        args, log = self.launch('--congestion-control --ready-file --tun-backpressure',
+                                WARP_TUN_BACKPRESSURE='lots')
+        self.assertNotIn('--tun-backpressure', args)
+        self.assertIn('[WARNING] Ignoring WARP_TUN_BACKPRESSURE=lots: not a number.', log)
+
 
 if __name__ == '__main__':
     unittest.main()
