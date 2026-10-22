@@ -521,6 +521,20 @@ ensure_nat_and_mss_rules() {
     ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 }
 
+# fw3 filters input only from br-lan and eth0, and INPUT's policy is ACCEPT, so
+# new connections arriving on tun0 would reach SSH, the admin UI and DNS. Replies
+# are not NEW and still pass. A safeguard, not liveness: never restart WARP for it.
+ensure_tunnel_input_drop() {
+    for TOOL in iptables ip6tables; do
+        "$TOOL" -C INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null && continue
+        if "$TOOL" -I INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null; then
+            log "Added the missing $TOOL rule dropping new inbound connections on $TUN_IF."
+        else
+            log "WARNING: could not add the $TOOL rule dropping new inbound connections on $TUN_IF."
+        fi
+    done
+}
+
 runtime_resources_ok() {
     TMP_USED="$(df /tmp 2>/dev/null | awk 'NR == 2 {gsub("%", "", $5); print $5}')"
     case "$TMP_USED" in
@@ -813,6 +827,9 @@ fi
 # Publish fresh Blinkit IPv4 answers only after their WAN routes exist.
 sh "$DIR/refresh_blinkit_dns.sh" >> "$LOG_FILE" 2>&1 ||
     log "Blinkit DNS refresh deferred; preserving last known records."
+
+# Before the game-mode exit: tun0 stays up in game mode, and fw3 reloads drop it.
+ensure_tunnel_input_drop
 
 if [ -f "$GAME_MODE_MARKER" ]; then
     # Competitive low-latency mode: keep direct WAN default. Do not re-promote

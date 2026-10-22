@@ -236,6 +236,31 @@ class RecoveryTests(unittest.TestCase):
             self.assertIn(tool + ': -I FORWARD -i br-lan -o tun0 -j ACCEPT', output)
             self.assertIn(tool + ': -I FORWARD -i tun0 -o br-lan -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT', output)
 
+    # F31: replies are not NEW, so only unsolicited connections are dropped.
+    def test_tunnel_input_drop_is_added_only_where_missing(self):
+        output = self.run_shell(function('ensure_tunnel_input_drop') + r"""
+        TUN_IF=tun0
+        log() { printf 'LOG %s\n' "$*"; }
+        iptables() { case "$1" in -C) return 1;; esac; printf 'iptables: %s\n' "$*"; }
+        ip6tables() { printf 'ip6tables: %s\n' "$*"; }
+        ensure_tunnel_input_drop
+        """)
+        self.assertIn('iptables: -I INPUT -i tun0 -m conntrack --ctstate NEW -j DROP', output)
+        self.assertIn('LOG Added the missing iptables rule dropping new inbound connections on tun0.', output)
+        self.assertNotIn('ip6tables: -I', output)
+
+    def test_tunnel_start_adds_the_same_drop_without_risking_the_start(self):
+        # tunnel.sh runs under set -e: a failed safeguard must warn, not abort the start.
+        spec = ' INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP'
+        lines = (ROOT / 'tunnel.sh').read_text().splitlines()
+        for tool in ('iptables', 'ip6tables'):
+            line = next((l for l in lines if l.startswith(tool + ' -C INPUT')), '')
+            self.assertTrue(line.startswith(tool + ' -C' + spec + ' 2>/dev/null || ' + tool + ' -I' + spec), tool)
+            self.assertIn('|| echo "[WARNING]', line)
+        self.assertIn('"$TOOL" -C' + spec, function('ensure_tunnel_input_drop'))
+        # Inert without tun0; stop_tunnel.sh keeps it so the next start has no gap.
+        self.assertNotIn('INPUT', (ROOT / 'stop_tunnel.sh').read_text())
+
     def test_preferred_tunnel_routes_are_silent(self):
         output = self.run_shell(function('warn_if_tunnel_not_preferred') + r"""
         TUN_IF=tun0; ROUTE_PROBE_V4=1.1.1.1; ROUTE_PROBE_V6=2606:4700:4700::1111

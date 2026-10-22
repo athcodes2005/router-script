@@ -199,6 +199,47 @@ class PipelineTests(unittest.TestCase):
         # The pre-game-mode address is still listed for the other public names.
         self.assertEqual(self.box.count('ip route del 198.51.100.10/32'), 0)
 
+    # F31: fw3 filters input only from br-lan and eth0 and INPUT's policy is
+    # ACCEPT, so new connections arriving on tun0 reached SSH, the admin UI and DNS.
+    TUN0_DROP = 'filter INPUT -i tun0 -m conntrack --ctstate NEW -j DROP'
+
+    def rules(self, tool):
+        return (self.box.state / (tool + '.rules')).read_text().splitlines()
+
+    def drop_tun0_rule(self, tool):  # what a firewall reload does
+        kept = [line for line in self.rules(tool) if line != self.TUN0_DROP]
+        (self.box.state / (tool + '.rules')).write_text(''.join(line + '\n' for line in kept))
+
+    def test_new_inbound_connections_on_tun0_are_dropped(self):
+        for tool in ('iptables', 'ip6tables'):
+            self.assertIn(self.TUN0_DROP, self.rules(tool), tool)
+
+    def test_tun0_drop_lost_in_a_firewall_reload_is_restored_once(self):
+        for tool in ('iptables', 'ip6tables'):
+            self.drop_tun0_rule(tool)
+        self.tick()
+        self.tick()
+        for tool in ('iptables', 'ip6tables'):
+            self.assertIn(self.TUN0_DROP, self.rules(tool), tool)
+            self.assertEqual(self.box.count(tool + ' -I INPUT -i tun0'), 1, tool)
+        self.assertIn('Added the missing ip6tables rule dropping new inbound connections on tun0.',
+                      self.box.log('ensure'))
+
+    def test_tun0_drop_is_kept_in_game_mode(self):
+        (self.box.tmp / 'router-script-game-mode').write_text('on\n')
+        self.drop_tun0_rule('iptables')
+        self.tick()
+        self.assertIn(self.TUN0_DROP, self.rules('iptables'))
+
+    def test_tun0_drop_failure_never_restarts_warp(self):
+        self.box.flag('input_rule_fail')
+        self.drop_tun0_rule('iptables')
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn('WARNING: could not add the iptables rule dropping new inbound connections on tun0.', log)
+        self.assertIn('Health check passed.', log)
+        self.assertNotIn('Restarting tunnel', log)
+
     # F08: tearing the game policy down each tick left new sessions unmarked.
     def test_healthy_tick_leaves_game_policy_untouched(self):
         self.tick()

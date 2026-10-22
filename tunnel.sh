@@ -267,6 +267,11 @@ iptables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || iptables 
 iptables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -I FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS" 2>/dev/null || iptables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS"
+# fw3 filters input only from br-lan and eth0: drop new connections arriving
+# through the tunnel (replies are not NEW). A safeguard, so it never fails the
+# start. stop_tunnel.sh keeps it: it matches nothing without tun0, and the next
+# start then has no window without it.
+iptables -C INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || iptables -I INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || echo "[WARNING] Could not add the iptables rule dropping new inbound connections on $TUN_IF."
 
 ip route del default dev "$TUN_IF" 2>/dev/null || true
 ip route add default dev "$TUN_IF" metric 5
@@ -278,6 +283,7 @@ ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || ip6table
 ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 ip6tables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || ip6tables -t mangle -I FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
 ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null || ip6tables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null
+ip6tables -C INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || ip6tables -I INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || echo "[WARNING] Could not add the ip6tables rule dropping new inbound connections on $TUN_IF."
 
 ip -6 route add default dev "$TUN_IF" metric 5 2>/dev/null || ip -6 route replace default dev "$TUN_IF" metric 5
 

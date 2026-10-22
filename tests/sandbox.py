@@ -44,6 +44,7 @@ op=${1:-}; chain=${2:-}
 if [ $# -ge 2 ]; then shift 2; else shift $#; fi
 case "$op" in -I) case "${1:-}" in ''|*[!0-9]*) ;; *) shift ;; esac ;; esac
 key="$table $chain $*"
+case "$op $chain" in '-I INPUT') flag input_rule_fail && exit 1 ;; esac
 case "$op" in
   -C) @GREP@ -Fqx -- "$key" "$f" ;;
   -A) printf '%s\n' "$key" >> "$f" ;;
