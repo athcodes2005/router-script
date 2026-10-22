@@ -31,6 +31,23 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Wi-Fi stability configuration drift detected', log)
         self.assertIn('Tunnel health check failed: process missing. Restarting tunnel.', log)
 
+    # A2: the other optional stages must not block recovery either.
+    def test_lan_ipv6_failure_does_not_block_tunnel_recovery(self):
+        self.box.flag('filter_aaaa_on')  # LAN IPv6 drift that its repair cannot fix
+        self.box.flag('warp_down')
+        self.tick()
+        log = self.box.log('ensure')
+        self.assertIn('LAN IPv6 remains invalid after repair', log)
+        self.assertIn('Tunnel health check failed: process missing. Restarting tunnel.', log)
+
+    def test_google_policy_failure_does_not_block_tunnel_recovery(self):
+        self.box.flag('ipset_fail')
+        self.box.flag('warp_down')
+        self.tick()
+        log = self.box.log('ensure')
+        self.assertIn('Google WAN policy deferred', log)
+        self.assertIn('Tunnel health check failed: process missing. Restarting tunnel.', log)
+
     def test_persistent_radio_failure_is_reloaded_once_per_cooldown(self):
         self.box.flag('wifi_down')
         self.tick()

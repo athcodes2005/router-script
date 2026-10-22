@@ -211,6 +211,7 @@ case "$name" in
     fi ;;
   *) echo 'Address 1: 198.51.100.10'; echo 'Address 2: 2001:db8::10' ;;
 esac''',
+    'ipset': 'flag ipset_fail && exit 1; :',
     'iptables': IPTABLES,
     'ip6tables': IPTABLES,
     'ip': IP,
@@ -218,7 +219,7 @@ esac''',
     'curl': CURL,
 }
 NO_OPS = ['sysctl', 'killall', 'ifup', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
-          'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger', 'ipset']
+          'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger']
 SERVICES = ['dnsmasq', 'odhcpd', 'dnscrypt-proxy', 'cron', 'firewall']
 
 
