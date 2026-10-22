@@ -92,13 +92,15 @@ case "$*" in
   '-4 route show default dev eth0'|'route show default dev eth0')
     flag wan_down || echo 'default via 10.1.40.250 dev eth0 proto static src 10.1.39.202 metric 10' ;;
   '-4 route show default'|'route show default')
+    if flag extra_default; then echo 'default via 192.168.100.1 dev wwan0 proto static metric 3'; fi
     flag warp_down || echo 'default dev tun0 scope link metric 5'
     flag wan_down || echo 'default via 10.1.40.250 dev eth0 proto static src 10.1.39.202 metric 10' ;;
   '-6 route show default') flag warp_down || echo 'default dev tun0 metric 5 pref medium' ;;
   'route get 10.200.1.11')
     if flag campus_route_tun; then echo '10.200.1.11 dev tun0 src 172.16.0.2 uid 0'
     else echo '10.200.1.11 via 10.1.40.250 dev eth0 src 10.1.39.202 uid 0'; fi ;;
-  'route replace 10.0.0.0/8 via '*) flag campus_route_fixable && @RM@ -f "$SIM_STATE/campus_route_tun" ;;
+  'route replace 10.0.0.0/8 via '*) if flag campus_route_fixable; then @RM@ -f "$SIM_STATE/campus_route_tun"; fi ;;
+  'route replace 198.51.100.10/32 '*) if flag host_route_fail; then exit 2; fi ;;
   '-4 route get '*)
     if flag route_bypass; then echo "$4 via 10.1.40.250 dev eth0 src 10.1.39.202 uid 0"
     else echo "$4 dev tun0 src 172.16.0.2 uid 0"; fi ;;
@@ -175,7 +177,7 @@ STUBS = {
     'timeout': 'shift; exec "$@"',
     'sha256sum': 'echo "simhash  $1"',
     'pidof': r'''case "$1" in
-  usque-rs) flag warp_down && exit 1; echo 456 ;;
+  usque-rs) flag warp_down && exit 1; @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
   dnsmasq) flag dnsmasq_down && exit 1; echo 123 ;;
   *) exit 1 ;;
 esac''',
