@@ -241,12 +241,7 @@ where
     quic_config
         .set_application_protos(quiche::h3::APPLICATION_PROTOCOL)
         .map_err(|e| anyhow::anyhow!("set ALPN: {e}"))?;
-    quic_config
-        .load_cert_chain_from_pem_file(tls_material.cert_pem_file.path().to_str().unwrap())
-        .map_err(|e| anyhow::anyhow!("load cert: {e}"))?;
-    quic_config
-        .load_priv_key_from_pem_file(tls_material.key_pem_file.path().to_str().unwrap())
-        .map_err(|e| anyhow::anyhow!("load key: {e}"))?;
+    let endpoint_pub_key_spki_der = tls_material.load_into(&mut quic_config)?;
 
     quic_config.set_max_idle_timeout(0);
     quic_config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
@@ -345,7 +340,7 @@ where
     let peer_cert = conn
         .peer_cert()
         .context("WARP endpoint did not provide a peer certificate")?;
-    if !tls::verify_endpoint_key(peer_cert, &tls_material.endpoint_pub_key_spki_der) {
+    if !tls::verify_endpoint_key(peer_cert, &endpoint_pub_key_spki_der) {
         bail!("peer certificate public key does not match pinned endpoint key");
     }
     log::debug!("Endpoint key pinning verified");
