@@ -54,8 +54,9 @@ IPv4 and IPv6:
   WARP for it.
 - `stop_tunnel.sh` leaves it in place, because it is inert without `tun0`.
 
-Replies are not NEW and still pass. As of 2026-10-22 this commit is **not
-deployed**; whether WARP ever delivers such connections is unverified.
+Replies are not NEW and still pass. The commit was deployed on 2026-10-22 at
+08:39. Whether WARP ever delivers such connections is unverified: the rule's
+drop counter (`iptables -L INPUT -v -n | grep tun0`) shows it.
 
 ## Diagnostic boundary
 

@@ -659,7 +659,7 @@ commit `c5ca173` (`tests/sandbox.py`, a test-only version of A8).
 | F15 | **Fixed** | `237f970` | IPv6 WARP probe uses Cloudflare's trace by IP literal; dead `tunnel_internet_v6_ok` removed; README wording updated. |
 | F10, F16, F17, F18 | Deferred | — | Rust (batch 5): not approved this round; needs a Linux build/test environment and, for F10, a loaded-latency measurement first. |
 | F12–F14, F19–F30 | See §14 (F12: §15) | — | Approved on 2026-10-21 as batch 4, with your decisions on F21, F24 and F25. Deployed on 2026-10-22; the F12 fix followed at 07:25 (§15). |
-| F31 | Implemented, not deployed | `3b3a183` | Found in the 2026-10-22 validation; you asked for a test-first fix without deploying it (§16). |
+| F31 | **Deployed** 2026-10-22 08:39 | `3b3a183` | Found in the 2026-10-22 validation and deployed later that morning (§16). |
 
 Rejected: none. In Phase 1 I had already dropped one suspected issue, the
 IPv6 "black hole" during fallback, after the evidence disproved it (§5 item 5).
@@ -1423,7 +1423,7 @@ was read-only, apart from one 10 MB download through WARP. `.env` and
 | Firewall and policy | WAN input admits only DHCP renewal, IGMP and port forwards; NAT, MSS, `FORWARD` rules, rules 690/700/710 and the game chain intact |
 | Wi-Fi | Both radios up (IN, HE20/HE80); 8 clients on 5 GHz, −18 to −46 dBm |
 | Health pipeline | 720 of 720 checks passed in 6 h, with no gap over 90 s; no lock, cooldown or warning markers |
-| Integrity | 28 of 30 deploy-set files match `2ae4750`; `README.md` and `PROJECT_CONTEXT.md` differ (docs were not deployed); secrets and all 30 snapshots are 0600 |
+| Integrity | 26 of the 28 deploy-set files (all but `.env` and `config.json`) match `2ae4750`; `README.md` and `PROJECT_CONTEXT.md` differ (docs were not deployed); secrets and all 30 snapshots are 0600. This row first said "28 of 30", a counting error |
 
 **Benign observations:**
 - The 56.8 Mbps download used 81 % of one core, so WARP is CPU-bound around
@@ -1478,7 +1478,7 @@ for both IPv4 and IPv6.
   (+2: one `-C` per family).
 - Invariants are unaffected: only `INPUT` changes.
 
-### 16.3 Deploying F31 (not deployed; needs your SSH authorisation)
+### 16.3 Deploying F31 (done on 22 October, §16.5)
 
 **0. Pre-flight (read-only).**
 - The router's `tunnel.sh` and `ensure_network.sh` must match
@@ -1522,3 +1522,48 @@ own:
 
 They passed each time. Treat that runner's parallel output as unverified until
 the cause is found.
+
+### 16.5 F31 deployment record — 08:39–08:42 IST
+
+You authorised this deployment ("go ahead deploy any other fixes you want
+to"), and it followed §16.3. `.env` and `config.json` were never read.
+
+**Scope.** F31 (`tunnel.sh` and `ensure_network.sh`), plus the two doc files
+that carry the F25/F26 documentation fixes (`README.md`, `PROJECT_CONTEXT.md`).
+No other committed fix was undeployed. The Rust items stay source-only, as the
+brief requires.
+
+**Pre-flight (08:39):**
+- Both scripts matched `2ae4750`, and the docs were mode `0644`.
+- No lock was held, game mode was off, and WARP was PID 20421.
+- Every check since 07:28 had passed.
+- Both rule checks returned 1, confirming the rules were absent.
+
+**Staging and backup.**
+- I staged four files. Both scripts passed BusyBox `sh -n`, and all hashes
+  matched HEAD (`17bd74d`).
+- The backup is `/root/router-script/backup-f31`: mode 700, the four files
+  and the WARP PID.
+
+**Promotion** went in under the lock at 08:39:43. Scripts are `0755` and docs
+`0644`, all root-owned, and every hash matches.
+- The 08:40:00 check added both rules (one log line for each family) and
+  passed.
+- The 08:40:30 check added nothing and passed.
+- Each rule exists once, first in `INPUT`.
+
+**Unaffected:**
+- `warp=on` for both families.
+- HTTPS through `tun0` took 71–109 ms, and ping through it had 0 % loss.
+- dnscrypt-proxy and dnsmasq answer.
+- LAN forwarding is normal: 222 packets out in 10 s across 266 LAN flows.
+- The WARP PID was unchanged; WARP was not restarted.
+
+**State after the deploy:**
+- By 08:42 the rules had dropped 0 packets. Read the counters after a day:
+  `iptables -L INPUT -v -n | grep tun0` (and the same for `ip6tables`).
+- All 28 deploy-set files now match HEAD, and the staging directory was
+  removed.
+- `tunnel.sh`'s copy of the rule takes effect at the next WARP start.
+
+**Rollback:** §16.3 step 4.

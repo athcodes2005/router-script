@@ -40,7 +40,7 @@ curl reports a certificate failure.
 Before the game-mode branch, each run also restores the `tun0` rule that drops
 new inbound connections, if a firewall reload removed it. This is never a
 restart trigger; see [[../security/secrets-and-trust]]. It is commit `3b3a183`,
-not deployed as of 2026-10-22.
+deployed on 2026-10-22.
 
 Every Wi-Fi, DNS, and LAN IPv6 repair is followed by a postcondition check.
 A repair that still fails captures diagnostics once and enters a five-minute

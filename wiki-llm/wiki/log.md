@@ -593,3 +593,22 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 16)
 - `../../tunnel.sh`, `../../ensure_network.sh`
+
+## 2026-10-22 — Deployed F31 and the pending doc files
+
+- With the user's authorisation, promoted `tunnel.sh` and `ensure_network.sh`
+  (F31, commit `3b3a183`) under the maintenance lock at 08:39. The next check
+  added the IPv4 and IPv6 rules dropping new inbound connections on `tun0`,
+  and the check after it added nothing. WARP was not restarted (PID 20421).
+  Its tunnel traffic, DNS and LAN forwarding were verified unaffected.
+- Also deployed `README.md` and `PROJECT_CONTEXT.md`, which carry the F25/F26
+  documentation fixes. All 28 deploy-set files (everything except `.env` and
+  `config.json`) now match the repo. Backup:
+  `/root/router-script/backup-f31`.
+- Correction: the previous entry's integrity figure should read 26 of 28 files,
+  not 28 of 30.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 16.5)
+- `../../tunnel.sh`, `../../ensure_network.sh`
