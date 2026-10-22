@@ -61,6 +61,26 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Install host routes for the names that resolve now, without removing any.
+# Deleting first moved those hosts onto WARP until they resolved again (tun0 is
+# already the default when a running client is reused), and a failed lookup lost
+# its route. ensure_network.sh's refresher is the only one that removes routes:
+# stale ones, once every name resolves, and never one another refresher lists.
+# These routes are optional, so a failure warns instead of failing the start.
+add_host_routes() {
+    for DOMAIN in $1; do
+        ADDRESSES="$(timeout 3 nslookup "$DOMAIN" "$2" 2>/dev/null |
+            awk '/^Address [0-9]+: / && $3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print $3}')"
+        for ADDRESS in $ADDRESSES; do
+            if ip route replace "$ADDRESS/32" via "$DEFAULT_GW" dev "$WAN_IF" metric 1 2>/dev/null; then
+                grep -Fqx "$ADDRESS/32" "$3" 2>/dev/null || printf '%s\n' "$ADDRESS/32" >> "$3"
+            else
+                echo "[WARNING] Could not install the host route $ADDRESS/32 for $DOMAIN."
+            fi
+        done
+    done
+}
 echo "Starting tunnel service at $(date)"
 echo "========================================"
 
@@ -212,54 +232,17 @@ if [ -n "$DEFAULT_GW" ]; then
 
     # Some IITB-only pages use public addresses and decide access from the
     # source IP. Resolve those explicit hostnames with campus DNS and keep the
-    # resulting IPv4 host routes off WARP. Remove the previous dynamic set
-    # first so DNS changes do not leave stale exceptions behind.
-    if [ -f "$CAMPUS_ROUTES_FILE" ]; then
-        while IFS= read -r ROUTE; do
-            [ -n "$ROUTE" ] && ip route del "$ROUTE" 2>/dev/null || true
-        done < "$CAMPUS_ROUTES_FILE"
-    fi
-    : > "$CAMPUS_ROUTES_FILE"
-    for DOMAIN in $CAMPUS_DIRECT_DOMAINS; do
-        timeout 3 nslookup "$DOMAIN" "$CAMPUS_DNS_IP" 2>/dev/null |
-            awk '/^Address [0-9]*: / { print $3 }' |
-            while IFS= read -r ADDRESS; do
-                case "$ADDRESS" in
-                    *.*.*.*)
-                        ROUTE="$ADDRESS/32"
-                        ip route replace "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1
-                        grep -Fqx "$ROUTE" "$CAMPUS_ROUTES_FILE" 2>/dev/null || printf '%s\n' "$ROUTE" >> "$CAMPUS_ROUTES_FILE"
-                        ;;
-                esac
-            done
-    done
+    # resulting IPv4 host routes off WARP.
+    add_host_routes "$CAMPUS_DIRECT_DOMAINS" "$CAMPUS_DNS_IP" "$CAMPUS_ROUTES_FILE"
 
     # Restore/publish the IPv4-only Blinkit answers before resolving local
     # public exceptions, including after a reboot or a tunnel teardown.
     sh "$DIR/refresh_blinkit_dns.sh" || echo "[WARNING] Blinkit DNS refresh deferred."
 
     # Selected public app endpoints use direct WAN egress to avoid WARP/shared
-    # proxy reputation checks. Resolve through the router resolver and refresh
-    # the host-route set every time the tunnel is (re)applied.
-    if [ -f "$DIRECT_PUBLIC_ROUTES_FILE" ]; then
-        while IFS= read -r ROUTE; do
-            [ -n "$ROUTE" ] && ip route del "$ROUTE" 2>/dev/null || true
-        done < "$DIRECT_PUBLIC_ROUTES_FILE"
-    fi
-    : > "$DIRECT_PUBLIC_ROUTES_FILE"
-    for DOMAIN in $DIRECT_PUBLIC_DOMAINS; do
-        timeout 3 nslookup "$DOMAIN" 127.0.0.1 2>/dev/null |
-            awk '/^Address [0-9]*: / { print $3 }' |
-            while IFS= read -r ADDRESS; do
-                case "$ADDRESS" in
-                    *.*.*.*)
-                        ROUTE="$ADDRESS/32"
-                        ip route replace "$ROUTE" via "$DEFAULT_GW" dev "$WAN_IF" metric 1
-                        grep -Fqx "$ROUTE" "$DIRECT_PUBLIC_ROUTES_FILE" 2>/dev/null || printf '%s\n' "$ROUTE" >> "$DIRECT_PUBLIC_ROUTES_FILE"
-                        ;;
-                esac
-            done
-    done
+    # proxy reputation checks. Resolve through the router resolver every time
+    # the tunnel is (re)applied.
+    add_host_routes "$DIRECT_PUBLIC_DOMAINS" 127.0.0.1 "$DIRECT_PUBLIC_ROUTES_FILE"
 fi
 
 # IPv4 NAT + forwarding through tun0
