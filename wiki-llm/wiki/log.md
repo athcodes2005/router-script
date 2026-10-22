@@ -750,3 +750,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.9)
+
+
+## 2026-10-23 — Measured loaded latency; F10 stays off
+
+- At the user's request, ran `measure_load_latency.sh` three times on the
+  default client and three times with `WARP_TUN_BACKPRESSURE=64`, then
+  restored the default. Each switch restarted WARP (about 3 s each).
+- With the campus uplink congested, an upload pushed round trips to 122–149 ms
+  (peak 468 ms) at 10–18 Mbit/s. On a quiet uplink: 35 ms at 80 Mbit/s.
+- Backpressure did not lower upload latency on the quiet uplink (39–58 ms) and
+  cost 4–8 % of throughput. Counters show why: `tun0` dropped 51 packets at its
+  ring, and its fq_codel never held a queue. F10 stays off.
+- The tool's default download size (10 GB) is refused by the speed test; the
+  runs used 75 MB. See [[systems/warp-client]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)

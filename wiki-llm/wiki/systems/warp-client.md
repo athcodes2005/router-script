@@ -56,8 +56,12 @@ disconnect.
 
 `--tun-backpressure N` pauses TUN reads while N datagrams wait in quiche's send
 queue, so the excess waits in the kernel instead (F10). It is off by default,
-and `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` asks: whether it
-lowers latency under load is unmeasured (`measure_load_latency.sh`).
+and `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` asks.
+
+Measured on 2026-10-23 with `measure_load_latency.sh`, it did not help. The TUN
+device drops at its own 500-packet ring when the client stops reading, and never
+queues in `tun0`'s fq_codel, so the queue only moves out of the client. Keep it
+off (report section 19.10).
 
 The established-session event loop applies a five-millisecond floor to expired
 quiche timers. Without that floor, a persistent zero-duration loss-recovery

@@ -66,8 +66,11 @@ The remaining source-review findings were copied Rust integration-test logic,
 discarded client lifecycle output, nontransactional full-sync promotion and
 ownerless long-running maintenance locks. All four are fixed (audit F36, F37,
 F40, F39) and were deployed on 2026-10-23.
-No speculative SQM cap was deployed; loaded latency is still unmeasured, and
-`measure_load_latency.sh` now measures it.
+No speculative SQM cap was deployed.
+
+Loaded latency was measured on 2026-10-23. An upload adds about 30 ms on a quiet
+uplink, but 120–150 ms (peaks near 470 ms) when the campus uplink is congested.
+The client's TUN-read backpressure does not help (report section 19.10).
 
 ## DNS filtering on the vendor firmware
 

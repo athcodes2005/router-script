@@ -1804,7 +1804,7 @@ from the 09-19 audit.
 | F17 | `21ba75e` | Backoff depends on how long the session was connected. Ten seconds or more counts as stable: a clean close reconnects at once, and a failure restarts at 1 s. A shorter session keeps doubling the delay to 30 s, so a server that accepts and then drops sessions cannot cause a reconnect storm. |
 | F16 | `f7c5de3` | The idle timeout is three keepalives (90 s), and a timed-out session ends as an error. A finished CONNECT stream ends the session cleanly; a reset ends it as an error carrying the code. |
 | F36 | `5dd83dd` | **From 09-19 §3.** The 19 MTU and pipeline tests ran against copies of the production code. They are now unit tests of the real functions, and a mutation check (no TTL decrement) makes them fail. |
-| F10 | `ae4a630`, `084e40b` | `--tun-backpressure N` pauses TUN reads while N datagrams wait to be sent. `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` is set. **It is off by default.** A TUN device may drop at its ring instead of pushing back on the qdisc, so the benefit is unproven until measured (§19.7). |
+| F10 | `ae4a630`, `084e40b` | `--tun-backpressure N` pauses TUN reads while N datagrams wait to be sent. `tunnel.sh` passes it only when `WARP_TUN_BACKPRESSURE` is set. **It is off by default.** A TUN device may drop at its ring instead of pushing back on the qdisc, so the benefit is unproven until measured (§19.7). Measured in §19.10: no gain, so it stays off. |
 | F37 | `9549947` | **A6.** With `--syslog`, the client sends these events to `/dev/log`, where `logread -e usque-rs` shows them: connecting, connected, the end of each session with its error, the reconnect delay, and fatal errors. The socket never blocks, writes to stderr never panic, and the per-second status line is drawn only on a terminal. `tunnel.sh` passes `--syslog` only when the binary lists it, so the rollback binary still starts. |
 
 **Checks.** The pinned toolchain image is the one that reproduced the
@@ -2015,7 +2015,8 @@ chain policies are DROP.
 
 ### 19.7 Loaded latency (F10) and Blinkit route retention
 
-**F10 measurement.** Run this after step 5, with your permission. It takes
+**F10 measurement** (done on 23 October; results and decision in §19.10).
+Run this after step 5, with your permission. It takes
 about five minutes and includes two short WARP restarts. Each run saturates
 the uplink and then the downlink for about 20 s, which other LAN users will
 notice.
@@ -2129,7 +2130,72 @@ two helpers, 21 scripts, the two docs, `install_firewall_hook.sh`, `sync`.
 - `.stage-oi` still holds `usque-rs.previous` for a quick binary rollback.
 - The branch is merged into `main`.
 
-**Not done:** the loaded-latency measurement (§19.7), which needs your
-go-ahead.
+**Done afterwards:** the loaded-latency measurement (§19.10).
 
 **Rollback:** §19.6.
+
+### 19.10 Loaded-latency measurement — 23 October 2026, 02:03–02:14 IST
+
+You authorised the §19.7 procedure. I ran `measure_load_latency.sh 20` six
+times: three times on the default client and three times with
+`WARP_TUN_BACKPRESSURE=64`. Then I restored the default.
+- Each run held the maintenance lock, and the health checks between runs
+  passed.
+- WARP was restarted twice, at 02:09:34 and 02:13:46, for about 3 s each.
+
+**Tool defect.** The download phase's default URL asks for 10 GB, but the speed
+test refuses requests of 100 MB or more (HTTP 403).
+- Run 1's download phase therefore measured nothing (0.0 Mbit/s).
+- The other five runs set `DOWNLOAD_URL=…?bytes=75000000`, the largest size
+  that was served. At these rates even that ends after 6–12 s, so the download
+  phase is only partly loaded.
+- Fixing the default is a small follow-up: repeat a 75 MB download until the
+  phase ends.
+
+| Run | Client | Idle median (max) | Upload median / max | Upload | Download median / max | Download |
+|---|---|---|---|---|---|---|
+| 1 | default | 16 (65) ms | 149 / 468 ms | 10.8 Mbit/s | — (invalid URL) | — |
+| 2 | default | 11 (87) ms | 122 / 183 ms | 17.5 Mbit/s | 31 / 75 ms | 52.6 Mbit/s |
+| 3 | default | 5 (6) ms | 35 / 60 ms | 80.3 Mbit/s | 5 / 39 ms | 70.0 Mbit/s |
+| 4 | backpressure 64 | 5 (6) ms | 58 / 73 ms | 74.2 Mbit/s | 5 / 51 ms | 94.0 Mbit/s |
+| 5 | backpressure 64 | 5 (5) ms | 51 / 70 ms | 76.2 Mbit/s | 5 / 60 ms | 108.0 Mbit/s |
+| 6 | backpressure 64 | 5 (6) ms | 39 / 69 ms | 76.9 Mbit/s | 5 / 60 ms | 103.7 Mbit/s |
+
+**Reading it.**
+- **The campus uplink changed during the session.**
+  - In runs 1 and 2 it was congested: idle round trips were noisy, upload ran
+    at 10–18 Mbit/s, and the upload median was 122–149 ms, with a peak of
+    468 ms. That is the loaded-latency problem that 09-19 §2 and F10 are
+    about.
+  - From run 3 on it was quiet: 5 ms idle and about 75–80 Mbit/s up.
+- **Like for like:** only run 3 compares with runs 4–6.
+  - With backpressure, the upload median was not lower: 39–58 ms against
+    35 ms.
+  - Upload throughput was 4–8 % lower.
+- **The counters show why.** After the backpressure runs:
+  - `tun0` had dropped 51 upload packets at its own 500-packet ring;
+  - its fq_codel showed no backlog, no drops and no ECN marks;
+  - `eth0`'s fq_codel showed no drops either, so the bottleneck is beyond the
+    router.
+
+  So the TUN driver drops when the client stops reading, and never queues in,
+  or pushes back on, fq_codel. Backpressure only moves the FIFO from the
+  client's 1,000-datagram queue to the TUN ring, as §19.1 had warned. Flow
+  isolation and CoDel never engage.
+- **Not measured:** backpressure on a congested uplink. The congestion ended
+  before runs 4–6. Given the mechanism, the best it could do there is shorten
+  the FIFO from about 1,000 packets to about 560.
+
+**Decision.** By §19.7's rule, F10 stays off.
+- `WARP_TUN_BACKPRESSURE` keeps its default of 0, and the client was
+  restarted without it at 02:13:46.
+- A real fix for the congested case would bound how long a datagram may wait
+  in the client, or shorten that queue, and then be measured at a busy hour.
+  For example: a CoDel-style drop of datagrams older than about 20 ms before
+  sending. That is a Rust change, and not urgent: on a quiet uplink, an upload
+  adds only about 30 ms.
+
+**State afterwards.**
+- WARP is PID 31898 with its default options, and reports `warp=on` for both
+  families.
+- The 02:14:00 health check passed, and no lock is held.
