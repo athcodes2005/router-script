@@ -150,12 +150,13 @@ case "$key" in
 esac
 '''
 
-CURL = r'''url=; v6=0; iface=; fmt=; body_to=; prev=
+CURL = r'''url=; v6=0; iface=; fmt=; body_to=; headers_to=; prev=
 for a in "$@"; do
   case "$a" in -6) v6=1 ;; http://*|https://*) url=$a ;; esac
   [ "$prev" = --interface ] && iface=$a
   [ "$prev" = -w ] && fmt=$a
   [ "$prev" = -o ] && body_to=$a
+  [ "$prev" = -D ] && headers_to=$a
   prev=$a
 done
 flag curl_blocks && { : > "$SIM_STATE/blocked"; exec /bin/sleep 30; }
@@ -171,6 +172,12 @@ if [ "$code" != 000 ] && [ -z "$body_to" ]; then
   case "$url" in */cdn-cgi/trace)
     if flag warp_trace_off; then printf 'fl=1\nwarp=off\n'; else printf 'fl=1\nwarp=on\n'; fi ;;
   esac
+fi
+if [ "$code" != 000 ] && [ -n "$headers_to" ]; then
+  # The server's clock agrees with ours unless a test sets the Date header.
+  d="$(@CAT@ "$SIM_STATE/http_date" 2>/dev/null || date -u '+%a, %d %b %Y %H:%M:%S GMT')"
+  if [ "$headers_to" = - ]; then printf 'HTTP/2 %s\r\ndate: %s\r\n\r\n' "$code" "$d"
+  else printf 'HTTP/2 %s\r\ndate: %s\r\n\r\n' "$code" "$d" > "$headers_to"; fi
 fi
 out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g" \
   -e "s/%{time_connect}/$tc/g" -e "s/%{speed_upload}/4000000/g" -e "s/%{speed_download}/12500000/g")

@@ -38,6 +38,9 @@ DIRECT_CONFIRM_DELAY="${DIRECT_CONFIRM_DELAY:-2}"
 TUNNEL_CONFIRM_DELAY="${TUNNEL_CONFIRM_DELAY:-3}"
 OVERLAY_WARN_PERCENT="${OVERLAY_WARN_PERCENT:-90}"
 PLATFORM_CHECK_FILE="${PLATFORM_CHECK_FILE:-/tmp/router-script-platform-checked}"
+CLOCK_CHECK_FILE="${CLOCK_CHECK_FILE:-/tmp/router-script-clock-checked-at}"
+CLOCK_CHECK_INTERVAL="${CLOCK_CHECK_INTERVAL:-600}"
+CLOCK_SKEW_WARN_SECONDS="${CLOCK_SKEW_WARN_SECONDS:-120}"
 
 # DNS servers expected by the new config
 DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"
@@ -523,6 +526,49 @@ check_platform_once() {
     : 2>/dev/null > "$PLATFORM_CHECK_FILE" || true
 }
 
+# NTP can fail silently: on 25 October the clock stayed 91 minutes slow for
+# hours, and the check against this script's mtime (F21) said nothing (F45).
+# So every CLOCK_CHECK_INTERVAL seconds of uptime, which no clock step moves,
+# compare the clock with the Date header of a direct probe, good to a second or
+# two. A skew distorts only timestamps and clock-aged state, so this only logs.
+check_clock_skew() {
+    read -r CLOCK_UPTIME _ 2>/dev/null < "/proc/uptime" || return 0
+    CLOCK_UPTIME="${CLOCK_UPTIME%%.*}"
+    case "$CLOCK_UPTIME" in ''|*[!0-9]*) return 0 ;; esac
+    CLOCK_LAST=
+    read -r CLOCK_LAST 2>/dev/null < "$CLOCK_CHECK_FILE" || true
+    case "$CLOCK_LAST" in
+        ''|*[!0-9]*) ;;
+        *) [ "$((CLOCK_UPTIME - CLOCK_LAST))" -ge "$CLOCK_CHECK_INTERVAL" ] || return 0 ;;
+    esac
+    printf '%s\n' "$CLOCK_UPTIME" 2>/dev/null > "$CLOCK_CHECK_FILE" || true
+    CLOCK_URL="${INTERNET_PROBE_URLS%% *}"
+    # The server's time minus ours, from "date: Sun, 25 Oct 2026 09:09:26 GMT".
+    # awk counts the days since 1970 itself, so neither date's parser matters.
+    CLOCK_BEHIND="$(curl -4 -sS --interface "$WAN_IF" --connect-timeout "$DIRECT_PROBE_CONNECT_TIMEOUT" \
+        --max-time "$DIRECT_PROBE_MAX_TIME" -o /dev/null -D - "$CLOCK_URL" 2>/dev/null |
+        awk -v now="$(date +%s)" '
+            BEGIN {
+                split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", names, " ")
+                for (i = 1; i <= 12; i++) month[names[i]] = i
+            }
+            { sub(/\r$/, "") }
+            tolower($1) == "date:" && $7 == "GMT" && ($4 in month) && split($6, t, ":") == 3 {
+                m = month[$4]
+                y = $5 - (m <= 2)
+                doy = int((153 * (m > 2 ? m - 3 : m + 9) + 2) / 5) + $3 - 1
+                days = 365 * y + int(y / 4) - int(y / 100) + int(y / 400) + doy - 719468
+                print days * 86400 + t[1] * 3600 + t[2] * 60 + t[3] - now
+                exit
+            }')" || true
+    case "$CLOCK_BEHIND" in ''|-|*[!0-9-]*|?*-*) return 0 ;; esac
+    if [ "$CLOCK_BEHIND" -gt "$CLOCK_SKEW_WARN_SECONDS" ]; then
+        log "WARNING: the clock is ${CLOCK_BEHIND}s behind the Date header from $CLOCK_URL. Log times are that far off until the time client corrects it."
+    elif [ "$CLOCK_BEHIND" -lt "-$CLOCK_SKEW_WARN_SECONDS" ]; then
+        log "WARNING: the clock is ${CLOCK_BEHIND#-}s ahead of the Date header from $CLOCK_URL. Log times are that far off until the time client corrects it."
+    fi
+}
+
 tunnel_retry_deferred() {
     [ -f "$TUNNEL_RETRY_FILE" ] || return 1
     RETRY_AFTER="$(cat "$TUNNEL_RETRY_FILE" 2>/dev/null || echo 0)"
@@ -784,6 +830,9 @@ if ! internet_v4_ok; then
     fi
     log "Internet recovered after tunnel teardown."
 fi
+
+# The direct path answers now, so a probe's Date header can be read.
+check_clock_skew
 
 if ! runtime_resources_ok; then
     log "Runtime storage pressure detected: /tmp is at or above ${TMP_MAX_USED_PERCENT}% usage. Falling back to direct WAN."
