@@ -54,9 +54,10 @@ if ! cmp -s "$WORK/sorted" "$HOSTS"; then
     cat "$WORK/sorted" > "$STAGE"
     chmod 644 "$STAGE"
     mv "$STAGE" "$HOSTS"
-    # HUP reads hosts files without restarting DNS/DHCP or Wi-Fi.
+    # HUP reads hosts files without restarting DNS/DHCP or Wi-Fi. OpenWrt's
+    # dnsmasq keeps its PID file in /var/run/dnsmasq/ (F50).
     RELOADED=0
-    for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
+    for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq/dnsmasq*.pid "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
         [ -f "$PID_FILE" ] || continue
         PID="$(cat "$PID_FILE")"
         case "$PID" in ''|*[!0-9]*) continue;; esac

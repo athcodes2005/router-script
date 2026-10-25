@@ -148,5 +148,16 @@ class BlinkitTests(unittest.TestCase):
         unchanged=self.run_update()
         self.assertEqual(unchanged.stdout+unchanged.stderr,'')
 
+    # F50: OpenWrt's dnsmasq keeps its PID file in /var/run/dnsmasq/. The signal
+    # never reached it there, so dnsmasq kept serving the replaced addresses.
+    def test_dnsmasq_is_signalled_through_its_openwrt_pid_file(self):
+        dnsmasq=subprocess.Popen(['sleep','30'])
+        self.addCleanup(dnsmasq.kill)
+        (self.root/'pids'/'dnsmasq').mkdir(parents=True)
+        (self.root/'pids'/'dnsmasq'/'dnsmasq.cfg01411c.pid').write_text('%d\n' % dnsmasq.pid)
+        changed=self.run_update()
+        self.assertIn('dnsmasq PIDs reloaded: 1 ',changed.stdout)
+        self.assertEqual(dnsmasq.wait(timeout=5),-signal.SIGHUP)
+
 if __name__ == '__main__':
     unittest.main()
