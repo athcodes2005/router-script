@@ -21,6 +21,7 @@ cat >> "$TMP_CRON" <<EOF
 $START_MARKER
 */1 * * * * cd "$DIR" && ./ensure_network.sh >/dev/null 2>&1
 */1 * * * * sleep 30; cd "$DIR" && ./ensure_network.sh >/dev/null 2>&1
+7,22,37,52 * * * * cd "$DIR" && ./update_from_git.sh >/dev/null 2>&1
 17 */6 * * * cd "$DIR" && ./collect_diagnostics.sh >/dev/null 2>&1
 47 */6 * * * cd "$DIR" && ./rotate_logs.sh >/dev/null 2>&1
 $END_MARKER

@@ -72,6 +72,21 @@ class PlatformCheckTests(unittest.TestCase):
         self.assertIn('dnsmasq has no PID file under ', log)
         self.assertIn(', so Blinkit record changes cannot reach it', log)
 
+    def test_sysupgrade_keep_list_missing_project_is_named(self):
+        (self.box.sysroot / 'etc/sysupgrade.conf').write_text('/etc/config/gl_nas/\n')
+        log = self.tick()
+        self.assertIn('/etc/sysupgrade.conf does not list ', log)
+        self.assertIn(', so a firmware upgrade will remove it (run bootstrap_router.sh)', log)
+
+    def test_bootstrap_registers_sysupgrade_keep_entries(self):
+        conf = self.box.sysroot / 'etc/sysupgrade.conf'
+        conf.write_text('/etc/config/gl_nas/\n')
+        res = self.box.run('bootstrap_router.sh')
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        lines = conf.read_text().splitlines()
+        self.assertIn('%s/' % self.box.proj, lines)
+        self.assertIn('%s/etc/router-script/' % self.box.sysroot, lines)
+
 
 if __name__ == '__main__':
     unittest.main()

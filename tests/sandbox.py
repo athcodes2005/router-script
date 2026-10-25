@@ -22,6 +22,7 @@ REWRITES = [
     ('/etc/dnscrypt-proxy2/', '${SYSROOT}/etc/dnscrypt-proxy2/'),
     ('/etc/router-script/', '${SYSROOT}/etc/router-script/'),
     ('/etc/hotplug.d/', '${SYSROOT}/etc/hotplug.d/'),
+    ('/etc/sysupgrade.conf', '${SYSROOT}/etc/sysupgrade.conf'),
     ('/sys/class/net/', '${SYSROOT}/sys/class/net/'),
     ('"/proc/', '"${SYSROOT}/proc/'),
     ('/var/run', '${SYSROOT}/var/run'),
@@ -257,7 +258,7 @@ esac''',
     'curl': CURL,
 }
 NO_OPS = ['fw3', 'killall', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
-          'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger']
+          'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger', 'sync']
 SERVICES = ['dnsmasq', 'odhcpd', 'dnscrypt-proxy', 'cron', 'firewall']
 
 
@@ -318,6 +319,7 @@ class Sandbox:
         (box.sysroot / 'etc/dnscrypt-proxy2/dnscrypt-proxy.toml').write_text(
             "server_names = ['quad9-doh-ip4-port443-nofilter-ecs-pri']\n"
             "listen_addresses = ['127.0.0.1:5453']\nblock_ipv6 = false\n")
+        (box.sysroot / 'etc/sysupgrade.conf').write_text('%s/\n/etc/router-script/\n' % box.proj)
         (box.tmp / 'router-script-google/ranges.sha').write_text('simhash\n')
         (box.tmp / 'router-script-warp-ready').write_text('456\n')
         assert not (box.proj / '.env').exists() and not (box.proj / 'config.json').exists()
@@ -337,6 +339,7 @@ class Sandbox:
         test.addCleanup(shutil.rmtree, base.parent, True)
         shutil.copytree(cls._template.base, base, symlinks=True)
         box = cls(base)
+        (box.sysroot / 'etc/sysupgrade.conf').write_text('%s/\n/etc/router-script/\n' % box.proj)
         box.calls_file.write_text('')
         for log in (box.proj / 'logs').glob('*.log'):
             log.write_text('')

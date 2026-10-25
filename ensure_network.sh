@@ -562,6 +562,8 @@ check_platform_once() {
     done
     [ "$PID_FOUND" -eq 1 ] ||
         PROBLEMS="$PROBLEMS; dnsmasq has no PID file under $DNSMASQ_PID_DIR, so Blinkit record changes cannot reach it"
+    grep -Fqx "$DIR/" /etc/sysupgrade.conf 2>/dev/null ||
+        PROBLEMS="$PROBLEMS; /etc/sysupgrade.conf does not list $DIR/, so a firmware upgrade will remove it (run bootstrap_router.sh)"
     if [ -n "$PROBLEMS" ]; then
         log "WARNING: platform check:${PROBLEMS#;}."
     else
