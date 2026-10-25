@@ -1,8 +1,8 @@
 # Policy-routing rules and mark bits
 
 IPv4 policy routing is shared with GL.iNet's firmware. Our three rules run
-after GL.iNet's rule 1 and before its rule 800, and our marks use bits 16–20.
-Check both tables before adding a rule or a mark.
+after GL.iNet's rule 1 and before its rule 1099 (or 800 on older firmware),
+and our marks use bits 16–20. Check both tables before adding a rule or a mark.
 
 ## Rule order
 
@@ -11,25 +11,22 @@ The lowest priority number is evaluated first.
 | Priority | Owner | Rule | Purpose |
 |---|---|---|---|
 | 0 | kernel | `lookup local` | Local addresses |
-| 1 | GL.iNet | `iif lo lookup 16800` | Router-originated traffic; table contents not captured |
+| 1 | GL.iNet | `iif lo lookup 16800` | Router-originated traffic (table 16800 is empty/absent on 4.11.0) |
 | 690 | ours | `oif tun0 lookup main` | Sockets bound to `tun0` (health probes) keep testing WARP |
 | 700 | ours | `fwmark 0x40000/0xf0000 lookup 101` | Game sessions (port 9339) use the WAN |
 | 710 | ours | `fwmark 0x100000/0x100000 lookup 102` | Google IPv4 uses the WAN |
-| 800 | GL.iNet | `lookup 9910 suppress_prefixlength 0` | Not determined |
-| 1099 | GL.iNet | `fwmark 0x80000/0xc0000 lookup main` | Not determined |
-| 1101 | GL.iNet | `not fwmark 0x8000/0xc000 lookup 8000` | Not determined |
-| 6000 | GL.iNet | `fwmark 0x8000/0xf000 lookup main` | Marked LAN traffic uses `main` |
-| 9000 | GL.iNet | `not fwmark 0/0xf000 lookup main` | Any GL.iNet mark uses `main` |
-| 9910 | GL.iNet | `not fwmark 0/0xf000 blackhole` | Marked traffic `main` cannot route is dropped |
-| 9920 | GL.iNet | `iif br-lan blackhole` | LAN traffic that no earlier rule routed is dropped |
+| 800 | GL.iNet | `lookup 9910 suppress_prefixlength 0` | Pre-4.11.0 only (gone on 4.11.0) |
+| 1099 | GL.iNet | `fwmark 0x80000/0xc0000 lookup main` | Active on 4.11.0 |
+| 1101 | GL.iNet | `not fwmark 0x8000/0xc000 lookup 8000` | Active on 4.11.0 |
+| 6000, 9000, 9910, 9920 | GL.iNet | `fwmark 0x8000/0xf000` / `br-lan` rules | Pre-4.11.0 only (gone on 4.11.0) |
 | 32766, 32767 | kernel | `lookup main`, `lookup default` | Defaults |
 
 Rule 690 and 710 come from `google_wan_policy.sh`; rule 700 from `tunnel.sh` and
-`ensure_network.sh`. GL.iNet's rules are from the 2026-08-01 snapshot, taken
-before 690–710 existed. Firmware updates or GL.iNet's VPN-policy settings may
-change them. The snapshot holds no mangle rules and no `ip -6 rule` output, so
-which component sets GL.iNet's marks is inferred, and IPv6 is not covered (our
-game and Google policies are IPv4 only).
+`ensure_network.sh`. GL.iNet's rules were checked in the 2026-08-01 snapshot and
+again on firmware 4.11.0 on 2026-10-25 (rules 800 and 6000–9920 were removed by
+4.11.0, and table 16800 is empty). Firmware updates or GL.iNet's VPN-policy
+settings may change them. IPv6 is not covered (our game and Google policies are
+IPv4 only).
 
 ## Mark bits
 

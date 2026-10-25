@@ -79,8 +79,9 @@ for SERVER in $DNS_SERVERS; do
     uci add_list dhcp.@dnsmasq[0].server="$SERVER"
 done
 
-# On dnsmasq 2.85, exact local zones plus refreshed IPv4 hosts return
-# NOERROR/NODATA for AAAA without disabling IPv6 for unrelated services.
+# Exact local zones plus refreshed IPv4 hosts return NOERROR/NODATA for AAAA
+# (dnsmasq 2.85 on older firmware, 2.92 on 4.11.0) without disabling IPv6 for
+# unrelated services.
 sh "$DIR/refresh_blinkit_dns.sh" || log "Blinkit refresh deferred; retaining saved DNS records."
 for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
     uci add_list dhcp.@dnsmasq[0].server="/$DOMAIN/"

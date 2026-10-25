@@ -16,6 +16,13 @@ ULA `/48`, persists it as an explicit `network.lan.ip6addr`, assigns it to
 - explicit default-route advertisement;
 - an interface identifier of `::1` by default.
 
+On GL.iNet 4.11.0, while GL.iNet's own IPv6 switch (`glipv6.globals.enabled`)
+is off, `/etc/hotplug.d/iface/99-disable_ipv6` sets `disable_ipv6=1` on every
+interface on every `ifup`, stripping `br-lan`'s address (audit F47).
+`configure_lan_ipv6.sh` therefore re-enables IPv6 and adds the address after
+`ifup lan`, before starting `odhcpd`. When only the runtime address is missing,
+`ensure_network.sh` restores it in place without reloading the LAN (F48).
+
 ## Forwarding path
 
 `tunnel.sh` enables kernel IPv6 and forwarding, installs an IPv6 default on

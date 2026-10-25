@@ -811,3 +811,24 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 22)
+
+## 2026-10-26 — Implemented firmware 4.11.0 fixes (F47, F48, F50–F52, not deployed)
+
+- Merged `latency-tool-download-loop` (`0c110e9`) and committed the deployed
+  LAN IPv6 runtime repair (`6d2e382`) with sandbox tests modelling GL.iNet's
+  `99-disable_ipv6` hotplug hook (F47, F48).
+- Fixed `refresh_blinkit_dns.sh` (`8c4da80`) to signal dnsmasq via
+  `/var/run/dnsmasq/dnsmasq*.pid` (F50).
+- Added `scp -O` (`73ec853`) to `sync_to_router.sh`, `sync_from_router.sh` and
+  `download_emergency_diagnostics.sh` (F51).
+- Extended `check_platform_once` (`2b550d2`) and `defaults.sh` (`DNSMASQ_PID_DIR`)
+  to warn on GL.iNet's IPv6 hook while its switch is off, a stopped
+  `dnscrypt-proxy`, and a missing dnsmasq PID file (F52).
+- Updated [[systems/policy-routing]], [[systems/dns]], [[systems/ipv6]] and
+  `configure_dns.sh`. All 145 tests pass under `sh` and `dash`.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 22.8)
+- `../../ensure_network.sh`, `../../configure_lan_ipv6.sh`, `../../refresh_blinkit_dns.sh`
+- `../../tests/test_lan_ipv6.py`, `../../tests/test_platform.py`, `../../tests/test_sync.py`

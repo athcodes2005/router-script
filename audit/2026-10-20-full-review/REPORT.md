@@ -2541,3 +2541,21 @@ Deploying any of it needs your go-ahead, as always.
 - Anything on the router between 23 October 02:14 (§19.10) and the upgrade:
   those logs are gone.
 - F44 (§21) was not checked again.
+
+### 22.8 Approved fixes implemented (not deployed)
+
+You approved §22.6 items 1–4. Each was built test-first on branch
+`claude/unruffled-williams-2c93be`:
+
+| Finding | Commit | Summary |
+|---|---|---|
+| F48 (part) | `0c110e9` | Merged `latency-tool-download-loop` (`4ddeea0`), which was already deployed on the router |
+| F47 (a), F48 | `6d2e382` | Committed the deployed LAN IPv6 runtime repair (`ensure_network.sh`, `configure_lan_ipv6.sh`) with comments naming GL.iNet's `99-disable_ipv6` hook and 3 sandbox tests (`test_lan_ipv6.py`) |
+| F50 | `8c4da80` | `refresh_blinkit_dns.sh` signals `/var/run/dnsmasq/dnsmasq*.pid` as well as `/var/run/dnsmasq*.pid` |
+| F51 | `73ec853` | Passed `scp -O` in `sync_to_router.sh`, `sync_from_router.sh` and `download_emergency_diagnostics.sh`; updated `test_sync.py` |
+| F52 | `2b550d2` | Moved `DNSMASQ_PID_DIR` to `defaults.sh`; `check_platform_once` warns when `99-disable_ipv6` exists with `glipv6.globals.enabled!=1`, when `dnscrypt-proxy` is down, or when no dnsmasq PID file exists under `DNSMASQ_PID_DIR` |
+
+**Verification.**
+- All 145 tests pass under macOS `/bin/sh` and `/bin/dash`.
+- `sh -n` and `dash -n` pass on every script; `shellcheck` findings are unchanged.
+- Documentation updated in `wiki/systems/policy-routing.md`, `wiki/systems/dns.md`, `wiki/systems/ipv6.md` and `configure_dns.sh`.

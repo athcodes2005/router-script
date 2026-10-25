@@ -46,7 +46,10 @@ use router-provided DNS for campus-only hosts.
 ## Repair and inspection
 
 `configure_dns.sh` writes and commits UCI state, adjusts dnscrypt-proxy2, and
-restarts affected services. `ensure_network.sh` verifies `strictorder` and
+restarts affected services. On firmware 4.11.0, GL.iNet's init script starts
+dnscrypt-proxy only under its own encrypted-DNS mode (audit F49), so the DoH
+fallback is inactive unless started; the boot-time platform check warns when it
+is not running (F52). `ensure_network.sh` verifies `strictorder` and
 `noresolv`, that the four upstreams come first and in order, forwards for
 exactly the listed campus hosts (a whole-zone `/iitb.ac.in/` forward counts as
 drift), portal/SSO `address=` pins, dnscrypt listen on `127.0.0.1:5453`, and
@@ -64,10 +67,12 @@ The exact API names `api3.blinkit.com`, `jumbo.blinkit.com` and
 `api2.grofers.com` use refreshed
 IPv4 hosts plus exact local DNS zones. AAAA replies are NOERROR/NODATA while
 other domains retain IPv6. `refresh_blinkit_dns.sh` queries upstream directly,
-installs WAN routes first, and publishes only changed records. See
+installs WAN routes first, publishes only changed records, and signals dnsmasq
+via `/var/run/dnsmasq/dnsmasq*.pid` (audit F50). See
 [[../bugs/blinkit-ipv6-vpn-warning-2026-09-19]] for verification and limitations.
-The deployed dnsmasq 2.85 does not implement the `filter_aaaa` UCI option, so
-it stays 0 in every mode; game mode no longer toggles it.
+The vendor dnsmasq (2.85 before, 2.92 on 4.11.0) init script ignores the
+`filter_aaaa` UCI option, so it stays 0 in every mode; game mode no longer
+toggles it.
 
 ## Sources
 
