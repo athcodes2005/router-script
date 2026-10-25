@@ -14,6 +14,7 @@
 
 1. odhcpd supplies the client a ULA address and advertised default.
 2. Google IPv6 is rejected for IPv4 fallback; otherwise the default is `tun0`.
+   The router's own IPv6 traffic to Google is not rejected: it uses `tun0`.
 3. Forwarding, MSS clamping, and IPv6 masquerade are applied.
 4. WARP supplies public IPv6 egress and carries replies back to the LAN.
 

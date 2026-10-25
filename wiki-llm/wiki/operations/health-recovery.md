@@ -31,19 +31,25 @@ in the future after a clock reset).
    nothing.
 9. Verify direct-WAN IPv4 and run portal login recovery when needed
    ([[portal-login]]).
-10. Reject WARP startup when `/tmp` is at or above the configured threshold.
-11. Restore the `tun0` rule dropping new inbound connections if a firewall reload
+10. Every 10 minutes of uptime, compare the clock with the `Date` header of a
+    direct probe, and log a WARNING when they differ by more than 120 s
+    (`CLOCK_CHECK_INTERVAL`, `CLOCK_SKEW_WARN_SECONDS`). This catches a time
+    client that has stopped correcting the clock, which step 1 misses: after a
+    reboot the clock restarts from the newest file under `/etc`, usually later
+    than this script's mtime.
+11. Reject WARP startup when `/tmp` is at or above the configured threshold.
+12. Restore the `tun0` rule dropping new inbound connections if a firewall reload
     removed it; never a restart trigger ([[../security/secrets-and-trust]]).
-12. Validate process, CONNECT-IP readiness, TUN, default routes, NAT, MSS and
+13. Validate process, CONNECT-IP readiness, TUN, default routes, NAT, MSS and
    LAN↔tun0 FORWARD accept rules (missing rules are reinstalled in place and
    logged), and IPv4 HTTP reachability explicitly bound to the tunnel.
-13. Confirm live-client failures after three seconds before restarting WARP.
-14. Refresh optional host routes independently after a successful health check
+14. Confirm live-client failures after three seconds before restarting WARP.
+15. Refresh optional host routes independently after a successful health check
     ([[../systems/host-routes]]).
-15. Warn (log plus one rate-limited snapshot, no restart) when a lower-metric
+16. Warn (log plus one rate-limited snapshot, no restart) when a lower-metric
     default would carry public IPv4 or IPv6 around `tun0`; a restart cannot fix
     that, and the tunnel-bound probes alone would not notice it.
-16. Warn the same way when the tunnel probe took over 1.5 s on three
+17. Warn the same way when the tunnel probe took over 1.5 s on three
     consecutive checks (`TUNNEL_SLOW_SECONDS`, `TUNNEL_SLOW_CHECKS`). One fast
     check resets the count.
 

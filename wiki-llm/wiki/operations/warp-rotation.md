@@ -14,7 +14,8 @@ with the health-check maintenance lock.
 5. Verify the WARP process, then fetch Cloudflare's trace through `tun0` for
    both families (`https://1.1.1.1/cdn-cgi/trace` and its IPv6 literal) and
    require `warp=on` or `warp=plus`. Google probes cannot validate a rotation:
-   Google IPv6 is rejected and Google IPv4 bypasses WARP by policy.
+   Google IPv4 bypasses WARP by policy, and only the trace names the identity
+   that carried a request.
 
 ## Success
 

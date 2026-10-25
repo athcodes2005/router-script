@@ -2202,9 +2202,10 @@ test refuses requests of 100 MB or more (HTTP 403).
 
 ## 21. Router clock 91 minutes slow after a reboot (F43–F45) — 25 October 2026, audit only
 
-**Status (19:20 IST): checked live (§21.11).** Your upgrade to GL.iNet 4.11.0
-at about 17:21 replaced BusyBox `ntpd` with chrony, which keeps the clock
-correct. §21.12 revises the proposal and supersedes §21.8.
+**Status: checked live (§21.11); F43–F45 fixed on this branch, not deployed
+(§21.13).** Your upgrade to GL.iNet 4.11.0 at about 17:21 replaced BusyBox
+`ntpd` with chrony, which keeps the clock correct. §21.12 revises the proposal
+and supersedes §21.8.
 
 §20 (the upload CoDel, F10's second fix) is on branch
 `claude/mystifying-sutherland-2fc664`. Its §20.7 noticed this skew in
@@ -2613,3 +2614,90 @@ up months behind.
 - Why the router lost power, or restarted, in the morning.
 - Whether the campus lets NTS through on the direct path before WARP starts:
   TCP 4460 for the key exchange, then UDP 123.
+
+### 21.13 Fixes for F43–F45 — 25 October 2026, not deployed
+
+You approved F43 (revised), F44 and F45. There is one commit for each, test
+first, on `claude/funny-chaplygin-b3e102`. Nothing was deployed.
+
+| Finding | Commit | Change |
+|---|---|---|
+| F43 | `8a587a5` | `google_wan_policy.sh` no longer rejects the router's own IPv6 traffic to Google. When `ip6tables -S OUTPUT` still shows a Google set, the OUTPUT rejects older versions added are removed, all three variants. Comments in `diagnose.sh`, `rotate_tunnel_ip.sh` and two tests no longer claim the rejection |
+| F44 | `68b24d1` | The policy checks the FORWARD order with `ip6tables -S FORWARD` and awk. If any of the four rejects is missing or below the LAN→`tun0` ACCEPT, it removes them all (with any duplicate or the September `icmp6-no-route` variant), puts the four back on top and logs "Google IPv6 rejects reinstalled above the LAN to tun0 accept." |
+| F45 | `3d798e4` | Once the direct probe has passed, `ensure_network.sh` compares the clock with the `Date` header of a direct request to the first probe URL. Above 120 s it logs "WARNING: the clock is Ns behind (or ahead of) the Date header from URL." It runs once every 600 s of uptime |
+
+**Design notes.**
+- **F43** keeps the LAN half, since the policy exists so that LAN clients reach
+  Google from the campus address. router-script's own Google traffic is all
+  IPv4 (`curl -4`, IPv4 resolvers), and its IPv6 probes go to Cloudflare.
+- **F44.** `tunnel.sh` runs the policy after inserting its ACCEPT (line 280),
+  so a WARP start restores the order at once. After an fw3 rebuild, the hook's
+  health check runs the policy before the F03 repair re-inserts the ACCEPT. The
+  order is then restored by the next check, within 30 s.
+- **F45** reads `/proc/uptime` with `read`, so no clock step moves its
+  schedule, and a tick on which it is not due starts no process. awk turns the
+  header into seconds itself (days since 1970), so neither BusyBox's nor GNU's
+  `date` parser matters.
+
+**Tests and checks.**
+- Eleven new tests:
+  - F43 (2): no OUTPUT rule after a run; an upgrade removes the old OUTPUT
+    rules.
+  - F44 (4): the policy moves the rejects above the ACCEPT and logs it; rules
+    already in order are left alone, with no `-I` or `-D`; the next health
+    check restores the order; a `tunnel.sh` start restores it.
+  - F45 (5): a clock behind, a clock ahead, a clock within two minutes (no
+    warning), one check per 600 s of uptime, and an unreadable header.
+  - Each finding's tests failed before its fix, except the unreadable-header
+    guard, which passes either way.
+- The sandbox's `curl` stub writes response headers for `-D`. The `Date`
+  header is the clock's own unless a test sets it.
+- The suite passes under macOS `sh` and `dash` at every commit: 133 tests
+  before, then 135, 139 and 144.
+- The F45 function and its awk ran in `busybox:1.33.1`:
+  - the awk gave the right second for eight dates, including leap days in
+    2000, 2024 and 2028 and the non-leap 2100;
+  - the warnings, the 600 s schedule and an unreadable header behaved as in
+    the sandbox.
+- F44's awk order check ran on the router's own FORWARD rules from check 8,
+  under macOS awk and BusyBox awk. Both flagged that order for repair, and
+  both accepted the rejects-first order.
+- `shellcheck -s sh` reports the same findings as before, by file, severity
+  and code.
+- A healthy tick (the third of three in a fresh sandbox) starts 281
+  processes, against 290 before; `ip6tables` calls fell from 18 to 8.
+
+**Invariants.**
+- Only `google_wan_policy.sh` and `ensure_network.sh` behave differently.
+  `diagnose.sh` and `rotate_tunnel_ip.sh` changed only in comments.
+- DNS, routes and rules 690 and 710, the Google IPv4 marks, NAT, MSS, WARP
+  start and stop, game mode, the locks, and the handling of `.env` and
+  `config.json` are unchanged.
+- The behaviour changes:
+  - the router's IPv6 traffic to Google goes through WARP instead of being
+    refused (F43);
+  - the LAN's is refused again, as designed on 23 September (F44);
+  - two new log lines can appear.
+
+**Deploying (needs your go-ahead).**
+- Files: `google_wan_policy.sh`, `ensure_network.sh`, `diagnose.sh` and
+  `rotate_tunnel_ip.sh`. No binary, configuration or uci change, and no
+  restart.
+- Follow §19.6: stage, compare the router's hashes with `main`, run `sh -n`,
+  and promote under the maintenance lock.
+- Expect on the first health check after promotion:
+  - "Google IPv6 rejects reinstalled above the LAN to tun0 accept." once;
+  - the OUTPUT rejects gone, so GL.iNet's network-quality pings of
+    `google.com` go through WARP and succeed;
+  - the clock check runs (its marker is absent) and logs nothing while
+    chrony keeps time.
+- LAN clients that use IPv6 for Google get rejects from then on, and
+  reconnect over IPv4.
+- Check afterwards, read-only:
+  - `ip6tables -S OUTPUT | grep -c google` prints 0;
+  - `ip6tables -S FORWARD | head -n 6` lists the four Google rejects first;
+  - from the Mac, `ping6 -c 1 2001:4860:4806::` is refused, and
+    `curl -4 https://www.google.com/generate_204` still works;
+  - `ensure.log` has no "WARNING: the clock is" line.
+- Rollback: stage the previous versions from git (§17.3). The old policy
+  re-adds the OUTPUT rejects on its next run.

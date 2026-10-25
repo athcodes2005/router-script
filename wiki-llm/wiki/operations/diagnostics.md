@@ -11,7 +11,7 @@ routes, dynamic campus host routes, firewall/NAT, process and CONNECT-IP-ready
 state, DNS configuration, recent logs, memory, filesystem usage, and the largest
 immediate `/tmp` entries. Exact probes distinguish direct IPv4 and WARP IPv4
 (`204` from Google) and WARP IPv6 (`200` from Cloudflare's trace by IP literal,
-because the Google policy rejects router IPv6 to Google). It identifies tcpdump
+which no Google policy touches). It identifies tcpdump
 processes so abandoned captures are visible.
 Wireless status embeds WPA passphrases, so its key, password, secret and PSK
 values are redacted before they are recorded.

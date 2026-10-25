@@ -810,3 +810,23 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (sections 21.11–21.12)
+
+## 2026-10-25 — Fixed F43–F45 on a branch (not deployed)
+
+- With the user's approval, one commit each, test first:
+  - F43: `google_wan_policy.sh` no longer rejects the router's own IPv6
+    traffic to Google, which now goes through WARP. An upgrade removes the old
+    OUTPUT rules.
+  - F44: the LAN's Google IPv6 rejects are kept above the LAN→`tun0` ACCEPT.
+    When they are out of order they are reinstalled on top, and that is
+    logged.
+  - F45: the health check warns when the clock and a direct probe's `Date`
+    header differ by more than 120 s, checking every 10 minutes of uptime.
+- 144 tests pass under macOS `sh` and `dash`, and the clock check also ran in
+  BusyBox 1.33.1. A healthy tick starts 281 processes instead of 290.
+- Not deployed; the deployment plan is in the report. See
+  [[systems/google-wan]] and [[operations/health-recovery]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 21.13)
