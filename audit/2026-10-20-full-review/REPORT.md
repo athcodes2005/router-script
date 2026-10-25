@@ -2199,3 +2199,287 @@ test refuses requests of 100 MB or more (HTTP 403).
 - WARP is PID 31898 with its default options, and reports `warp=on` for both
   families.
 - The 02:14:00 health check passed, and no lock is held.
+
+## 20. A delay bound for the upload queue (F10, second fix) — 25 October 2026, not deployed
+
+You asked for a bound on how long an upload datagram may wait in the client,
+to cut loaded latency when the campus uplink is congested (§19.10). It is
+built and tested, off by default, and not deployed. Measuring it needs your
+permission; the plan is in §20.5.
+
+| Commit | Change |
+|---|---|
+| `6021eec` | `--upload-codel MS`: CoDel on quiche's datagram send queue. |
+| `0798fb0` | `tunnel.sh` passes it when `WARP_UPLOAD_CODEL` is 1–999 and the binary lists it. |
+| `34bfb84` | Drops are reported 5 s after they stop, so a measurement run's drops reach the log. |
+| `5fa9f0b` | `measure_load_latency.sh` names it in each run's log line. |
+| `475b349` | The candidate binary (§20.4). |
+
+### 20.1 Where the queue is
+
+- **quiche's datagram queue.** quiche 0.22 keeps outgoing datagrams in a
+  plain FIFO of up to 1,000, with no timestamps. The client pushes every TUN
+  packet into it at once. quiche takes datagrams from the front only when its
+  congestion control lets a packet go.
+- **Not, mostly, the network.** The deployed client runs BBR2 (`WARP_CC`,
+  see the README). BBR2 paces at its bandwidth estimate and keeps about one
+  round trip of data queued in the network at most. So when the uplink is
+  the bottleneck, the excess most likely waits in that FIFO.
+- **How big it gets.** In §19.10's congested runs, an upload added 133 ms
+  over idle at 10.8 Mbit/s and 111 ms at 17.5 Mbit/s. If all of it waited in
+  the FIFO, that is roughly 140–190 datagrams of 1.3 KB. The LAN's TCP
+  senders keep the FIFO there: they see a loss only when it overflows or the
+  network drops a packet.
+- **Why backpressure failed.** F10's first fix only moved this FIFO into the
+  TUN driver's 500-packet ring. That ring tail-drops and never reaches
+  `tun0`'s fq_codel.
+
+### 20.2 The mechanism
+
+- **CoDel at the head of quiche's queue** (RFC 8289, in its Linux form).
+  - The target is the option's value; 20 ms is the suggested one. The
+    interval is 100 ms.
+  - Once the oldest datagram has waited longer than the target for a whole
+    interval, it is dropped.
+  - Further drops come interval/√n apart until the oldest datagram is back
+    under the target.
+  - A datagram or two is never dropped: that is a slow link, not a standing
+    queue.
+- **How the client sees the queue.** quiche holds the datagrams and dequeues
+  them itself.
+  - The client records, beside it, when each accepted datagram was queued,
+    and its size.
+  - quiche only ever takes from the front, so its queue length says which
+    records have left.
+  - Just before each send, CoDel judges the oldest record. A dropped
+    datagram leaves quiche's queue through `dgram_purge_outgoing`.
+  - Tests on a real in-memory quiche connection pair pin both behaviours, so
+    a quiche upgrade that changed them would fail the tests.
+- **quiche keeps the whole queue.** Its congestion control sees the same
+  demand as before, so it never takes the client for idle.
+- **Visible in the log.** Drops count in the client's `drop` counter, and an
+  event reports them 5 s after they stop, or after a minute of drops, but at
+  most once a minute. `logread -e usque-rs` shows "[upload] CoDel dropped N
+  datagrams in the last 22s (target 20 ms)".
+- **Off by default.** At 0, the loop is unchanged apart from two skipped
+  branches.
+
+### 20.3 Why CoDel, and not the alternatives
+
+- **A smaller queue.** A count limit is a delay limit at one rate only.
+  - In §19.10 the uplink ran at 10–18 Mbit/s, then 75–80 Mbit/s, within the
+    hour. 20 ms is about 19 datagrams at 10 Mbit/s, but about 150 at
+    80 Mbit/s.
+  - A limit small enough for the congested case would tail-drop bursts and
+    cut throughput on a quiet uplink. One large enough for 80 Mbit/s still
+    allows about 100 ms at 10 Mbit/s.
+  - Waiting time adapts to the rate by itself. The 1,000-datagram limit
+    stays as the backstop.
+- **A hard deadline** (drop anything older than X). It bounds every
+  datagram, but it drops whole bursts at once, which TCP handles worst, and
+  it leaves a standing queue just under X. CoDel drives the standing queue
+  down to its target and lets short bursts through, which keeps throughput.
+- **The client's own queue in front of quiche**, fed just in time.
+  - It would allow per-flow fairness and ECN marks.
+  - But quiche would see an almost empty queue and count the connection as
+    application-limited. That stops CUBIC growing its window, and keeps
+    BBR2's bandwidth estimate from rising.
+  - It needs a feeder that tracks quiche's window and pacing: more code and
+    more risk to throughput. It is worth it only if CoDel helps but one
+    shared FIFO still costs games too much.
+- **20 ms rather than CoDel's usual 5 ms.**
+  - The client's event loop has a 5 ms timer floor, and pacing holds packets
+    for a few ms, so a 5 ms target would sit inside the loop's own timing
+    noise.
+  - A little standing queue also keeps BBR2 supplied, so throughput holds.
+  - The target is the option's value, so 10 or 40 can be tried without a
+    rebuild.
+- **What it does not do.**
+  - It does not bound each datagram's wait: a burst may wait up to about an
+    interval before the first drop.
+  - It does not reorder. A game packet still waits behind the upload's
+    standing queue, but that is about the target, not 100 ms or more.
+  - It cannot mark ECN: a datagram cannot be changed once quiche holds it.
+  - Traffic that ignores loss can still fill the queue to 1,000.
+
+### 20.4 Tests and checks
+
+- **Rust.** 18 new tests:
+  - CoDel's timing: the first drop after an interval, the control law,
+    leaving and re-entering, and the backlog guard;
+  - the record of queued datagrams, and the drop reports: 5 s after drops
+    stop, and at most once a minute, through a long upload or when drops
+    come and go;
+  - the option's default and its help line, which `tunnel.sh` looks for;
+  - on a real quiche pair: datagrams leave oldest first, the purge removes
+    exactly the oldest N, and a stale datagram never reaches the server.
+
+  Against stubs that never dropped, 9 tests failed. Eight mutations are
+  caught: no backlog guard, no count increment, purging the newest, no
+  record sync, no rate memory, no grace interval, unspaced reports, and
+  the first report rule (only after a minute of drops). 94 unit and 4
+  integration tests pass in the pinned image (rustc 1.95.0), and
+  `cargo fmt --check` and `clippy --all-targets -D warnings` are clean.
+- **Shell.**
+  - `tunnel.sh`: off by default; passed when set and listed; skipped with a
+    warning when the binary lacks it or the value is not 1–999, because a
+    typo must not stop the client from starting.
+  - `measure_load_latency.sh` names `--upload-codel N` and
+    `--tun-backpressure N` in each run's log line. Under BusyBox 1.33.1 ash,
+    `grep -o` given two patterns printed only one of the two options, so the
+    tool reads the arguments with awk; that was checked under BusyBox against
+    real `/proc` command lines.
+  - 137 shell tests pass under macOS `sh` and under dash as `sh`.
+    Shellcheck findings are unchanged.
+  - The code merges cleanly with `latency-tool-download-loop`, and the
+    merged tree passes the latency and start-path tests. Only the wiki log
+    conflicts, because both branches append an entry; keep both.
+- **Candidate binary.** Built twice from clean in the pinned image, in fresh
+  target volumes. The two builds are byte-identical: sha256
+  `4c9cc33bbe5c98b87b5c41325ec367d6b8426bd88aef05d43760fa5145b78df2`,
+  6,100,848 bytes. `nativetun --help` lists `--upload-codel <MS>`. The same
+  setup rebuilt `main`'s client as `0d1496d3…`, the deployed binary, byte for
+  byte.
+- **Testing notes.**
+  - OrbStack once served a stale copy of a scratch directory that had been
+    deleted and recreated at the same path, so one mutation run reused an
+    old build. Each mutant now gets its own directory.
+  - Sharing one cargo target volume between source trees mounted at the
+    same container path let cargo reuse a mutant's test build for the real
+    tree, twice. `cargo clean -p usque-rs` cleaned nothing until it was given
+    `--target aarch64-unknown-linux-musl`. Every check now cleans the crate
+    that way first. The results above all come from runs that rebuilt it.
+
+### 20.5 Measurement plan (needs your permission)
+
+**When.** At a busy hour, when the uplink is congested; that is the case
+that matters. In §19.10 it was congested at 02:03 and quiet by 02:10, so
+the first run doubles as the check, and the runs alternate to spread any
+change in load.
+- **Go on** if the first run's upload phase is under 30 Mbit/s or its median
+  above 80 ms.
+- **Otherwise** stop after that run; it still counts as a quiet-uplink
+  baseline.
+
+It takes about ten minutes, with five WARP restarts of 3–4 s each, the first
+onto the new binary. Each run saturates the uplink, then the downlink, for
+about 20 s, which other LAN users will notice. The download phase keeps the `DOWNLOAD_URL` override
+from §19.10: the tool's default asks for more than the speed test serves.
+
+**0. Pre-flight (read-only, on the router).**
+
+```sh
+cd /root/router-script
+sha256sum usque-rs tunnel.sh measure_load_latency.sh   # equal to main's; usque-rs is 0d1496d3...
+ls -d .ensure_network.lock .stage-codel 2>/dev/null; pidof usque-rs
+```
+
+**1. Stage from the Mac,** in a checkout of this branch
+(`claude/mystifying-sutherland-2fc664`), such as this session's worktree:
+
+```sh
+cd /Users/atharva/projects/router-script/.claude/worktrees/mystifying-sutherland-2fc664
+tar -cf - usque-rs tunnel.sh measure_load_latency.sh | ssh -o BatchMode=yes root@192.168.8.1 'umask 077; cd /root/router-script && mkdir .stage-codel && tar -xf - -C .stage-codel && cp -p usque-rs .stage-codel/usque-rs.previous'
+shasum -a 256 usque-rs tunnel.sh measure_load_latency.sh
+```
+
+**2. Verify on the router, and define two helpers.** `take_lock` holds the
+lock without an owner, as in §19.6.
+
+```sh
+cd /root/router-script
+sh -n .stage-codel/tunnel.sh && sh -n .stage-codel/measure_load_latency.sh && echo "syntax ok"
+sha256sum .stage-codel/*      # equal to the Mac's; usque-rs.previous is 0d1496d3...
+.stage-codel/usque-rs nativetun --help | grep -c -e --upload-codel    # 1
+take_lock() { n=0; until mkdir .ensure_network.lock 2>/dev/null; do [ "$n" -ge 120 ] && return 1; sleep 1; n=$((n+1)); done; }
+restart() { take_lock && { sh stop_tunnel.sh; WARP_UPLOAD_CODEL="$1" sh tunnel.sh; rmdir .ensure_network.lock; }; }
+```
+
+**3. Promote, and restart on the new binary** with CoDel off. WARP is down
+for about 4 s.
+
+```sh
+take_lock && {
+  for f in tunnel.sh measure_load_latency.sh; do cp ".stage-codel/$f" "$f.new" && chmod 755 "$f.new" && mv "$f.new" "$f"; done
+  sh stop_tunnel.sh
+  cp .stage-codel/usque-rs usque-rs.new && chmod 755 usque-rs.new && mv usque-rs.new usque-rs
+  sh tunnel.sh
+  sync
+  rmdir .ensure_network.lock
+}
+```
+
+- **Expect:** "[SUCCESS] Full tunnel active" in `logs/tunnel.log`, and
+  "[connected]" in `logread -e usque-rs`. `sha256sum usque-rs` prints the
+  candidate's hash, `4c9cc33b…`. The trace through `tun0` reports `warp=on`,
+  and the next health check passes.
+- **Stop rule:** if the start fails, restore the binary at once, then
+  report. The new `tunnel.sh` checks the binary's help, so it starts the old
+  binary too.
+
+  ```sh
+  take_lock && { sh stop_tunnel.sh; cp .stage-codel/usque-rs.previous usque-rs.new && chmod 755 usque-rs.new && mv usque-rs.new usque-rs; sh tunnel.sh; rmdir .ensure_network.lock; }
+  ```
+
+**4. Measure:** default (A) and CoDel at 20 ms (B), alternating.
+
+```sh
+export DOWNLOAD_URL='https://speed.cloudflare.com/__down?bytes=75000000'
+sh measure_load_latency.sh 20                    # A1; the congestion check
+restart 20 && sh measure_load_latency.sh 20      # B1
+restart 0 && sh measure_load_latency.sh 20       # A2
+restart 20 && sh measure_load_latency.sh 20      # B2
+restart 0                                        # back to the default
+tail -n 16 logs/latency.log
+logread -e usque-rs | grep -e '\[upload\]' -e '\[connected\]'
+```
+
+- **Labels.** Each run's first log line names its options:
+  "(--upload-codel 20)", or "(no --tun-backpressure or --upload-codel)".
+- **Drop reports.** One comes 5 s after the drops stop, so each B run's
+  report reaches the log during its download phase, before the next restart.
+- **No harm when quiet.** At a quiet time, one more pair checks that CoDel
+  does no harm there: `sh measure_load_latency.sh 20`, then
+  `restart 20 && sh measure_load_latency.sh 20`, then `restart 0`.
+
+**Decision rule.**
+- **Adopt `WARP_UPLOAD_CODEL=20` only if** both pairs on a congested uplink
+  show all of these against the A run beside them:
+  - the upload phase's median round trip falls by a third, or by at least
+    50 ms;
+  - upload throughput stays within about 10 %;
+  - the download phase is unchanged: its median within about 10 ms, its
+    throughput within about 10 %;
+  - the client logged CoDel drops during the B run. Without drops, a run
+    says nothing about CoDel.
+- **And** the quiet pair shows no harm: upload throughput within about 10 %,
+  and a median no higher.
+- **Latency falls but throughput drops more than 10 %:** try 40 ms the same
+  way before giving up.
+- **No drops and no change:** the queue is not in the client. Keep it off,
+  and look beyond the router (BBR2's own queue, the campus).
+- **Otherwise** keep it off.
+- **To adopt:** add `WARP_UPLOAD_CODEL=20` to `.env` and restart WARP. You
+  edit `.env`; I never read it. Or commit `tunnel.sh` with 20 as its
+  default.
+
+**Afterwards.**
+- Keep or roll back: with the option off, the new binary behaves as the old
+  one did, so it can stay. Then merge this branch into `main`, so that `main`
+  matches the router again. If you roll back instead (the stop-rule command
+  above, plus `main`'s two scripts promoted the same way), leave the branch
+  unmerged.
+- Remove `.stage-codel` once the binary is settled.
+
+### 20.6 What I could not verify
+
+- **The effect.** Latency and throughput are unknown until §20.5 runs.
+- **Real traffic.** The tests model the queue, and a quiche pair in memory;
+  nothing ran through Cloudflare or a TUN device under load.
+- **CPU on the router.** With the option on, each upload packet costs a
+  clock read and a queue push. That is likely negligible next to its
+  encryption, but it was not measured on the MT3000.
+- **The sibling branch.** `latency-tool-download-loop` (not merged) also
+  changes `measure_load_latency.sh` and its tests, in other hunks. Only the
+  latency and start-path tests ran on the trial merge; run the whole shell
+  suite on the real one.

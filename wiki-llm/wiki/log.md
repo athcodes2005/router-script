@@ -767,3 +767,31 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)
+
+## 2026-10-25 — Upload CoDel for the WARP client (F10, second fix), not deployed
+
+- At the user's request, bounded how long an upload datagram may wait in the
+  client: `--upload-codel MS` applies CoDel (RFC 8289) to quiche's datagram
+  queue. The client records when each datagram entered that FIFO, and drops
+  the oldest once the queue has stayed above MS for 100 ms.
+- `tunnel.sh` passes it when `WARP_UPLOAD_CODEL` is 1–999 and the binary lists
+  it; it is off by default. `measure_load_latency.sh` names the client's
+  upload-queue options in each run's log line.
+- **Why CoDel:** a count limit is a delay limit at one rate only, and the
+  uplink ran at 10–80 Mbit/s within an hour. A client-side queue in front of
+  quiche would make quiche think the client is idle.
+- **Checks:** 94 unit and 4 integration tests in the pinned image, eight
+  mutations caught, fmt and strict Clippy clean; shell tests under `sh` and
+  dash. The candidate binary was built twice, byte-identical (sha256
+  `4c9cc33b…`); the same setup rebuilt `main`'s client as the deployed
+  `0d1496d3…`.
+- **Traps:** BusyBox's `grep -o` finds only one of two patterns, and
+  `cargo clean -p` needs `--target` when `CARGO_BUILD_TARGET` is set.
+- **Not deployed, not measured.** The report's section 20.5 has the plan: at a
+  busy hour, alternate default and `WARP_UPLOAD_CODEL=20` runs, with a
+  decision rule. It needs the user's permission.
+- See [[systems/warp-client]] and [[bugs/known-issues]].
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 20)
