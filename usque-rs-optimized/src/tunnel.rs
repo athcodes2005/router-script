@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use portable_atomic::{AtomicU64, Ordering};
 use quiche::h3::NameValue;
 use ring::rand::SecureRandom;
+use std::cell::Cell;
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -35,6 +37,15 @@ const MAX_FORWARDING_BATCH: usize = 64;
 // A failed TUN write loses that one packet. Writes that keep failing mean the
 // device is gone, so the session ends instead of silently dropping all traffic.
 const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
+// CoDel's interval (RFC 8289): the upload queue may stay above its target this
+// long before the first drop, and later drops come interval/sqrt(count) apart.
+const CODEL_INTERVAL: Duration = Duration::from_millis(100);
+// A queue back above target this soon after the last drop resumes at the drop
+// rate that controlled it then (the Linux variant the RFC describes).
+const CODEL_RECENT: Duration = CODEL_INTERVAL.saturating_mul(16);
+// Upload drops are reported at most this often, so a long upload cannot flood
+// the RAM log.
+const UPLOAD_DROP_REPORT_PERIOD: Duration = Duration::from_secs(60);
 
 /// Whether to read another packet from the TUN device. With backpressure on,
 /// reads pause once `limit` datagrams wait in quiche's send queue: an unmanaged
@@ -42,6 +53,187 @@ const MAX_CONSECUTIVE_TUN_WRITE_FAILURES: u32 = 32;
 /// upload, where the kernel's qdisc could manage it instead.
 const fn tun_read_allowed(queued: usize, limit: usize) -> bool {
     limit == 0 || queued < limit
+}
+
+/// Controlled delay (RFC 8289, in its Linux form) for the upload datagrams that
+/// wait in quiche's send queue. quiche dequeues them itself, so the oldest one
+/// is judged just before each send: dropped, or left for quiche to send.
+struct Codel {
+    target: Duration,
+    /// Nothing is dropped with at most this many bytes behind the oldest
+    /// datagram: one datagram is not a standing queue.
+    max_packet: usize,
+    first_above_time: Option<Instant>,
+    drop_next: Instant,
+    count: u32,
+    last_count: u32,
+    dropping: bool,
+}
+
+impl Codel {
+    const fn new(target: Duration, max_packet: usize, now: Instant) -> Self {
+        Self {
+            target,
+            max_packet,
+            first_above_time: None,
+            drop_next: now,
+            count: 0,
+            last_count: 0,
+            dropping: false,
+        }
+    }
+
+    /// Whether the oldest datagram, and so the queue, has stayed above target
+    /// for a whole interval.
+    fn ok_to_drop(&mut self, now: Instant, oldest: Option<(Duration, usize)>) -> bool {
+        match oldest {
+            Some((sojourn, behind)) if sojourn >= self.target && behind > self.max_packet => {
+                now >= *self.first_above_time.get_or_insert(now + CODEL_INTERVAL)
+            }
+            _ => {
+                self.first_above_time = None;
+                false
+            }
+        }
+    }
+
+    /// Whether to drop the oldest datagram, given how long it has waited and
+    /// how many bytes are queued behind it (`None`: the queue is empty). Asked
+    /// again about the next datagram after each drop.
+    fn should_drop(&mut self, now: Instant, oldest: Option<(Duration, usize)>) -> bool {
+        let ok_to_drop = self.ok_to_drop(now, oldest);
+        if self.dropping {
+            if !ok_to_drop {
+                self.dropping = false;
+                return false;
+            }
+            if now < self.drop_next {
+                return false;
+            }
+            self.count = self.count.saturating_add(1);
+            self.drop_next = codel_control_law(self.drop_next, self.count);
+            return true;
+        }
+        if !ok_to_drop {
+            return false;
+        }
+        let delta = self.count.saturating_sub(self.last_count);
+        let recent = now.saturating_duration_since(self.drop_next) < CODEL_RECENT;
+        self.count = if delta > 1 && recent { delta } else { 1 };
+        self.last_count = self.count;
+        self.drop_next = codel_control_law(now, self.count);
+        self.dropping = true;
+        true
+    }
+}
+
+/// When to drop next: sooner the longer the queue has stayed above target.
+fn codel_control_law(last: Instant, count: u32) -> Instant {
+    last + CODEL_INTERVAL.div_f64(f64::from(count).sqrt())
+}
+
+/// The upload datagrams in quiche's send queue, oldest first: when each was
+/// queued, and its size. quiche sends them only from the front, so while it
+/// holds `n`, all but the newest `n` recorded here have left.
+struct UploadQueue {
+    waiting: VecDeque<(Instant, usize)>,
+    bytes: usize,
+    codel: Codel,
+    /// Drops not yet reported, and when the first of them happened.
+    unreported: u64,
+    unreported_since: Option<Instant>,
+}
+
+impl UploadQueue {
+    const fn new(target: Duration, max_packet: usize, now: Instant) -> Self {
+        Self {
+            waiting: VecDeque::new(),
+            bytes: 0,
+            codel: Codel::new(target, max_packet, now),
+            unreported: 0,
+            unreported_since: None,
+        }
+    }
+
+    /// Record a datagram that quiche accepted.
+    fn push(&mut self, now: Instant, len: usize) {
+        self.waiting.push_back((now, len));
+        self.bytes += len;
+    }
+
+    /// How many of the oldest datagrams to drop before quiche sends again,
+    /// now that it holds `queued`. The caller removes them from quiche.
+    fn stale(&mut self, now: Instant, queued: usize) -> usize {
+        while self.waiting.len() > queued {
+            self.pop_oldest();
+        }
+        let mut dropped = 0;
+        while self.codel.should_drop(now, self.oldest(now)) {
+            self.pop_oldest();
+            dropped += 1;
+        }
+        if dropped > 0 {
+            self.unreported += dropped as u64;
+            self.unreported_since.get_or_insert(now);
+        }
+        dropped
+    }
+
+    /// How long the oldest datagram has waited, and the bytes queued behind it.
+    fn oldest(&self, now: Instant) -> Option<(Duration, usize)> {
+        self.waiting
+            .front()
+            .map(|&(queued_at, len)| (now.saturating_duration_since(queued_at), self.bytes - len))
+    }
+
+    fn pop_oldest(&mut self) {
+        if let Some((_, len)) = self.waiting.pop_front() {
+            self.bytes -= len;
+        }
+    }
+
+    /// A summary of the drops, once they span a report period.
+    fn report(&mut self, now: Instant) -> Option<String> {
+        let span = now.saturating_duration_since(self.unreported_since?);
+        if span < UPLOAD_DROP_REPORT_PERIOD {
+            return None;
+        }
+        let report = format!(
+            "[upload] CoDel dropped {} datagram{} in {}s (target {} ms)",
+            self.unreported,
+            if self.unreported == 1 { "" } else { "s" },
+            span.as_secs(),
+            self.codel.target.as_millis()
+        );
+        self.unreported = 0;
+        self.unreported_since = None;
+        Some(report)
+    }
+}
+
+/// Remove the `count` oldest datagrams from quiche's send queue.
+fn drop_oldest_datagrams(conn: &mut quiche::Connection, count: usize) {
+    // quiche visits its queue oldest first.
+    let left = Cell::new(count);
+    conn.dgram_purge_outgoing(|_| {
+        let n = left.get();
+        left.set(n.saturating_sub(1));
+        n > 0
+    });
+}
+
+/// Drop the upload datagrams that have waited too long, before quiche sends
+/// again, and now and then report how many went.
+fn drop_stale_uploads(queue: &mut UploadQueue, conn: &mut quiche::Connection, stats: &Stats) {
+    let now = Instant::now();
+    let stale = queue.stale(now, conn.dgram_send_queue_len());
+    if stale > 0 {
+        drop_oldest_datagrams(conn, stale);
+        stats.dropped.fetch_add(stale as u64, Ordering::Relaxed);
+    }
+    if let Some(report) = queue.report(now) {
+        events::event(Severity::Info, &report);
+    }
 }
 
 fn idle_timeout(keepalive: Duration) -> Duration {
@@ -153,6 +345,9 @@ pub struct TunnelConfig {
     pub ready_file: Option<String>,
     /// Pause TUN reads at this many queued datagrams; 0 disables.
     pub tun_backpressure: usize,
+    /// Target queueing delay for upload datagrams (controlled delay); zero
+    /// disables.
+    pub upload_codel: Duration,
 }
 
 struct AbortTaskOnDrop(tokio::task::JoinHandle<()>);
@@ -578,6 +773,14 @@ where
     let mut internal_work_pending = false;
     let mut paced_packet: Option<(Vec<u8>, quiche::SendInfo)> = None;
     let mut tun_write_failures = 0;
+    // With --upload-codel, upload datagrams that wait too long are dropped.
+    let mut upload_queue = (!tunnel_cfg.upload_codel.is_zero()).then(|| {
+        UploadQueue::new(
+            tunnel_cfg.upload_codel,
+            mtu + flow_prefix.len(),
+            Instant::now(),
+        )
+    });
 
     let result: Result<()> = 'session: loop {
         let timeout = event_loop_timeout(conn.timeout(), keepalive_interval);
@@ -604,10 +807,14 @@ where
                         dgram.extend_from_slice(&flow_prefix);
                         dgram.extend_from_slice(pkt);
 
+                        let dgram_len = dgram.len();
                         match conn.dgram_send_vec(dgram) {
                             Ok(()) => {
                                 stats.tx_packets.fetch_add(1, Ordering::Relaxed);
                                 stats.tx_bytes.fetch_add(pkt_len, Ordering::Relaxed);
+                                if let Some(queue) = upload_queue.as_mut() {
+                                    queue.push(Instant::now(), dgram_len);
+                                }
                             }
                             Err(quiche::Error::InvalidState) => {
                                 log::warn!("datagram send: peer doesn't support datagrams");
@@ -744,6 +951,10 @@ where
             if forwarding_batch_limit_reached(index) {
                 internal_work_pending = true;
             }
+        }
+
+        if let Some(queue) = upload_queue.as_mut() {
+            drop_stale_uploads(queue, &mut conn, &stats);
         }
 
         // Flush an immediately-due QUIC batch. If quiche schedules a packet in
@@ -951,6 +1162,343 @@ mod tests {
         assert!(tun_read_allowed(31, 32));
         assert!(!tun_read_allowed(32, 32));
         assert!(!tun_read_allowed(1000, 32));
+    }
+
+    // ---- upload CoDel ----
+
+    const TARGET: Duration = Duration::from_millis(20);
+    // The largest upload datagram at the default MTU: 1,280 bytes and the prefix.
+    const DATAGRAM: usize = 1282;
+
+    const fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    /// Whether the oldest datagram is dropped at `at` ms, having waited `wait`
+    /// with a standing queue behind it.
+    fn drops(codel: &mut Codel, start: Instant, at: u64, wait: Duration) -> bool {
+        codel.should_drop(start + ms(at), Some((wait, 10 * DATAGRAM)))
+    }
+
+    /// The milliseconds, from `from` to `to`, at which the oldest datagram is
+    /// dropped when it has always waited `wait`.
+    fn drop_times(
+        codel: &mut Codel,
+        start: Instant,
+        from: u64,
+        to: u64,
+        wait: Duration,
+    ) -> Vec<u64> {
+        (from..=to)
+            .filter(|&at| drops(codel, start, at, wait))
+            .collect()
+    }
+
+    #[test]
+    fn a_queue_under_its_target_is_never_dropped() {
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert_eq!(
+            drop_times(&mut codel, start, 0, 2000, ms(19)),
+            Vec::<u64>::new()
+        );
+    }
+
+    #[test]
+    fn the_oldest_datagram_goes_once_the_queue_stays_above_target_for_an_interval() {
+        // F10: nothing bounded how long a datagram waited (up to 1,000 queued).
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert!(!drops(&mut codel, start, 0, ms(25)));
+        assert!(!drops(&mut codel, start, 99, ms(124)));
+        assert!(drops(&mut codel, start, 100, ms(125)));
+    }
+
+    #[test]
+    fn drops_come_closer_together_while_the_queue_stays_above_target() {
+        // RFC 8289's control law: the n-th drop comes interval/sqrt(n) after the last.
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert_eq!(
+            drop_times(&mut codel, start, 0, 500, ms(50)),
+            [100, 200, 271, 329, 379, 424, 464]
+        );
+    }
+
+    #[test]
+    fn dropping_stops_once_the_oldest_datagram_is_back_under_target() {
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert_eq!(drop_times(&mut codel, start, 0, 150, ms(30)), [100]);
+        assert!(!drops(&mut codel, start, 151, ms(10)));
+        // Above target again: a whole interval passes before the next drop.
+        assert_eq!(drop_times(&mut codel, start, 152, 300, ms(30)), [252]);
+    }
+
+    #[test]
+    fn a_short_queue_is_never_dropped_however_long_it_waits() {
+        // A datagram or two waiting is a slow link, not a standing queue.
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        for step in 0..20 {
+            let now = start + ms(100 * step);
+            assert!(!codel.should_drop(now, Some((ms(500), 0))));
+            assert!(!codel.should_drop(now, Some((ms(500), DATAGRAM))));
+        }
+        assert!(!codel.should_drop(start + ms(2000), None));
+    }
+
+    #[test]
+    fn a_queue_back_above_target_soon_after_resumes_the_last_drop_rate() {
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert_eq!(drop_times(&mut codel, start, 0, 500, ms(50)).len(), 7);
+        assert!(!drops(&mut codel, start, 510, ms(5)));
+        // The last episode needed six drops beyond its first, so this one
+        // starts with drops interval/sqrt(6) apart.
+        assert_eq!(drop_times(&mut codel, start, 520, 690, ms(50)), [620, 661]);
+    }
+
+    #[test]
+    fn a_queue_back_above_target_much_later_starts_again_at_one_drop_an_interval() {
+        let start = Instant::now();
+        let mut codel = Codel::new(TARGET, DATAGRAM, start);
+        assert_eq!(drop_times(&mut codel, start, 0, 500, ms(50)).len(), 7);
+        assert!(!drops(&mut codel, start, 510, ms(5)));
+        assert_eq!(
+            drop_times(&mut codel, start, 2520, 2790, ms(50)),
+            [2620, 2720]
+        );
+    }
+
+    /// 100 datagrams of 1,000 bytes queued at `start`, none sent; at 50 ms the
+    /// oldest went above target.
+    fn standing_upload_queue(start: Instant) -> UploadQueue {
+        let mut queue = UploadQueue::new(TARGET, DATAGRAM, start);
+        for _ in 0..100 {
+            queue.push(start, 1000);
+        }
+        assert_eq!(queue.stale(start + ms(50), 100), 0);
+        queue
+    }
+
+    #[test]
+    fn datagrams_quiche_has_sent_are_forgotten_oldest_first() {
+        let start = Instant::now();
+        let mut queue = UploadQueue::new(TARGET, DATAGRAM, start);
+        for step in 0..5 {
+            queue.push(start + ms(10 * step), 1000);
+        }
+        // quiche sent the two oldest, so the oldest left was queued at 20 ms.
+        assert_eq!(queue.stale(start + ms(45), 3), 0);
+        assert_eq!(queue.oldest(start + ms(45)), Some((ms(25), 2000)));
+    }
+
+    #[test]
+    fn a_standing_upload_queue_loses_its_oldest_datagrams() {
+        let start = Instant::now();
+        let mut queue = standing_upload_queue(start);
+        // quiche sent nothing (its window is full), so the queue still stands.
+        assert_eq!(queue.stale(start + ms(150), 100), 1);
+        assert_eq!(queue.oldest(start + ms(150)), Some((ms(150), 98_000)));
+        assert_eq!(queue.stale(start + ms(249), 99), 0);
+        assert_eq!(queue.stale(start + ms(250), 99), 1);
+    }
+
+    #[test]
+    fn an_upload_queue_that_keeps_draining_is_left_alone() {
+        // However long the queue, datagrams that leave within the target stay.
+        let start = Instant::now();
+        let mut queue = UploadQueue::new(TARGET, DATAGRAM, start);
+        let mut queued = 0;
+        for step in 0..2000 {
+            let now = start + ms(step);
+            for _ in 0..10 {
+                queue.push(now, DATAGRAM);
+            }
+            // quiche sends all but the newest 15 ms of datagrams.
+            queued = (queued + 10).min(150);
+            assert_eq!(queue.stale(now, queued), 0, "at {step} ms");
+        }
+    }
+
+    #[test]
+    fn upload_drops_are_reported_at_most_once_a_minute() {
+        let start = Instant::now();
+        let mut queue = standing_upload_queue(start);
+        assert_eq!(queue.report(start + Duration::from_secs(600)), None);
+        assert_eq!(queue.stale(start + ms(150), 100), 1);
+        let first_drop = start + ms(150);
+        assert_eq!(queue.report(first_drop + Duration::from_secs(59)), None);
+        assert_eq!(
+            queue
+                .report(first_drop + Duration::from_secs(60))
+                .as_deref(),
+            Some("[upload] CoDel dropped 1 datagram in 60s (target 20 ms)")
+        );
+        assert_eq!(queue.report(first_drop + Duration::from_secs(600)), None);
+        // The queue never drained, so CoDel drops on, and catches up at once.
+        assert!(queue.stale(first_drop + Duration::from_secs(61), 99) > 1);
+        let report = queue.report(first_drop + Duration::from_secs(121));
+        assert!(
+            report
+                .as_deref()
+                .is_some_and(|line| line.starts_with("[upload] CoDel dropped ")
+                    && line.ends_with(" datagrams in 60s (target 20 ms)")),
+            "{report:?}"
+        );
+    }
+
+    // ---- quiche's datagram send queue, as the upload CoDel relies on it ----
+
+    /// Hand every packet that `from` sends now to `to`.
+    fn deliver(from: &mut quiche::Connection, to: &mut quiche::Connection) {
+        let mut packet = [0u8; MAX_DATAGRAM_SIZE];
+        for _ in 0..100 {
+            match from.send(&mut packet) {
+                Ok((len, info)) => {
+                    let info = quiche::RecvInfo {
+                        from: info.from,
+                        to: info.to,
+                    };
+                    to.recv(&mut packet[..len], info).expect("recv");
+                }
+                Err(quiche::Error::Done) => return,
+                Err(error) => panic!("send: {error}"),
+            }
+        }
+        panic!("more than 100 packets at once");
+    }
+
+    /// A client and a server that completed their handshake in memory, both
+    /// with datagrams on. The server's certificate is a throwaway.
+    fn connected_pair() -> (quiche::Connection, quiche::Connection) {
+        use std::io::Write;
+
+        let config = |server: bool| {
+            let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).expect("config");
+            config.set_application_protos(&[b"test"]).expect("alpn");
+            config.verify_peer(false);
+            config.enable_dgram(true, 1000, 1000);
+            if server {
+                let key_pair = rcgen::KeyPair::generate().expect("test key");
+                let cert = rcgen::CertificateParams::new(Vec::<String>::new())
+                    .expect("test params")
+                    .self_signed(&key_pair)
+                    .expect("test cert");
+                let mut cert_file = tempfile::NamedTempFile::new().expect("temp cert");
+                cert_file
+                    .write_all(cert.pem().as_bytes())
+                    .expect("write cert");
+                let mut key_file = tempfile::NamedTempFile::new().expect("temp key");
+                key_file
+                    .write_all(key_pair.serialize_pem().as_bytes())
+                    .expect("write key");
+                config
+                    .load_cert_chain_from_pem_file(cert_file.path().to_str().expect("path"))
+                    .expect("load cert");
+                config
+                    .load_priv_key_from_pem_file(key_file.path().to_str().expect("path"))
+                    .expect("load key");
+            }
+            config
+        };
+        let client_addr: SocketAddr = "127.0.0.1:4433".parse().unwrap();
+        let server_addr: SocketAddr = "127.0.0.1:4434".parse().unwrap();
+        let mut client = quiche::connect(
+            None,
+            &quiche::ConnectionId::from_ref(&[1; 16]),
+            client_addr,
+            server_addr,
+            &mut config(false),
+        )
+        .expect("connect");
+        let mut server = quiche::accept(
+            &quiche::ConnectionId::from_ref(&[2; 16]),
+            None,
+            server_addr,
+            client_addr,
+            &mut config(true),
+        )
+        .expect("accept");
+        for _ in 0..10 {
+            deliver(&mut client, &mut server);
+            deliver(&mut server, &mut client);
+            if client.is_established() && server.is_established() {
+                return (client, server);
+            }
+        }
+        panic!("the in-memory handshake did not complete");
+    }
+
+    /// The first byte of each datagram the connection has received.
+    fn received(conn: &mut quiche::Connection) -> Vec<u8> {
+        let mut dgram = [0u8; MAX_DATAGRAM_SIZE];
+        let mut ids = Vec::new();
+        while let Ok(len) = conn.dgram_recv(&mut dgram) {
+            assert!(len > 0);
+            ids.push(dgram[0]);
+        }
+        ids
+    }
+
+    #[test]
+    fn quiche_sends_queued_datagrams_oldest_first() {
+        // UploadQueue relies on it: whatever has left came from the front.
+        let (mut client, mut server) = connected_pair();
+        for id in 0..5u8 {
+            client.dgram_send(&[id; 1000]).expect("queue");
+        }
+        let mut packet = [0u8; MAX_DATAGRAM_SIZE];
+        let mut seen = Vec::new();
+        for _ in 0..20 {
+            if let Ok((len, info)) = client.send(&mut packet) {
+                let info = quiche::RecvInfo {
+                    from: info.from,
+                    to: info.to,
+                };
+                server.recv(&mut packet[..len], info).expect("recv");
+            }
+            seen.extend(received(&mut server));
+            let left = 5 - client.dgram_send_queue_len() as u8;
+            assert_eq!(seen, (0..left).collect::<Vec<u8>>());
+        }
+        assert_eq!(seen, [0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn dropping_the_oldest_datagrams_leaves_the_rest_to_be_sent_in_order() {
+        let (mut client, mut server) = connected_pair();
+        for id in 0..10u8 {
+            client.dgram_send(&[id]).expect("queue");
+        }
+        drop_oldest_datagrams(&mut client, 3);
+        assert_eq!(client.dgram_send_queue_len(), 7);
+        deliver(&mut client, &mut server);
+        assert_eq!(received(&mut server), [3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn stale_uploads_leave_quiche_and_count_as_dropped() {
+        let (mut client, mut server) = connected_pair();
+        let queued_at = Instant::now()
+            .checked_sub(ms(500))
+            .expect("test instant should allow a 500 ms subtraction");
+        let mut queue = UploadQueue::new(TARGET, DATAGRAM, queued_at);
+        for id in 0..10u8 {
+            client.dgram_send(&[id; 200]).expect("queue");
+            queue.push(queued_at, 200);
+        }
+        let stats = Stats::new();
+        drop_stale_uploads(&mut queue, &mut client, &stats);
+        assert_eq!(stats.dropped.load(Ordering::Relaxed), 0);
+        // Still above target an interval later: the oldest goes.
+        std::thread::sleep(CODEL_INTERVAL);
+        drop_stale_uploads(&mut queue, &mut client, &stats);
+        assert_eq!(stats.dropped.load(Ordering::Relaxed), 1);
+        assert_eq!(client.dgram_send_queue_len(), 9);
+        deliver(&mut client, &mut server);
+        assert_eq!(received(&mut server), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     }
 
     // ---- dead-path detection ----

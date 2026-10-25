@@ -106,6 +106,10 @@ enum Commands {
         /// sent, so the excess queues in the kernel instead (0 disables)
         #[arg(long, default_value_t = 0)]
         tun_backpressure: usize,
+        /// Drop upload datagrams, CoDel-style, while they wait longer than
+        /// this many milliseconds to be sent (0 disables)
+        #[arg(long, value_name = "MS", default_value_t = 0)]
+        upload_codel: u64,
         /// Also send connection events (connecting, connected, why a session
         /// ended, fatal errors) to the system log
         #[arg(long, default_value_t = false)]
@@ -139,6 +143,7 @@ async fn main() -> Result<()> {
             interface_name,
             ready_file,
             tun_backpressure,
+            upload_codel,
             syslog,
         } => {
             if syslog {
@@ -163,6 +168,7 @@ async fn main() -> Result<()> {
                 interface_name,
                 ready_file,
                 tun_backpressure,
+                Duration::from_millis(upload_codel),
             )
             .await;
             // main reports the error on stderr itself; syslog needs a copy.
@@ -234,6 +240,7 @@ async fn cmd_nativetun(
     interface_name: Option<String>,
     ready_file: Option<String>,
     tun_backpressure: usize,
+    upload_codel: Duration,
 ) -> Result<()> {
     if keepalive_period.is_zero() {
         anyhow::bail!("keepalive period must be at least one second");
@@ -279,7 +286,39 @@ async fn cmd_nativetun(
         congestion_control: congestion_control.to_string(),
         ready_file,
         tun_backpressure,
+        upload_codel,
     };
 
     tunnel::maintain_tunnel(&cfg, &tunnel_cfg, tun_dev).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn nativetun_lists_the_upload_codel_for_tunnel_sh() {
+        // tunnel.sh passes --upload-codel only to a binary whose help lists it.
+        let mut cli = Cli::command();
+        let help = cli
+            .find_subcommand_mut("nativetun")
+            .expect("nativetun subcommand")
+            .render_help()
+            .to_string();
+        assert!(help.contains("--upload-codel <MS>"), "{help}");
+    }
+
+    #[test]
+    fn the_upload_codel_is_off_unless_asked_for() {
+        let target = |args: &[&str]| match Cli::parse_from(args.iter().copied()).command {
+            Commands::NativeTun { upload_codel, .. } => upload_codel,
+            Commands::Register { .. } => unreachable!("parsed nativetun"),
+        };
+        assert_eq!(target(&["usque-rs", "nativetun"]), 0);
+        assert_eq!(
+            target(&["usque-rs", "nativetun", "--upload-codel", "20"]),
+            20
+        );
+    }
 }
