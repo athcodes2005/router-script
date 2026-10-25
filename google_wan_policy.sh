@@ -87,15 +87,26 @@ for SET in google_net4 google_dns4; do
         iptables -t mangle -I OUTPUT 1 -m set --match-set "$SET" dst -j MARK --set-xmark "$GOOGLE_MARK/$GOOGLE_MASK"
 done
 # No native WAN IPv6: rejecting the LAN's Google IPv6 makes dual-stack clients
-# use IPv4 at once instead of after TCP soft-error retry delays.
-for SET in google_net6 google_dns6; do
-    ip6tables -C FORWARD -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null ||
+# use IPv4 at once instead of after TCP soft-error retry delays. tunnel.sh and
+# the health check insert the LAN->tun0 ACCEPT at the top of FORWARD whenever
+# it is missing, and rejects below it never match (F44). So all four must come
+# before that ACCEPT; otherwise they are reinstalled on top, together with
+# removing any duplicate or the initial icmp6-no-route variant.
+if ! ip6tables -S FORWARD 2>/dev/null | awk -v accept="-A FORWARD -i $LAN_IF -o $TUN_IF -j ACCEPT" '
+    $0 == accept { exit }
+    / --match-set google_(net|dns)6 dst -j REJECT / { rejects++ }
+    END { exit rejects != 4 }'; then
+    for SET in google_net6 google_dns6; do
+        for REJECT in tcp-reset icmp6-port-unreachable icmp6-no-route; do
+            set -- -i "$LAN_IF"
+            [ "$REJECT" != tcp-reset ] || set -- "$@" -p tcp
+            while ip6tables -D FORWARD "$@" -m set --match-set "$SET" dst -j REJECT --reject-with "$REJECT" 2>/dev/null; do :; done
+        done
         ip6tables -I FORWARD 1 -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable
-    ip6tables -C FORWARD -i "$LAN_IF" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset 2>/dev/null ||
         ip6tables -I FORWARD 1 -i "$LAN_IF" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset
-    # Remove the initial soft-error variant during an in-place upgrade.
-    ip6tables -D FORWARD -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-no-route 2>/dev/null || true
-done
+    done
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Google IPv6 rejects reinstalled above the LAN to $TUN_IF accept."
+fi
 # The router's own IPv6 traffic to Google is not rejected; it goes through WARP
 # (F43). Single-address tools such as BusyBox ntpd and ping never fall back to
 # IPv4, so the reject failed them for good. Remove what older versions added.
