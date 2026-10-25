@@ -169,14 +169,44 @@ dns_runtime_ok() {
     timeout 8 nslookup internet.iitb.ac.in 127.0.0.1 2>/dev/null | grep -q 'Address [0-9]*: 10\.'
 }
 
-lan_ipv6_config_ok() {
+lan_ipv6_uci_ok() {
     [ "$(uci -q get dhcp.@dnsmasq[0].filter_aaaa 2>/dev/null || echo "")" = "0" ] || return 1
     [ "$(uci -q get dhcp.lan.ra 2>/dev/null || echo "")" = "server" ] || return 1
     [ "$(uci -q get dhcp.lan.ra_slaac 2>/dev/null || echo "")" = "1" ] || return 1
     [ "$(uci -q get dhcp.lan.dhcpv6 2>/dev/null || echo "")" = "server" ] || return 1
     [ "$(uci -q get dhcp.lan.ra_default 2>/dev/null || echo "")" = "$LAN_RA_DEFAULT" ] || return 1
     [ "$(uci -q get network.lan.ip6ifaceid 2>/dev/null || echo "")" = "$LAN_IP6IFACEID" ] || return 1
-    ip -6 addr show dev "$LAN_IF" 2>/dev/null | grep -q "scope global" || return 1
+    [ -n "$(uci -q get network.lan.ip6addr 2>/dev/null || echo "")" ] || return 1
+}
+
+lan_ipv6_runtime_ok() {
+    ip -6 addr show dev "$LAN_IF" 2>/dev/null | grep -q "scope global"
+}
+
+# On GL.iNet 4.11.0, while GL.iNet's own IPv6 switch is off, every ifup turns
+# IPv6 off on every interface (/etc/hotplug.d/iface/99-disable_ipv6, F47), so
+# the uci config can be correct while br-lan has no address. That case is
+# repairable in place: a full configure_lan_ipv6.sh run reloads the LAN,
+# briefly drops connectivity, and its own ifup fires the hook again.
+repair_lan_ipv6_runtime() {
+    LAN_IP6ADDR_NOW="$(uci -q get network.lan.ip6addr 2>/dev/null || echo "")"
+    [ -n "$LAN_IP6ADDR_NOW" ] || return 1
+    sysctl -w net.ipv6.conf.all.disable_ipv6=0 >> "$LOG_FILE" 2>&1
+    sysctl -w net.ipv6.conf.default.disable_ipv6=0 >> "$LOG_FILE" 2>&1
+    if [ -e "/proc/sys/net/ipv6/conf/$LAN_IF/disable_ipv6" ]; then
+        sysctl -w "net.ipv6.conf.$LAN_IF.disable_ipv6=0" >> "$LOG_FILE" 2>&1
+    fi
+    lan_ipv6_runtime_ok && return 0
+    ip -6 addr add "$LAN_IP6ADDR_NOW" dev "$LAN_IF" >> "$LOG_FILE" 2>&1 || return 1
+    # Fresh RAs so clients pick up the restored gateway.
+    /etc/init.d/odhcpd restart >> "$LOG_FILE" 2>&1
+    sleep 1
+    lan_ipv6_runtime_ok
+}
+
+lan_ipv6_config_ok() {
+    lan_ipv6_uci_ok || return 1
+    lan_ipv6_runtime_ok
 }
 
 lan_ipv6_retry_deferred() {
@@ -689,6 +719,9 @@ fi
 
 if lan_ipv6_config_ok; then
     rm -f "$LAN_IPV6_RETRY_FILE"
+elif lan_ipv6_uci_ok && repair_lan_ipv6_runtime; then
+    rm -f "$LAN_IPV6_RETRY_FILE"
+    log "LAN IPv6 runtime address restored in place (no LAN reload)."
 elif lan_ipv6_retry_deferred; then
     log "LAN IPv6 remains degraded; repair cooldown is active. Continuing IPv4 and tunnel recovery."
 else

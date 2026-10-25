@@ -108,13 +108,20 @@ case "$*" in
     else echo "$4 dev tun0 src 172.16.0.2 uid 0"; fi ;;
   '-6 route get '*) echo "$4 from :: dev tun0 proto kernel src 2606:4700:110::2 metric 5 pref medium" ;;
   'link show dev tun0') flag warp_down && exit 1; echo '9: tun0: <POINTOPOINT,UP> mtu 1280' ;;
-  '-6 addr show dev br-lan') echo '    inet6 fd63:3b28:d1ea::1/64 scope global' ;;
+  '-6 addr show dev br-lan') flag lan_ipv6_missing || echo '    inet6 fd63:3b28:d1ea::1/64 scope global' ;;
+  '-6 addr add '*' dev br-lan')
+    if flag lan_ipv6_disabled; then echo 'RTNETLINK answers: Permission denied' >&2; exit 2; fi
+    @RM@ -f "$SIM_STATE/lan_ipv6_missing" ;;
   '-4 addr show dev eth0') echo '    inet 10.1.39.202/19 brd 10.1.63.255 scope global eth0' ;;
   '-4 route show dev eth0 scope link') echo '10.1.32.0/19 proto static scope link metric 10' ;;
 esac
 '''
 
 UCI = r'''key=; for a in "$@"; do key=$a; done
+case "$*" in
+  'set dhcp.lan.ra_default='*) @RM@ -f "$SIM_STATE/lan_ra_default_drift" ;;
+  'set network.lan.ip6addr='*) @RM@ -f "$SIM_STATE/lan_ip6addr_unset" ;;
+esac
 case "$1 ${2:-}" in '-q get'|'get '*) ;; *) exit 0 ;; esac
 case "$key" in
   'dhcp.@dnsmasq[0].strictorder'|'dhcp.@dnsmasq[0].noresolv') echo 1 ;;
@@ -137,8 +144,9 @@ case "$key" in
       printf "%s/%s/google_dns4,google_dns6", sep, $0; sep = " " } END { print "" }' "$SIM_PROJ/google_domains.txt" ;;
   'dhcp.lan.ra'|'dhcp.lan.dhcpv6') echo server ;;
   'dhcp.lan.ra_slaac') echo 1 ;;
-  'dhcp.lan.ra_default') echo 2 ;;
+  'dhcp.lan.ra_default') if flag lan_ra_default_drift; then echo 0; else echo 2; fi ;;
   'network.lan.ip6ifaceid') echo ::1 ;;
+  'network.lan.ip6addr') flag lan_ip6addr_unset && exit 1; echo 'fd63:3b28:d1ea::1/64' ;;
   'network.globals.ula_prefix') echo 'fd63:3b28:d1ea::/48' ;;
   wireless.mt798111|wireless.mt798112) flag wifi_sections_missing || echo wifi-device ;;
   firewall.router_script.path) flag firewall_hook_missing && exit 1; echo "$SIM_PROJ/firewall_hook.sh" ;;
@@ -223,6 +231,14 @@ case "$name" in
     fi ;;
   *) echo 'Address 1: 198.51.100.10'; echo 'Address 2: 2001:db8::10' ;;
 esac''',
+    # GL.iNet 4.11.0's /etc/hotplug.d/iface/99-disable_ipv6: while its own IPv6
+    # switch is off, every ifup turns IPv6 off on every interface, which drops
+    # br-lan's address. Without the hook, netifd sets the address on ifup lan.
+    'ifup': r'''if flag glipv6_hook; then : > "$SIM_STATE/lan_ipv6_disabled"; : > "$SIM_STATE/lan_ipv6_missing"
+elif [ "${1:-}" = lan ] && ! flag lan_ipv6_disabled; then @RM@ -f "$SIM_STATE/lan_ipv6_missing"; fi''',
+    'sysctl': r'''case "$*" in
+  *.all.disable_ipv6=0*|*.br-lan.disable_ipv6=0*) @RM@ -f "$SIM_STATE/lan_ipv6_disabled" ;;
+esac''',
     'ipset': 'flag ipset_fail && exit 1; :',
     'iptables': IPTABLES,
     'ip6tables': IPTABLES,
@@ -230,7 +246,7 @@ esac''',
     'uci': UCI,
     'curl': CURL,
 }
-NO_OPS = ['fw3', 'sysctl', 'killall', 'ifup', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
+NO_OPS = ['fw3', 'killall', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
           'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger']
 SERVICES = ['dnsmasq', 'odhcpd', 'dnscrypt-proxy', 'cron', 'firewall']
 
