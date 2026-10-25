@@ -2199,3 +2199,344 @@ test refuses requests of 100 MB or more (HTTP 403).
 - WARP is PID 31898 with its default options, and reports `warp=on` for both
   families.
 - The 02:14:00 health check passed, and no lock is held.
+
+## 22. router-script on firmware 4.11.0 (F46–F52) — 25 October 2026, audit only
+
+**Status (20:49 IST): audit only.** Nothing on the router was changed, and
+nothing is fixed yet. The router no longer matches `main` (F48).
+
+§20 is on branch `claude/mystifying-sutherland-2fc664`, and §21 (F43–F45) is
+on `claude/funny-chaplygin-b3e102`.
+
+You upgraded the router to GL.iNet 4.11.0 at about 17:21 IST and asked me to
+check router-script against it, read-only. I ran five SSH rounds between
+20:26 and 20:49. Each was shown to you first and run exactly as written.
+- The only traffic they caused was two DNS queries to the router's own
+  dnsmasq.
+- `.env` and `config.json` were only listed with `ls -l`, never read.
+- Log lines were printed with any `user`, `pass`, `token` or `key` value
+  masked. The raw outputs stay out of the repository, since they show
+  topology.
+
+| Round | What it read |
+|---|---|
+| A | Firmware, clock and uptime; `ensure.log` since the upgrade; the WARP client's events in `logread` |
+| B | The checks you listed: tools, `crontab -l`, the fw3 include, the secret files' modes, and the SHA-256 of the deploy set |
+| C | Which `timeout`, `ip`, `iptables` and `curl`; what an upgrade keeps; packages; policy rules; duplicate firewall rules |
+| D | `tunnel.log` and `ipv6.log`; the IPv6 switches; dnscrypt-proxy; dnsmasq's PID file; a Blinkit lookup; table 16800; `sftp-server` |
+| E | GL.iNet's IPv6 hotplug and init scripts, its IPv6 settings, and the dnscrypt-proxy init script |
+
+Round B hashed 33 of the 34 non-secret deploy-set files: I left out
+`collect_diagnostics.sh`. Round D hashed it; it matches `main`.
+
+### 22.1 Timeline since the upgrade
+
+| Time (IST) | Event | Evidence |
+|---|---|---|
+| 17:21:01 | Boot on 4.11.0 (OpenWrt 21.02-SNAPSHOT r15812+926) | Uptime 11,125.7 s at 20:26:27. The clock agreed with the Mac to the second |
+| 17:21–17:43 | No router-script: its directory was gone (F46). Cron ran `cd "/root/router-script" && ./ensure_network.sh` every 30 s and failed silently | `ensure.log` begins at 17:44:31 |
+| 17:43 | `/root/router-script` created again by a deploy from the Mac's main checkout. Its `sync_to_router.sh` had been edited at 17:43:35 to call `scp -O` (F51) | `/root` is dated 17:43 |
+| 17:44:31 | First health check on 4.11.0 (§22.2) | `ensure.log` |
+| 17:44:34 | A WARP start that the health check did not make, probably by hand | `tunnel.log` |
+| 17:48 | `sftp-server` installed on the router | `/usr/libexec/sftp-server` is dated 17:48 |
+| 17:50:01, 17:54:31 | The LAN IPv6 repair again, each run followed by a WARP restart (F47) | `ensure.log`, `ipv6.log`, `tunnel.log` |
+| 17:56 | A second deploy, carrying edits to `ensure_network.sh` and `configure_lan_ipv6.sh` made at 17:56:05–17:56:20 (F48). The promotion stopped WARP at 17:56:55. It was started again at 17:56:58, not by the health check, as the sync does after a promotion | Every project file is dated 17:56 |
+| 17:57:13 | The new `configure_lan_ipv6.sh`, not started by the health check (`ensure.log` has no matching "drift detected" line). It added the LAN address after its `ifup lan` | `ipv6.log` |
+| 17:57:23, 17:58:18 | Two more WARP restarts ("default route missing"). The new in-place LAN repair ran twice at 17:58 | `ensure.log`, `tunnel.log` |
+| 17:58:19–20:26 | No repair and no warning. WARP stayed on one session | `ensure.log`, `logread` |
+| 18:17, 18:47 | The 6-hourly diagnostics and log rotation ran | `diagnostics/`, `maintenance.log` |
+
+No report section or session note records the two deploys, the edits, the
+17:44:34 start, the 17:57:13 run or the `sftp-server` install. The edits are
+uncommitted in `/Users/atharva/projects/router-script`.
+
+### 22.2 The first health check, and every message since
+
+**17:44:31–17:45:13:**
+- **DNS drift**, repaired by one `configure_dns.sh` run; no drift since. The
+  log does not say which check failed. The run rewrote the Blinkit hosts
+  file, which the upgrade had removed: "records changed (8 entries); dnsmasq
+  PIDs reloaded: 0" (F50).
+- **LAN IPv6 drift.** After `configure_lan_ipv6.sh` the address was still
+  missing. `ifstatus lan` listed `fd63:3b28:d1ea::1/64`, but `br-lan` had no
+  IPv6 address at all, not even a link-local one (F47). A `lan-ipv6`
+  snapshot was taken.
+- **"Platform check passed."** at 17:44:56: every tool, both radios, a WAN
+  metric above 5, and the include. As designed, it is the only platform
+  check since the boot.
+- **WARP:** "Tunnel check failed: default route missing", checked again
+  after 3 s, then restarted. The check passed at 17:45:13.
+
+**Every message from 17:44:31 to 20:26:02:**
+
+| Count | Message | When |
+|---|---|---|
+| 323 | "Starting health check." (4 of them "…: the firewall was rebuilt.") | Throughout |
+| 323 | "Health check passed." | Throughout: every check ended healthy |
+| 12 | "Skipped: ensure_network.sh (PID …) holds the maintenance lock." | 17:44–17:58, during long repairs |
+| 3 | "LAN IPv6 configuration drift detected", then "remains invalid after repair" | 17:44, 17:50, 17:54 |
+| 15 | "LAN IPv6 remains degraded; repair cooldown is active." | 17:46–17:55 |
+| 2 | "LAN IPv6 runtime address restored in place (no LAN reload)." (a deployed edit) | 17:58 |
+| 5 | "Tunnel health check failed: default route missing. Restarting tunnel." | 17:44–17:58 |
+| 2 | "WARNING: public traffic does not prefer tun0 (…; IPv6: RTNETLINK answers: Permission denied)." | 17:54, 17:58 |
+| 1 | "DNS configuration drift detected." | 17:44 |
+| 0 | Wi-Fi drift, a Google policy deferral, WAN or campus-route recovery, portal login, the clock warning | — |
+
+The timestamps never jump: no step forward of over 120 s, and none
+backward.
+
+### 22.3 The checks you listed
+
+| Assumption | On 4.11.0 |
+|---|---|
+| The tools `check_platform_once` needs | All 12 are present, `conntrack` included. Two are different builds (§22.4) |
+| `crontab -l` has the pipeline | Exactly `install_cron_pipeline.sh`'s block, and nothing else. It survived the upgrade: `/lib/upgrade/keep.d/base-files` keeps `/etc/crontabs/` |
+| The fw3 include is registered | Yes: `type 'script'`, the hook's path and `reload '1'`, kept in `/etc/config/firewall`. It fired four times, 17:54–17:58 |
+| The deployed files match `main` | **No.** 31 of the 34 non-secret deploy-set files do. `configure_lan_ipv6.sh`, `ensure_network.sh` and `measure_load_latency.sh` differ (F48). All 34 match the main checkout's working tree |
+| `.env` and `config.json` are 0600 | Yes, owned by root. Both are dated 17:56 |
+
+### 22.4 What else changed, or did not (rounds C–E)
+
+| Item | On 4.11.0 | Effect on router-script |
+|---|---|---|
+| `timeout` | GNU coreutils 8.32 (`/usr/bin/timeout -> /usr/libexec/timeout-coreutils`) | None. router-script only runs `timeout N nslookup …` and parses the output. It never uses the exit status and runs without a terminal, so GNU's separate process group changes nothing |
+| `ip` | `ip-full`, iproute2 6.3.0 | None: `ip rule show` prints the format the scripts' greps expect |
+| `iptables`, `curl`, `nslookup` | iptables 1.8.7 (legacy), curl 7.83.1, and BusyBox `nslookup`, which prints the "Address N:" lines the parsers expect | None |
+| dnsmasq | `dnsmasq-full` 2.92 (2.85 before; F41) | Blinkit names still get IPv4 only: four A records from the hosts file, and "No answer" for AAAA. `configure_dns.sh`'s comment still names 2.85 |
+| dnscrypt-proxy | `dnscrypt-proxy2` 2.1.5, enabled at boot, but procd lists no instance | F49 |
+| IPv6 | `/etc/hotplug.d/iface/99-disable_ipv6` and `/etc/init.d/gl_ipv6` (`START=13`). `glipv6.globals.enabled='0'`, and `glipv6.lan.mode='nat6'` with router-script's ULA. `network.wan.ipv6='0'` | F47 |
+| What an upgrade keeps | `/etc/sysupgrade.conf` lists only `/etc/config/gl_nas/`. The `keep.d` lists add `/etc/crontabs/` and GL.iNet's `/etc/gl_crontabs/crontabs.d/` | F46 |
+| Policy rules | 0, 1 (`iif lo lookup 16800`), 690, 700, 710, 1099, 1101, 32766 and 32767. `ip route show table 16800` returns only "Dump terminated" for both families: the table is absent, or at least empty, so rule 1 routes nothing. GL.iNet's rules 800, 6000, 9000, 9910 and 9920 from the 1 August snapshot are gone | None: ours still come right after rule 1. `wiki/systems/policy-routing.md` is out of date |
+| router-script's firewall rules | IPv4: 13 lines in mangle, 3 in filter and 1 in nat. IPv6: 11 in filter, 2 in mangle and 1 in nat | Every expected rule is there once; none is duplicated |
+| `sftp-server` | Installed by hand at 17:48 | F51 |
+
+### 22.5 Findings
+
+**F46 — A firmware upgrade removes router-script but keeps its cron jobs and
+fw3 include (Medium, Confirmed).**
+- An upgrade that keeps settings keeps `/etc/config/` and `/etc/crontabs/`,
+  but nothing under `/root` (§22.4). The crontab and the include survived,
+  pointed at a missing directory, and both failed silently.
+- From 17:21 to 17:44 the router ran on the stock firmware's routing: LAN
+  traffic used the campus WAN directly, without WARP, the Google policy,
+  campus-route repair or portal re-login.
+- Lost with the directory:
+  - every log and diagnostic from before the upgrade (only five logs exist,
+    all begun after 17:43);
+  - the `.stage-oi` copy of the previous binary (§19.9), if it was still there;
+  - the Blinkit hosts file.
+
+  Packages installed by hand went too (F51).
+- Every future upgrade repeats this.
+- **Options (your call):**
+  - (a) `bootstrap_router.sh` adds `/root/router-script/` to
+    `/etc/sysupgrade.conf`. Upgrades then keep everything, including the logs
+    and a `config.json` rotated on the router. The cost: `.env` and
+    `config.json` also go into every configuration backup that GL.iNet's web
+    interface lets you download.
+  - (b) An upgrade procedure in `README.md`: run `sync_from_router.sh`
+    before, and `sync_to_router.sh` and `bootstrap_router.sh` after. Nothing
+    changes on the router, but router-script stays down until someone
+    redeploys.
+  - I suggest (a), with a note in `README.md` on what an upgrade still loses
+    (hand-installed packages).
+
+**F47 — On 4.11.0 every `ifup` turns IPv6 off on every interface, so
+`main`'s LAN IPv6 repair defeats itself and restarts WARP (High,
+Confirmed).**
+- **Mechanism.** On every `ifup` event, GL.iNet's `99-disable_ipv6` checks
+  `glipv6.globals.enabled` (0 here) and the router mode. If IPv6 is off, it
+  sets `disable_ipv6=1` on every interface that `ifconfig -a` lists except
+  `lo`, including `br-lan`, `tun0` and `eth0`. The kernel then drops their
+  IPv6 addresses and routes. `gl_ipv6` also has a function that writes
+  `disable_ipv6=1` for `all` and `default` into its kernel settings file.
+- **What `main` does with it.** `configure_lan_ipv6.sh` re-enables IPv6, sets
+  the address, restarts dnsmasq and odhcpd, and runs `ifup lan`. That `ifup`
+  fires the hook, which removes the address again.
+  - Each run ended "remains invalid after repair" (17:44, 17:50, 17:54).
+  - Each reloaded the LAN, which the script itself says briefly interrupts
+    Wi-Fi and LAN.
+- **WARP pays too.** Each `ifup` also strips `tun0`'s IPv6 address and
+  default route. The WARP client adds that address when it sets the device
+  up (`tun_device.rs`), so only a client restart brings it back.
+  - 9–20 s after each `ifup lan`, the health check restarted WARP ("default
+    route missing"): five restarts in 14 minutes.
+  - The two "does not prefer tun0" warnings, whose IPv6 route lookups were
+    refused ("Permission denied"), caught IPv6 switched off.
+- **With `main` deployed, this repeats every 5 minutes** (the repair
+  cooldown) for as long as GL.iNet's IPv6 switch stays off.
+- **The deployed edits (F48) stopped it.**
+  - They repair `br-lan` in place: `sysctl`, `ip -6 addr add` and an odhcpd
+    restart, with no `ifup`.
+  - `configure_lan_ipv6.sh` now adds the address after its `ifup lan`.
+  - No repair has been needed since 17:58.
+- **What they leave.**
+  - Any later `ifup` of any interface still strips `tun0`'s IPv6 and costs
+    one WARP restart, a few seconds without internet. That includes a WAN
+    recovery's `ifup wan`, a change in GL.iNet's web interface, and the full
+    repair's own `ifup lan`.
+  - Their comments blame netifd ("never programs option ip6addr"). The cause
+    is GL.iNet's hook.
+- **Not known:** whether the previous firmware had this hook, or whether the
+  upgrade switched GL.iNet's IPv6 off. No report since 20 October records
+  such a loop, but the logs from before the upgrade are gone.
+- **Options:**
+  - (a) Commit the deployed edits properly (F48), with their comments
+    corrected.
+  - (b) Remove the cause: turn GL.iNet's IPv6 switch on
+    (`glipv6.globals.enabled=1`). Its LAN mode is already `nat6`, with the
+    same ULA. The hook would then only re-enable IPv6 on the WAN devices.
+    - But `gl_ipv6` would start managing LAN IPv6 itself, which may clash
+      with `configure_lan_ipv6.sh` and `tunnel.sh`'s NAT66.
+    - Read `gl_ipv6`'s enabled path, read-only, before deciding. This is a
+      GL.iNet setting, not a router-script change.
+  - Not proposed: a router-script hotplug script that runs after GL.iNet's.
+    An upgrade would delete it (F46), and it could not restore `tun0`'s
+    address.
+
+**F48 — The router runs code that is not in git (Medium, Confirmed).**
+- Three files differ from `main`:
+  - `ensure_network.sh` and `configure_lan_ipv6.sh`: uncommitted edits in the
+    main checkout, `/Users/atharva/projects/router-script`, made at 17:56
+    (F47);
+  - `measure_load_latency.sh`: commit `4ddeea0` on branch
+    `latency-tool-download-loop`, which that branch's own note calls "not
+    deployed". The main checkout has that branch checked out.
+- The checkout's `sync_to_router.sh` also has an uncommitted `scp -O` (F51).
+  It is not in the deploy set.
+- **Tests.** On scratch copies, `main` passes all 133 tests, and the deployed
+  tree fails 13 of its 135:
+  - 8 in `test_sync.py`: the test's `scp` stub rejects `-O` ("unexpected scp
+    target: -o").
+  - 5 in the LAN IPv6 paths: 3 in `test_pipeline.py`, and 1 each in
+    `test_diagnostics.py` and `test_game_mode.py`.
+    - The edited check also requires `network.lan.ip6addr`, which the
+      sandbox's `uci` stub does not answer.
+    - So the sandbox's first tick ends with LAN IPv6 invalid, and its
+      cooldown and extra snapshot carry into those tests.
+  - Neither group shows the code misbehaving on the router. They show that
+    the edits were made without their tests.
+  - Shellcheck findings are unchanged.
+- **Impact.** `main` no longer matches the router, which has been the rule
+  since 22 October. A deploy or rollback from `main` (§17.3) would bring F47's
+  loop back.
+- **Fix (proposed).** Redo the edits the usual way, on a branch:
+  - first, failing tests on a sandbox that models GL.iNet's hook (an `ifup`
+    removes `br-lan`'s address);
+  - then the code, one commit per finding;
+  - merge `latency-tool-download-loop` in;
+  - then compare the router's hashes, deploy only what differs, and merge
+    into `main`.
+
+**F49 — The DoH fallback no longer runs (Low, Confirmed).**
+- On 1 August the old firmware ran
+  `dnscrypt-proxy -config /etc/dnscrypt-proxy2/dnscrypt-proxy.toml`.
+- On 4.11.0 its init script starts an instance only when GL.iNet's own DNS
+  settings (`gl-dns-v2`) say mode `secure`, provider `manual` and protocol
+  `odoh`.
+  - procd lists the service with no instance, although it is enabled at
+    boot.
+  - So `configure_dns.sh`'s "Restarting dnscrypt-proxy (DoH fallback)" at
+    17:44 did nothing. The TOML holds router-script's settings.
+- **Impact.** dnsmasq's last upstream, `127.0.0.1#5453`, is dead.
+  - It only matters when `8.8.8.8`, `8.8.4.4` and campus DNS all fail while
+    WARP works.
+  - `dns_config_ok` checks only the TOML, so nothing reports it.
+- **Options:**
+  - (a) Log only: warn once per boot when the fallback is configured but not
+    running (F52).
+  - (b) Run it from router-script, outside GL.iNet's init script.
+  - (c) Drop it from the server list and the docs.
+  - Not proposed: switching GL.iNet's DNS to that mode. GL.iNet would then
+    probably rewrite dnsmasq's upstreams, which `configure_dns.sh` would undo
+    on the next tick.
+  - I suggest (a) now; (b) or (c) is your choice.
+
+**F50 — The Blinkit refresher never signals dnsmasq (Medium, Confirmed;
+older than the upgrade).**
+- `refresh_blinkit_dns.sh:59-63` sends SIGHUP to `"$DNSMASQ_PID_DIR"/dnsmasq*.pid`,
+  and `DNSMASQ_PID_DIR` defaults to `/var/run`. dnsmasq's PID file is
+  `/var/run/dnsmasq/dnsmasq.cfg01411c.pid`:
+  - on 4.11.0 (round D);
+  - on the old firmware, as dnsmasq's `-x` argument in the 1 August process
+    list.
+
+  The pattern matches nothing.
+- The only record change since the upgrade logged "dnsmasq PIDs reloaded: 0".
+- The pattern is unchanged since the 20 October baseline (`2ba81fe`). F13 counts
+  the signals, but no record changed while that count was being watched
+  (§19.9).
+- **Impact.** When Blinkit's answers change:
+  - the hosts file and the new routes are updated;
+  - but dnsmasq keeps serving the old addresses until it restarts (a DNS
+    repair, a full LAN IPv6 repair, or a reboot);
+  - meanwhile the old addresses' direct routes are removed at once. F12's fix
+    assumes the signal published the new set first.
+
+  Clients then reach Blinkit's old addresses through WARP, which Blinkit
+  refuses: the failure the direct routes exist to prevent. At 17:44 the
+  dnsmasq restart that followed hid it.
+- **Why the tests missed it.** `tests/test_blinkit_dns.py` puts the PID files
+  directly in `DNSMASQ_PID_DIR`.
+- **Fix (proposed).** Also signal `/var/run/dnsmasq/dnsmasq*.pid`, with a test
+  that uses the real layout.
+
+**F51 — `scp` from this Mac fails unless it is given `-O` (Low,
+Confirmed).**
+- The Mac's OpenSSH 10.3 `scp` uses the SFTP protocol, and 4.11.0 ships no
+  `sftp-server`.
+  - One was installed on the router by hand at 17:48; the firmware's own
+    files are dated 24 September.
+  - The next upgrade will remove it (F46).
+- Every audited deployment since 20 October used `tar` over `ssh`, so this
+  path had not been used on the real link. §14.5 listed it as unverified.
+- The uncommitted fix adds `-O` to `sync_to_router.sh` only.
+  - `sync_from_router.sh` (four `scp` calls) and
+    `download_emergency_diagnostics.sh` (one) lack it.
+  - `test_sync.py`'s stub rejects it (F48).
+- **Fix (proposed).** `-O` in all three scripts, and a stub that accepts it.
+
+**F52 — The platform check passed but covers none of this (Low,
+Confirmed).**
+- It passed at 17:44:56 while F47 and F49 were in effect. By design (A9), it
+  checks the tools, the radios, the WAN metric and the include.
+- **Fix (proposed), log only like A9.** Also warn when:
+  - GL.iNet's IPv6 switch is off and its `99-disable_ipv6` hook exists
+    (F47);
+  - `127.0.0.1#5453` is configured but dnscrypt-proxy is not running (F49);
+  - no dnsmasq PID file is where `refresh_blinkit_dns.sh` looks (F50);
+  - with F46 (a), `/etc/sysupgrade.conf` lacks the project.
+
+### 22.6 Proposed order (needs your approval)
+
+1. **F48, with F47 (a).** Put the deployed edits under tests and commit them,
+   and merge `latency-tool-download-loop`. Then check the router's hashes and
+   merge into `main`. `claude/funny-chaplygin-b3e102` (F43–F45) also changes
+   `ensure_network.sh`, so the merge needs care.
+2. **F50:** the PID path, with a test.
+3. **F51:** `-O` in all three scripts.
+4. **F52:** the log-only checks.
+5. **Your decisions:** F46 (a) or (b); F49 (a), (b) or (c); and whether to
+   read `gl_ipv6` for F47 (b).
+6. **Docs, with the fixes:**
+   - `wiki/systems/policy-routing.md` (the rule table);
+   - `wiki/systems/dns.md` (the fallback);
+   - `wiki/systems/ipv6.md` (the hook);
+   - `configure_dns.sh`'s dnsmasq 2.85 comment.
+
+Deploying any of it needs your go-ahead, as always.
+
+### 22.7 What I could not verify
+
+- Who made the two deploys, the edits, the 17:44:34 WARP start, the 17:57:13
+  run and the `sftp-server` install.
+- Whether the previous firmware had `99-disable_ipv6`, or the upgrade
+  switched GL.iNet's IPv6 off. No copy from before the upgrade exists.
+- Whether the old firmware's dnscrypt-proxy init script started it
+  unconditionally, or GL.iNet's DNS settings changed.
+- Which DNS check failed at 17:44:31.
+- What caused the 17:58:18 WARP restart. It was probably another `ifup`; the
+  log does not say.
+- Anything on the router between 23 October 02:14 (§19.10) and the upgrade:
+  those logs are gone.
+- F44 (§21) was not checked again.

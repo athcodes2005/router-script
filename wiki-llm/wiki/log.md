@@ -767,3 +767,33 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)
+
+## 2026-10-25 — router-script checked against firmware 4.11.0 (audit, not fixed)
+
+- With the user's permission, five read-only SSH rounds, each shown first.
+  Nothing changed on the router.
+- The upgrade removed `/root/router-script` but kept its crontab and fw3
+  include. Nothing ran from 17:21 to 17:44, when it was redeployed from the
+  Mac, and the older logs are lost (F46).
+- On every `ifup`, GL.iNet's `99-disable_ipv6` hotplug turns IPv6 off on
+  every interface while GL.iNet's own IPv6 switch is off. `main`'s LAN IPv6
+  repair runs `ifup lan`, so it undoes itself, and each run costs a WARP
+  restart (F47). See [[systems/ipv6]].
+- Uncommitted edits, deployed at 17:56, stopped that loop. The router no
+  longer matches `main`, and the edits fail 13 of the existing tests because
+  the tests were not updated (F48).
+- dnscrypt-proxy, the DoH fallback, now starts only under GL.iNet's own DNS
+  settings, so it is not running (F49). See [[systems/dns]].
+- Older than the upgrade: the Blinkit refresher's SIGHUP looks for
+  dnsmasq's PID file in the wrong directory, so dnsmasq keeps serving
+  replaced addresses until it restarts (F50).
+- Also: `scp` from the Mac needs `-O` (F51), and the platform check passed
+  while missing all of this (F52).
+- Checked fine: every tool (`timeout` is now GNU's, `ip` iproute2 6.3), the
+  cron pipeline, the include, the secret files' modes, router-script's rules
+  without duplicates, and IPv4-only Blinkit answers from dnsmasq 2.92.
+- Fixes await the user's approval.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 22)
