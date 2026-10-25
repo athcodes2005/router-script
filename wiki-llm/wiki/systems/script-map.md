@@ -47,7 +47,8 @@
 - `monitor_game_network.sh`: read-only, bounded latency monitor for game
   sessions (optional `PHONE_IP`); logs via `paths.sh`.
 - `measure_load_latency.sh`: round trips through WARP idle and under upload and
-  download load (`logs/latency.log`); holds the lock, changes nothing.
+  download load (`logs/latency.log`), each run labelled with the client's
+  upload-queue options; holds the lock, changes nothing.
 
 ## Data and executable files
 

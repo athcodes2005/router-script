@@ -70,7 +70,9 @@ No speculative SQM cap was deployed.
 
 Loaded latency was measured on 2026-10-23. An upload adds about 30 ms on a quiet
 uplink, but 120–150 ms (peaks near 470 ms) when the campus uplink is congested.
-The client's TUN-read backpressure does not help (report section 19.10).
+The client's TUN-read backpressure does not help (report section 19.10). An
+opt-in CoDel bound on the client's upload queue (`WARP_UPLOAD_CODEL`) is built
+but not yet measured or deployed (report section 20).
 
 ## DNS filtering on the vendor firmware
 

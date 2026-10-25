@@ -63,6 +63,19 @@ device drops at its own 500-packet ring when the client stops reading, and never
 queues in `tun0`'s fq_codel, so the queue only moves out of the client. Keep it
 off (report section 19.10).
 
+`--upload-codel MS` bounds that queue by waiting time instead (F10's second
+fix, report section 20). It applies CoDel (RFC 8289): once the oldest upload
+datagram has waited longer than MS for a 100 ms interval, the oldest datagrams
+are dropped, at a rising rate, until it is back under MS. A datagram or two is
+never dropped. quiche keeps no timestamps, so the client records when each
+datagram entered quiche's FIFO. quiche sends only from the front, so its queue
+length shows which records have left; tests on an in-memory quiche connection
+pair pin that. `tunnel.sh` passes the option only when `WARP_UPLOAD_CODEL` is
+1–999 and the binary lists it, so it is off by default. With it on,
+`logread -e usque-rs` shows "[upload] CoDel dropped N datagrams in the last
+Ts", 5 s after drops stop and at most once a minute. It is not yet measured;
+the plan and its decision rule are in report section 20.5.
+
 The established-session event loop applies a five-millisecond floor to expired
 quiche timers. Without that floor, a persistent zero-duration loss-recovery
 timeout could turn `tokio::sleep(0)` into a hot loop, pinning one CPU core and
@@ -95,9 +108,11 @@ instead of being sliced or checksummed incorrectly.
 The deployed artifact targets `aarch64-unknown-linux-musl`. Since 2026-10-23
 it is commit `688e216`, sha256 `0d1496d3…`. Clean builds in the pinned image
 `messense/rust-musl-cross:aarch64-musl` (rustc 1.95.0) reproduce it byte for
-byte, as they did its predecessor (`1ee312fc…`). The client passes
-formatting, strict Clippy, 76 unit tests and 4 integration tests in that
-image. The packet
+byte, as they did its predecessor (`1ee312fc…`). With the upload CoDel, the
+client passes formatting, strict Clippy, 94 unit tests and 4 integration tests
+in that image; its candidate binary (`4c9cc33b…`, not deployed) is described
+in report section 20.4. The
+packet
 pipeline tests (`src/pipeline_tests.rs`) call the production functions (F36);
 `tests/tunnel_mtu.rs` keeps the TUN-device write tests.
 Native macOS compilation is not a valid test because Linux TUN/netlink APIs are

@@ -17,7 +17,7 @@ class LatencyToolTests(unittest.TestCase):
         result = self.measure('8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         log = self.box.log('latency')
-        self.assertIn('client 456 (no --tun-backpressure)', log)
+        self.assertIn('client 456 (no --tun-backpressure or --upload-codel).', log)
         self.assertIn('Latency idle:     min/median/max = 21/21/21 ms (8 samples, 0 failed).', log)
         self.assertIn('Latency upload:   min/median/max = 21/21/21 ms (4 samples, 0 failed); 32.0 Mbit/s.', log)
         self.assertRegex(log, r'Latency download: min/median/max = 21/21/21 ms \(4 samples, 0 failed\); '
@@ -72,6 +72,18 @@ class LatencyToolTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('holds the maintenance lock; try again later.', self.box.log('latency'))
         self.assertTrue((self.lock / 'owner').exists())
+
+    # F10: each run names the client's upload-queue options, so that runs with
+    # and without them can be told apart in logs/latency.log.
+    def test_each_run_names_the_clients_upload_queue_options(self):
+        proc = self.box.sysroot / 'proc' / '456'
+        proc.mkdir(parents=True)
+        (proc / 'cmdline').write_bytes(b'\0'.join([
+            b'/root/router-script/usque-rs', b'--config', b'config.json', b'nativetun',
+            b'--interface-name', b'tun0', b'--syslog', b'--tun-backpressure', b'64',
+            b'--upload-codel', b'20', b'']))
+        self.assertEqual(self.measure('8').returncode, 0)
+        self.assertIn('client 456 (--tun-backpressure 64, --upload-codel 20).', self.box.log('latency'))
 
     def sleeper(self):
         import subprocess
