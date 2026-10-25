@@ -955,3 +955,26 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../.github/workflows/ci.yml`, `../../update_from_git.sh`, `../../bootstrap_router.sh`
 - `../../tests/test_updater.py`, `../../tests/test_platform.py`
 - [[bugs/full-review-2026-10-20]], [[operations/deployment]], [[sources]]
+
+## 2026-10-26 — Merged F10 upload CoDel, pushed to GitHub, and deployed to router
+
+- Merged `claude/mystifying-sutherland-2fc664` (`ca4f75e`, F10 opt-in
+  `--upload-codel MS` binary and scripts) into `main` and `deploy`, removed all
+  remaining worktrees/branches, and pushed `main` and `deploy` to
+  `git@github.com:athcodes2005/router-script.git`.
+- Deployed `main` to `root@192.168.8.1:/root/router-script` via
+  `sync_to_router.sh`, registered `/root/router-script/` and
+  `/etc/router-script/` in `/etc/sysupgrade.conf` (F46), installed the updated
+  cron pipeline (with 15-minute `update_from_git.sh`), and removed the retired
+  root `PROJECT_CONTEXT.md`.
+- Verified live: `usque-rs` connected (`warp=on` on both IPv4 and IPv6), IPv6
+  `OUTPUT` Google rejects removed (`0`, F43), LAN Google IPv6 rejects placed at
+  the top of `FORWARD` above the `LAN→tun0` ACCEPT (F44), F45 clock check silent,
+  and F52 platform check accurately naming the 4.11.0 `99-disable_ipv6` hook and
+  `dnscrypt-proxy` state while `dnsmasq`'s PID file and `/etc/sysupgrade.conf`
+  passed.
+
+## Sources
+
+- `../../sync_to_router.sh`, `../../update_from_git.sh`, `../../ensure_network.sh`
+- Live router verification on 2026-10-26 00:36 IST.
