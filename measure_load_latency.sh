@@ -1,7 +1,7 @@
 #!/bin/sh
 # Measure the round trip through WARP while idle, during an upload and during a
 # download, to see how much queueing a saturated link adds (F10; compare runs
-# with and without WARP_TUN_BACKPRESSURE). Each sample is the TCP connect time
+# with and without WARP_UPLOAD_CODEL). Each sample is the TCP connect time
 # to RTT_URL through tun0. Nothing is reconfigured: the only effect is the test
 # traffic, up to PHASE_SECONDS each way to Cloudflare's speed test. The
 # maintenance lock is held throughout, so a health check cannot restart WARP
@@ -97,9 +97,11 @@ mbit() {
 }
 
 CLIENT_PID="$(pidof usque-rs | awk '{ print $1 }')"
-OPTIONS="$(tr '\000' ' ' < "/proc/$CLIENT_PID/cmdline" 2>/dev/null |
-    grep -o -- '--tun-backpressure [0-9]*' || echo 'no --tun-backpressure')"
-log "Latency test through $TUN_IF: ${PHASE_SECONDS}s per phase; client $CLIENT_PID ($OPTIONS)."
+# One argument per line; BusyBox's grep -o finds only one of two patterns.
+OPTIONS="$(tr '\000' '\n' < "/proc/$CLIENT_PID/cmdline" 2>/dev/null | awk '
+    option == "--tun-backpressure" || option == "--upload-codel" { printf "%s%s %s", sep, option, $0; sep = ", " }
+    { option = $0 }')"
+log "Latency test through $TUN_IF: ${PHASE_SECONDS}s per phase; client $CLIENT_PID (${OPTIONS:-no --tun-backpressure or --upload-codel})."
 
 LOAD_SAMPLES=$((PHASE_SECONDS - 4))
 log "Latency idle:     $(rtt_series "$PHASE_SECONDS")."
