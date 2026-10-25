@@ -138,6 +138,30 @@ class TunnelLaunchTests(unittest.TestCase):
         self.assertNotIn('--tun-backpressure', args)
         self.assertIn('[WARNING] Ignoring WARP_TUN_BACKPRESSURE=lots: not a number.', log)
 
+    # F10: the upload CoDel stays off unless WARP_UPLOAD_CODEL asks for it.
+    def test_upload_codel_is_off_by_default(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog --upload-codel')
+        self.assertNotIn('--upload-codel', args)
+        self.assertNotIn('CoDel', log)
+
+    def test_upload_codel_is_passed_when_configured(self):
+        args, _ = self.launch('--congestion-control --ready-file --syslog --upload-codel',
+                              WARP_UPLOAD_CODEL='20')
+        self.assertEqual(args[args.index('--upload-codel') + 1], '20')
+
+    def test_upload_codel_is_skipped_when_unsupported_or_out_of_range(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog', WARP_UPLOAD_CODEL='20')
+        self.assertNotIn('--upload-codel', args)
+        self.assertIn('[WARNING] This usque-rs binary does not support the upload CoDel.', log)
+        # A typo must not stop the client from starting.
+        for value in ('lots', '1000'):
+            self.box.flag('client_absent_once')
+            args, log = self.launch('--congestion-control --ready-file --syslog --upload-codel',
+                                    WARP_UPLOAD_CODEL=value)
+            self.assertNotIn('--upload-codel', args)
+            self.assertIn('[WARNING] Ignoring WARP_UPLOAD_CODEL=%s: not a number of milliseconds '
+                          'from 1 to 999.' % value, log)
+
 
 if __name__ == '__main__':
     unittest.main()

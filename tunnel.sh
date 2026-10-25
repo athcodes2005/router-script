@@ -23,6 +23,9 @@ fi
 WARP_CC="${WARP_CC:-cubic}"
 # Datagrams the client may queue before it pauses TUN reads; 0 leaves it off.
 WARP_TUN_BACKPRESSURE="${WARP_TUN_BACKPRESSURE:-0}"
+# The client's CoDel target, in ms, for upload datagrams waiting to be sent;
+# 0 leaves it off.
+WARP_UPLOAD_CODEL="${WARP_UPLOAD_CODEL:-0}"
 WARP_STARTUP_TIMEOUT="${WARP_STARTUP_TIMEOUT:-25}"
 
 exec >> "$LOG_FILE" 2>&1
@@ -102,10 +105,12 @@ SUPPORTS_CC=0
 SUPPORTS_READY=0
 SUPPORTS_SYSLOG=0
 SUPPORTS_BACKPRESSURE=0
+SUPPORTS_UPLOAD_CODEL=0
 echo "$NATIVETUN_HELP" | grep -q 'congestion-control' && SUPPORTS_CC=1
 echo "$NATIVETUN_HELP" | grep -q 'ready-file' && SUPPORTS_READY=1
 echo "$NATIVETUN_HELP" | grep -q -- '--syslog' && SUPPORTS_SYSLOG=1
 echo "$NATIVETUN_HELP" | grep -q -- '--tun-backpressure' && SUPPORTS_BACKPRESSURE=1
+echo "$NATIVETUN_HELP" | grep -q -- '--upload-codel' && SUPPORTS_UPLOAD_CODEL=1
 
 # These settings are routing state, not process state; reapply them even when
 # an existing usque-rs process is reused to repair drift.
@@ -151,6 +156,18 @@ else
                 echo "[WARNING] This usque-rs binary does not support TUN-read backpressure."
             fi
             ;;
+    esac
+    # A typo must not stop the client from starting, so only 1-999 ms is passed.
+    case "$WARP_UPLOAD_CODEL" in
+        0) ;;
+        [1-9]|[1-9][0-9]|[1-9][0-9][0-9])
+            if [ "$SUPPORTS_UPLOAD_CODEL" -eq 1 ]; then
+                set -- "$@" --upload-codel "$WARP_UPLOAD_CODEL"
+            else
+                echo "[WARNING] This usque-rs binary does not support the upload CoDel."
+            fi
+            ;;
+        *) echo "[WARNING] Ignoring WARP_UPLOAD_CODEL=$WARP_UPLOAD_CODEL: not a number of milliseconds from 1 to 999." ;;
     esac
     "$@" >/dev/null 2>&1 &
     PID=$!
