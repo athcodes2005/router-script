@@ -18,8 +18,8 @@ from sandbox import SHELL
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'root@sync-test.invalid'
-TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'date', 'dirname', 'grep', 'ls', 'mkdir', 'mv', 'rm', 'rmdir',
-         'sleep']
+TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'date', 'df', 'dirname', 'grep', 'ls', 'mkdir', 'mktemp', 'mv',
+         'rm', 'rmdir', 'sleep', 'tail']
 LOCAL_CONFIG = '{"dummy": "local-registration"}\n'
 
 SSH = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; *) break ;; esac; done
@@ -37,12 +37,22 @@ case "$*" in
 esac
 PATH="$RBIN:$PATH" exec sh -c "$*"
 '''
-SCP = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -q) shift ;; *) break ;; esac; done
-case "$2" in "$EXPECTED_TARGET":*) ;; *) echo "unexpected scp target: $2" >&2; exit 1 ;; esac
-printf 'scp %s\n' "${1##*/}" >> "$CALLS"
-cp "$1" "${2#"$EXPECTED_TARGET":}" || exit 1
-# A transfer that went wrong without failing.
-[ "${1##*/}" != "${CORRUPT_FILE:-}" ] || printf 'x' >> "${2#"$EXPECTED_TARGET":}"
+SCP = r'''legacy=
+while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -q) shift ;; -O) legacy=1; shift ;; *) break ;; esac; done
+# F51: the router has no sftp-server, which OpenSSH 9+ scp uses unless given -O.
+[ -n "$legacy" ] || { echo 'sh: /usr/libexec/sftp-server: not found' >&2; exit 255; }
+case "$2" in
+  "$EXPECTED_TARGET":*)
+    printf 'scp %s\n' "${1##*/}" >> "$CALLS"
+    cp "$1" "${2#"$EXPECTED_TARGET":}" || exit 1
+    # A transfer that went wrong without failing.
+    [ "${1##*/}" != "${CORRUPT_FILE:-}" ] || printf 'x' >> "${2#"$EXPECTED_TARGET":}" ;;
+  *)
+    case "$1" in "$EXPECTED_TARGET":*) ;; *) echo "unexpected scp target: $2" >&2; exit 1 ;; esac
+    printf 'scp from %s\n' "${1##*/}" >> "$CALLS"
+    # The remote side expands the pattern.
+    cp ${1#"$EXPECTED_TARGET":} "$2" || exit 1 ;;
+esac
 '''
 
 
@@ -61,7 +71,8 @@ class SyncTests(unittest.TestCase):
             path.mkdir()
         self.calls = base / 'calls'
         self.calls.write_text('')
-        for name in ('sync_to_router.sh', 'lock.sh', 'promote_staged.sh'):
+        for name in ('sync_to_router.sh', 'lock.sh', 'promote_staged.sh', 'sync_from_router.sh',
+                     'download_emergency_diagnostics.sh'):
             shutil.copy(ROOT / name, self.local)
         files = {'usque-rs': 'binary\n', 'usque-rs-upstream-v0.1.0': 'rollback binary\n',
                  'config.json': LOCAL_CONFIG, '.env': 'DUMMY=1\n', 'blocked_sites.txt': '# none\n',
@@ -194,6 +205,34 @@ class SyncTests(unittest.TestCase):
         (self.router / 'config.json').unlink()
         self.assertEqual(self.sync().returncode, 0)
         self.assertEqual((self.router / 'config.json').read_text(), LOCAL_CONFIG)
+
+    def run_script(self, name):
+        return subprocess.run([SHELL, str(self.local / name)], env=self.env,
+                              capture_output=True, text=True, timeout=120)
+
+    # F51: the Mac's scp speaks SFTP unless given -O, and the router has no
+    # sftp-server, so every pull failed (sync_to_router.sh is covered above).
+    def test_pulling_router_state_uses_the_legacy_scp_protocol(self):
+        router_config = '{"endpoint_v4": "dummy", "private_key": "dummy"}\n'
+        (self.router / 'config.json').write_text(router_config)
+        (self.router / 'blocked_sites.txt').write_text('# edited on the router\n')
+        (self.router / 'logs').mkdir()
+        (self.router / 'logs' / 'ensure.log').write_text('dummy log\n')
+        result = self.run_script('sync_from_router.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.local / 'config.json').read_text(), router_config)
+        self.assertEqual((self.local / 'blocked_sites.txt').read_text(), '# edited on the router\n')
+        self.assertEqual((self.local / 'logs' / 'ensure.log').read_text(), 'dummy log\n')
+
+    def test_an_emergency_snapshot_downloads_with_the_legacy_scp_protocol(self):
+        shutil.copy(ROOT / 'paths.sh', self.local)  # the real one sets DIAGNOSTICS_DIR
+        write_exec(self.router / 'collect_diagnostics.sh',
+                   'mkdir -p diagnostics\nf="$PWD/diagnostics/emergency_20261025_000000_1.log"\n'
+                   'echo snapshot > "$f"\necho "$f"\n')
+        result = self.run_script('download_emergency_diagnostics.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        snapshot = self.local / 'diagnostics' / 'emergency_20261025_000000_1.log'
+        self.assertEqual(snapshot.read_text(), 'snapshot\n')
 
 
 if __name__ == '__main__':

@@ -18,8 +18,11 @@ run_ssh() {
     ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"
 }
 
+# OpenWrt's dropbear has no sftp-server, and OpenSSH 9+ scp defaults to SFTP:
+# force the legacy SCP protocol or every transfer fails with
+# "/usr/libexec/sftp-server: not found" (F51).
 run_scp() {
-    scp -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"
+    scp -O -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"
 }
 
 REMOTE_OUTPUT_FILE="$(run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./collect_diagnostics.sh --emergency" | tail -n 1)"
