@@ -28,7 +28,7 @@ REWRITES = [
     ('/tmp/', '${SIMTMP}/'),
 ]
 REAL_TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cmp', 'cp', 'cut', 'date', 'df', 'dirname',
-              'grep', 'head', 'ls', 'mkdir', 'mktemp', 'mv', 'rm', 'rmdir', 'sort', 'tail',
+              'grep', 'head', 'ls', 'mkdir', 'mktemp', 'mv', 'rm', 'rmdir', 'sort', 'stat', 'tail',
               'tee', 'touch', 'tr', 'uniq', 'wc']
 DATA_FILES = ['google_domains.txt', 'google_service_ranges.txt', 'blocked_sites.txt', 'warp_clients.txt']
 

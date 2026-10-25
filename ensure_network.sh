@@ -826,7 +826,7 @@ fi
 check_platform_once
 
 if ! internet_v4_ok && [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
-    MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || echo 0)"
+    MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || stat -c %Y "$INTERACTIVE_LOGIN_MARKER" 2>/dev/null || echo 0)"
     MARKER_AGE=$(( $(date +%s) - MARKER_TIME ))
     if [ "$MARKER_AGE" -lt "$INTERACTIVE_RETRY_SECONDS" ]; then
         log "Interactive IITB login is pending; deferring token retry for $((INTERACTIVE_RETRY_SECONDS - MARKER_AGE))s."

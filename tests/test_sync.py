@@ -19,7 +19,7 @@ from sandbox import SHELL
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'root@sync-test.invalid'
 TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'date', 'df', 'dirname', 'grep', 'ls', 'mkdir', 'mktemp', 'mv',
-         'rm', 'rmdir', 'sleep', 'tail']
+         'rm', 'rmdir', 'sleep', 'stat', 'tail']
 LOCAL_CONFIG = '{"dummy": "local-registration"}\n'
 
 SSH = r'''while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; *) break ;; esac; done

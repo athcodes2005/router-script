@@ -43,7 +43,7 @@ lock_uptime() {
 # Clock age of a directory; a directory dated in the future counts as old.
 lock_dir_older_than() {
     LOCK_NOW="$(date +%s)"
-    LOCK_MTIME="$(date -r "$1" +%s 2>/dev/null)" || return 1
+    LOCK_MTIME="$(date -r "$1" +%s 2>/dev/null || stat -c %Y "$1" 2>/dev/null)" || return 1
     LOCK_AGE=$((LOCK_NOW - LOCK_MTIME))
     [ "$LOCK_AGE" -gt "$2" ] || [ "$LOCK_AGE" -lt -60 ]
 }
