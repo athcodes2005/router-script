@@ -2483,3 +2483,34 @@ logread -e usque-rs | grep -e '\[upload\]' -e '\[connected\]'
   changes `measure_load_latency.sh` and its tests, in other hunks. Only the
   latency and start-path tests ran on the trial merge; run the whole shell
   suite on the real one.
+
+### 20.7 First attempt — 25 October 2026, 14:14 IST: uplink quiet, nothing deployed
+
+You authorised deploying the three files and running §20.5, starting with
+the congestion check. I ran the check first, with the deployed tool and
+binary, so that a quiet uplink would leave the router unchanged.
+
+**Pre-flight (read-only).**
+- The three files matched `main` (`usque-rs` `0d1496d3…`).
+- No lock was held and there was no `.stage-codel`.
+- Game mode was off, health checks were passing, and `/overlay` was 16 %
+  used.
+- WARP was PID 15323, started with `--congestion-control bbr2 --syslog`.
+
+**Check** (`DOWNLOAD_URL=…?bytes=75000000 sh measure_load_latency.sh 20`,
+14:14:34–14:15:33 by the Mac's clock):
+
+| Idle median (max) | Upload median / max | Upload | Download median / max | Download |
+|---|---|---|---|---|
+| 6 (16) ms | 46 / 172 ms | 57.3 Mbit/s | 6 / 45 ms | 78.7 Mbit/s |
+
+**Decision.** The upload ran above 30 Mbit/s with a median under 80 ms, so
+the uplink was not congested, and by §20.5 I stopped.
+- Nothing was deployed; the router still runs `main`.
+- The run counts as a quiet-uplink baseline on the deployed binary.
+
+**Seen in passing (not investigated).** The router's clock is 91 minutes
+slow: it read 12:42 when the Mac read 14:14. The router had rebooted 5 h
+46 min earlier, and `ntpd`, with one server (`time1.google.com`), had logged
+no sync. Router log timestamps from that day are therefore 91 minutes
+early.
