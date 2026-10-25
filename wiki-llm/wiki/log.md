@@ -767,3 +767,24 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 19.10)
+
+## 2026-10-25 — Router clock 91 minutes slow after a reboot (audit, not fixed)
+
+- After a reboot at about 08:28, the router's clock was 5,477 s behind, and
+  NTP had not corrected it six hours later. Measured from the Mac against the
+  router web server's `Date` header; no SSH.
+- Likely cause (F43): `ntpd`'s only server, `time1.google.com`, resolves to
+  its IPv6 address once WARP is up. `google_wan_policy.sh` rejects the
+  router's own IPv6 traffic to Google, and BusyBox `ntpd` retries that
+  address forever without logging. See [[systems/google-wan]].
+- The campus does not block NTP: Google's servers answer the Mac over the
+  direct path, with or without the DSCP marking `ntpd` uses.
+- Side findings: F44 (the LAN→`tun0` ACCEPT shadows the LAN's Google IPv6
+  rejection) and F45 (the clock warning misses most skews).
+- Proposed: let the router's NTP through the IPv6 rejection (F43), and a
+  log-only skew warning (F45). The read-only router checks and the fix wait
+  for the user's approval.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (section 21)
