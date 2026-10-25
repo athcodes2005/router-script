@@ -43,9 +43,11 @@ const CODEL_INTERVAL: Duration = Duration::from_millis(100);
 // A queue back above target this soon after the last drop resumes at the drop
 // rate that controlled it then (the Linux variant the RFC describes).
 const CODEL_RECENT: Duration = CODEL_INTERVAL.saturating_mul(16);
-// Upload drops are reported at most this often, so a long upload cannot flood
-// the RAM log.
+// Upload drops are reported once they have stopped for UPLOAD_DROP_QUIET, or
+// gone on for a report period, and at most once a period, so a long upload
+// cannot flood the RAM log.
 const UPLOAD_DROP_REPORT_PERIOD: Duration = Duration::from_secs(60);
+const UPLOAD_DROP_QUIET: Duration = Duration::from_secs(5);
 
 /// Whether to read another packet from the TUN device. With backpressure on,
 /// reads pause once `limit` datagrams wait in quiche's send queue: an unmanaged
@@ -139,9 +141,12 @@ struct UploadQueue {
     waiting: VecDeque<(Instant, usize)>,
     bytes: usize,
     codel: Codel,
-    /// Drops not yet reported, and when the first of them happened.
+    /// Drops not yet reported, when the first and the last of them happened,
+    /// and when the last report went out.
     unreported: u64,
     unreported_since: Option<Instant>,
+    last_drop: Instant,
+    last_report: Option<Instant>,
 }
 
 impl UploadQueue {
@@ -152,6 +157,8 @@ impl UploadQueue {
             codel: Codel::new(target, max_packet, now),
             unreported: 0,
             unreported_since: None,
+            last_drop: now,
+            last_report: None,
         }
     }
 
@@ -175,6 +182,7 @@ impl UploadQueue {
         if dropped > 0 {
             self.unreported += dropped as u64;
             self.unreported_since.get_or_insert(now);
+            self.last_drop = now;
         }
         dropped
     }
@@ -192,14 +200,19 @@ impl UploadQueue {
         }
     }
 
-    /// A summary of the drops, once they span a report period.
+    /// A summary of the drops once they have stopped for a while or gone on
+    /// for a report period, and at most once a period.
     fn report(&mut self, now: Instant) -> Option<String> {
         let span = now.saturating_duration_since(self.unreported_since?);
-        if span < UPLOAD_DROP_REPORT_PERIOD {
+        let stopped = now.saturating_duration_since(self.last_drop) >= UPLOAD_DROP_QUIET;
+        let spaced = self.last_report.map_or(true, |at| {
+            now.saturating_duration_since(at) >= UPLOAD_DROP_REPORT_PERIOD
+        });
+        if !(spaced && (stopped || span >= UPLOAD_DROP_REPORT_PERIOD)) {
             return None;
         }
         let report = format!(
-            "[upload] CoDel dropped {} datagram{} in {}s (target {} ms)",
+            "[upload] CoDel dropped {} datagram{} in the last {}s (target {} ms)",
             self.unreported,
             if self.unreported == 1 { "" } else { "s" },
             span.as_secs(),
@@ -207,6 +220,7 @@ impl UploadQueue {
         );
         self.unreported = 0;
         self.unreported_since = None;
+        self.last_report = Some(now);
         Some(report)
     }
 }
@@ -1323,29 +1337,76 @@ mod tests {
     }
 
     #[test]
-    fn upload_drops_are_reported_at_most_once_a_minute() {
+    fn upload_drops_are_reported_once_they_stop() {
+        // A measurement restarts the client soon after its upload phase, so
+        // the drops must be in the log by then.
         let start = Instant::now();
         let mut queue = standing_upload_queue(start);
-        assert_eq!(queue.report(start + Duration::from_secs(600)), None);
+        assert_eq!(queue.report(start + ms(100)), None);
         assert_eq!(queue.stale(start + ms(150), 100), 1);
-        let first_drop = start + ms(150);
-        assert_eq!(queue.report(first_drop + Duration::from_secs(59)), None);
+        assert_eq!(queue.stale(start + ms(250), 99), 1);
+        assert_eq!(queue.report(start + ms(5249)), None);
         assert_eq!(
-            queue
-                .report(first_drop + Duration::from_secs(60))
-                .as_deref(),
-            Some("[upload] CoDel dropped 1 datagram in 60s (target 20 ms)")
+            queue.report(start + ms(5250)).as_deref(),
+            Some("[upload] CoDel dropped 2 datagrams in the last 5s (target 20 ms)")
         );
-        assert_eq!(queue.report(first_drop + Duration::from_secs(600)), None);
-        // The queue never drained, so CoDel drops on, and catches up at once.
-        assert!(queue.stale(first_drop + Duration::from_secs(61), 99) > 1);
-        let report = queue.report(first_drop + Duration::from_secs(121));
+        assert_eq!(queue.report(start + ms(9000)), None);
+    }
+
+    #[test]
+    fn upload_drops_are_reported_at_most_once_a_minute() {
+        // A long upload: datagrams keep coming, quiche sends none, and CoDel
+        // keeps dropping. One line a minute, so the RAM log is not flooded.
+        let start = Instant::now();
+        let mut queue = standing_upload_queue(start);
+        let mut held = 100;
+        let mut reports = Vec::new();
+        for at in (150..=150_000).step_by(10) {
+            let now = start + ms(at);
+            queue.push(now, 1000);
+            held += 1;
+            held -= queue.stale(now, held);
+            if let Some(report) = queue.report(now) {
+                reports.push((at, report));
+            }
+        }
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[0].0, 60_150);
+        assert!(reports[1].0 - reports[0].0 >= 60_000, "{reports:?}");
+        for (_, report) in &reports {
+            assert!(
+                report.starts_with("[upload] CoDel dropped ")
+                    && report.ends_with(" datagrams in the last 60s (target 20 ms)"),
+                "{report}"
+            );
+        }
+    }
+
+    #[test]
+    fn upload_drop_reports_stay_a_minute_apart_when_drops_come_and_go() {
+        // Two seconds of overload in every ten: each burst of drops stops, but
+        // the log still gets one line a minute at most.
+        let start = Instant::now();
+        let mut queue = UploadQueue::new(TARGET, DATAGRAM, start);
+        let mut held = 0;
+        let mut reports = Vec::new();
+        for at in (0..150_000).step_by(10) {
+            let now = start + ms(at);
+            queue.push(now, 1000);
+            held += 1;
+            if at % 10_000 >= 2_000 {
+                // quiche sent everything queued.
+                held = 0;
+            }
+            held -= queue.stale(now, held);
+            if queue.report(now).is_some() {
+                reports.push(at);
+            }
+        }
+        assert_eq!(reports.len(), 3, "{reports:?}");
         assert!(
-            report
-                .as_deref()
-                .is_some_and(|line| line.starts_with("[upload] CoDel dropped ")
-                    && line.ends_with(" datagrams in 60s (target 20 ms)")),
-            "{report:?}"
+            reports.windows(2).all(|pair| pair[1] - pair[0] >= 60_000),
+            "{reports:?}"
         );
     }
 
