@@ -275,3 +275,15 @@ bidirectional MSS clamping (`--set-mss 1240` IPv4, `--set-mss 1220` IPv6 on
 - `measure_load_latency.sh` measures round trips through WARP under load;
   `WARP_TUN_BACKPRESSURE` turns on the client's TUN-read backpressure.
 - See `audit/2026-10-20-full-review/REPORT.md` §19.
+
+## Router clock and the Google IPv6 policy — 2026-10-25
+
+- GL.iNet 4.11.0 (upgraded on 25 October) keeps time with chrony, using NTS
+  sources from `/etc/config/chrony`. There is no RTC, so after a power cut the
+  clock restarts from the newest file under `/etc` until chrony corrects it.
+- The health check warns when the clock and a direct probe's `Date` header
+  differ by more than 120 s; it compares them every 10 minutes of uptime.
+- `google_wan_policy.sh` rejects only the LAN's IPv6 traffic to Google; the
+  router's own goes through WARP. It keeps those rejects above the LAN→`tun0`
+  ACCEPT that `tunnel.sh` and the health check insert.
+- See `audit/2026-10-20-full-review/REPORT.md` §21.

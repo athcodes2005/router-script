@@ -2201,6 +2201,508 @@ test refuses requests of 100 MB or more (HTTP 403).
   families.
 - The 02:14:00 health check passed, and no lock is held.
 
+## 21. Router clock 91 minutes slow after a reboot (F43–F45) — 25 October 2026, audit only
+
+**Status: checked live (§21.11); F43–F45 fixed on this branch, not deployed
+(§21.13).** Your upgrade to GL.iNet 4.11.0 at about 17:21 replaced BusyBox
+`ntpd` with chrony, which keeps the clock correct. §21.12 revises the proposal
+and supersedes §21.8.
+
+§20 (the upload CoDel, F10's second fix) is on branch
+`claude/mystifying-sutherland-2fc664`. Its §20.7 noticed this skew in
+passing.
+
+You asked me to find out why the router's clock was 91 minutes slow on
+25 October and to propose a fix, changing nothing on the router. I did not
+connect to it. The evidence is:
+- the repository and the Mac's copies of the router logs (last pulled on
+  1 August);
+- the upstream BusyBox, musl and OpenWrt sources;
+- measurements from the Mac, whose traffic crosses the router.
+
+`.env` and `config.json` were never read. §21.9 lists read-only router
+checks that would confirm the cause; they need your permission.
+
+### 21.1 What was seen
+
+- **14:14 IST by the Mac's clock:** the router read 12:42.
+  - Its uptime was 5 h 46 min, so it had booted at about 08:28.
+  - `ntpd -n -N -S /usr/sbin/ntpd-hotplug -p time1.google.com` was running,
+    with that one server (`system.ntp.server`). `system.ntp.enabled` is
+    unset, which means on.
+  - `logread` had no NTP lines.
+- **14:39 IST, still wrong.** The router's web server answered a HEAD
+  request for `http://192.168.8.1/` (no login, no SSH) with
+  `Date: … 07:38:09 GMT` while the Mac read 09:09:26 GMT.
+  - The router was **5,477 s (1 h 31 min 17 s) behind**, the same in three
+    samples.
+  - So NTP had not corrected it 6 h 11 min after the boot.
+- **The Mac is a good reference.** Its clock agrees with Google's and
+  Cloudflare's NTP to about 10 ms. It also agrees with the `Date` headers of
+  both health-probe URLs, to within their 1 s resolution.
+
+### 21.2 Why the clock was wrong at boot
+
+That part is expected. OpenWrt's `sysfixtime`, the first init script, loads
+the clock from an RTC if one works. Otherwise it sets the clock to the
+newest modification time of any file under `/etc`.
+
+A boot at about 08:28 with the clock at about 06:57 means the newest file was
+written about 91 minutes before the boot. Either:
+- the router lost power for about that long after its last `/etc` write; or
+- it restarted (after a crash, say) when `/etc` had not been written for
+  91 minutes.
+
+router-script rarely writes `/etc`: the Blinkit hosts file only when the
+records change (last on 21 October, §19.9), and `uci commit` only on drift.
+So the newest file is probably GL.iNet's. Checks 2–4 (§21.9) show the file,
+whether there is an RTC, and any crash record.
+
+A clock set this way is always behind; NTP is what corrects it. It did after
+the 86-day power-off in July (§2). `ensure.log.1` shows the clock at
+2026-05-01 14:33 when the router booted, then 15 minutes of failed checks.
+During or just after the 14:48:16 portal login, it jumped to
+2026-07-26 19:02.
+
+### 21.3 Why NTP never corrected it: F43 (likely; §21.9 confirms)
+
+Five facts combine.
+
+1. **One server, with an IPv6 address.** `time1.google.com` resolves to
+   `216.239.35.0` and `2001:4860:4806::`. `2001:4860::/32` is in
+   `google_service_ranges.txt`.
+2. **router-script rejects the router's own IPv6 traffic to Google.** Since
+   23 September, `google_wan_policy.sh:89-101` has had an `ip6tables` OUTPUT
+   REJECT for `google_net6` and `google_dns6`, for every protocol. A packet
+   rejected in OUTPUT makes `sendto()` fail with "Operation not permitted".
+3. **Once WARP is up, the resolver puts IPv6 first.** musl (1.1.24 in
+   OpenWrt 21.02) sorts addresses by RFC 6724. An IPv6 address with a route
+   and a matching global source address (`tun0`'s) ranks above an IPv4 one:
+   precedence 40 against 35. Before WARP starts there is no IPv6 default
+   route, and IPv4 comes first.
+4. **BusyBox takes the first address.** OpenWrt 21.02 builds BusyBox with
+   `FEATURE_PREFER_IPV4_ADDRESS` off, so `host2sockaddr()` returns whatever
+   `getaddrinfo()` lists first.
+5. **BusyBox `ntpd` (1.33.2) never lets go of that address.** It resolves a
+   name again only when the name never resolved, or when a query times out
+   and the server has answered none of its last 8 queries. A send that fails
+   locally just closes the socket and retries the same address 32 s later,
+   indefinitely.
+
+So if `ntpd` resolves `time1.google.com` while WARP's IPv6 route exists, at
+start-up or after missed replies, it locks onto an address it can never send
+to. The clock then stays wrong until `ntpd` restarts.
+
+Nothing is logged. With `-n`, BusyBox `ntpd` writes only to stderr, and
+OpenWrt's `sysntpd` does not ask procd to capture it. So "no NTP lines in
+`logread`" says nothing either way.
+
+**Whether a boot syncs is a race.** `ntpd` starts during boot, before WARP.
+- If the campus answers its first IPv4 queries, it syncs within seconds and
+  keeps that address.
+- If not (no portal session yet, or DNS not ready), those queries go
+  unanswered, and `ntpd` resolves the name again after each timeout. The
+  first resolution after WARP starts returns the IPv6 address.
+
+That fits the boots on record:
+
+| Boot | Google IPv6 rejected? | Clock corrected? |
+|---|---|---|
+| 26 July, after 86 days off | No: the policy came on 23 September. WARP was also down for the first 15 minutes | Yes, after about 15 minutes |
+| About 8 October (13.6 days' uptime on 22 October, §15.1) | Yes | Yes: router and Mac agreed to the second on 22 October |
+| 25 October, about 08:28 | Yes | No, 6 h 11 min later |
+
+**Ruled out from the Mac.** The Mac's traffic to Google IPv4 takes the
+router's direct path; its other internet traffic goes through WARP.
+- **The campus blocking or intercepting NTP.** Google NTP over the direct
+  path answered 10 of 10 queries to each of `216.239.35.0` and `.4`
+  (stratum 1, offset +10 ms, delay 67 ms). It answered both unmarked queries
+  and ones with the DSCP AF21 marking that BusyBox `ntpd` puts on IPv4.
+- **A broken direct path for the router's own IPv4.** dnsmasq's upstream
+  queries to `8.8.8.8` are marked and routed the same way, and they work.
+
+**Not yet confirmed:** that the running `ntpd` is on `2001:4860:4806::`,
+and that GL.iNet's BusyBox has OpenWrt's default. Checks 9–12 show both.
+
+### 21.4 How router-script routes NTP
+
+| NTP traffic | Path |
+|---|---|
+| Router → Google, IPv4 | The mangle OUTPUT mark (`google_wan_policy.sh:84-88`), rule 710, table 102, `eth0` straight to the campus. The same path answers the Mac |
+| Router → Google, IPv6 | Rejected in OUTPUT (F43) |
+| Router → any other server | Main table: `tun0` while WARP is up, `eth0` otherwise |
+| LAN → Google, IPv4 | The PREROUTING mark, then as for the router |
+| LAN → Google, IPv6 | Meant to be rejected in FORWARD, but goes through WARP (F44). From the Mac, `2001:4860:4806::` answered NTP and `ping6` |
+| LAN → any other server | WARP. Cloudflare answered 10 of 10 (delay 13 ms); Apple and `pool.ntp.org` 6–8 of 10 (230–320 ms: distant servers) |
+
+### 21.5 What depends on the wall clock
+
+| What | How it uses the clock | 91 min slow, steady | When NTP steps it 91 min forward | Months behind (as in July) |
+|---|---|---|---|---|
+| Log timestamps (`logs/*.log`, `logread`) | `date` | All 91 min early. Matching them with the Mac needs the offset (which is how §20.7 noticed) | Jump forward | Wrong dates |
+| Ownerless lock and the takeover directory (`lock.sh:44-50`) | Directory mtime against `date +%s` | No effect: ages are differences | An ownerless lock looks 91 min older and is taken over at once, not after 180 s. Owned locks age by uptime (F39) | A pre-boot lock dated in the future is taken over at once (F39) |
+| Retry cooldowns (`ensure_network.sh:182-208`, `526-538`) | Absolute deadlines in `/tmp` | No effect | Active ones end early: one extra retry | `/tmp` starts empty |
+| Interactive-login wait (`ensure_network.sh:736-737`) | Marker mtime in `/tmp` | No effect | Ends early | `/tmp` starts empty |
+| Cron (`install_cron_pipeline.sh:23-26`) | Local time | The 6-hourly diagnostics (:17) and log rotation (:47) run 91 min late. The 30 s checks are unaffected | crond logs a time disparity and skips the missed minutes | As when steady |
+| TLS in `login.sh` and in both probes (`defaults.sh:24`) | `curl` checks certificate dates | No effect | No effect | Recent certificates look "not yet valid". Both probes fail, so the check sees no internet, and the portal login may fail too. July's 15 minutes of failed checks fit this |
+| `usque-rs` client certificate (`tls.rs:65-66`) | Valid from now to now + 24 h; new for each session | Valid for 22.5 h of real time | New sessions get new certificates | Already expired. If Cloudflare checks the dates (not verified), every new session fails. The client ignores the server's dates (`verify_peer(false)` and a pinned key, `tunnel.rs:308`) |
+| WARP registration (`register.rs:109-113`) | Sends the time to Cloudflare | Probably harmless | — | Unknown |
+| `monitor_game_network.sh:41-44` | `date +%s` deadline | No effect | A run ends 91 min early | — |
+| F21's warning (`ensure_network.sh:620-625`) | Clock against the script's mtime | **Silent**: the scripts date from 23 October (F45) | — | Fires only if the scripts are newer than the last `/etc` write (F45) |
+
+On 25 October the harm was limited to timestamps. The risk is the July case.
+With the clock months behind, every HTTPS check fails and only NTP can repair
+the clock, and F43 can stop NTP indefinitely.
+
+### 21.6 Findings
+
+- **F43 — `ntpd` can lock onto Google's IPv6 address, which router-script
+  rejects, and then never syncs (Medium, Likely).** See §21.3. It happened on
+  25 October. Any boot, or any `ntpd` restart while WARP is up, can repeat
+  it. Only the router's own NTP is affected.
+- **F44 — the LAN half of the Google IPv6 rejection is not in effect (Low,
+  Likely; side finding, separate fix).**
+  - `stop_tunnel.sh:122` deletes the LAN→`tun0` IPv6 ACCEPT. `tunnel.sh:268`,
+    and the F03 repair at `ensure_network.sh:448`, insert it again at
+    position 1.
+  - That puts it above `google_wan_policy.sh`'s FORWARD REJECT, which is
+    re-added only when missing. So since the first WARP restart after
+    23 September, the LAN's IPv6 traffic to Google has gone through WARP.
+  - The impact is small. LAN clients have only ULA addresses, so they prefer
+    IPv4 for Google. Only clients that use IPv6 anyway reach Google from
+    WARP's address rather than the campus's, which is what the policy meant
+    to avoid.
+  - Check 8 shows the rule order.
+- **F45 — the clock warning misses most skews (Low, Confirmed by code).**
+  F21's check (`ensure_network.sh:623`) fires only when the clock reads
+  earlier than the script's own mtime.
+  - After a boot, `sysfixtime` sets the clock to the newest `/etc` file. So
+    the check is silent whenever `/etc` was written after the last deploy,
+    however far behind the clock is. Deploys write `/etc` themselves: the
+    23 October one committed the firewall include.
+  - On 25 October the clock was 91 minutes behind, but more than two days
+    after the scripts' mtime, and the check said nothing.
+
+### 21.7 The candidate fixes
+
+| Option | Would it have fixed 25 October? | Cost and risk | Verdict |
+|---|---|---|---|
+| More servers | Not with Google's: `time2`–`time4` also have IPv6 addresses in `2001:4860::/32`. A non-Google server would work through WARP, but Google advises against mixing its leap-smeared time with servers that do not smear | A change to GL.iNet's `system.ntp`, outside router-script's files | Not now. After F43, optional redundancy (Google names only) |
+| Google's IPv4 addresses as the servers | Yes | Hard-codes addresses, changes GL.iNet's configuration, and loses the WARP path | Not proposed |
+| NTP through WARP | Only the IPv6 half matters, and that is F43's fix. IPv4 already works directly (§21.3), and it is the only path before WARP starts | — | IPv6 only, as F43 |
+| HTTPS `Date` fallback (set the clock from a probe's header) | Yes, for a skew within certificate validity. Not for a clock months off: TLS fails first, unless certificate checks are dropped, which lets anyone on the path set the clock | New code that sets the system clock and can fight `ntpd`; 1 s precision | Not proposed. F45 uses the same header for a warning |
+| Restart `sysntpd` when unsynced | No: a restart while WARP is up resolves the IPv6 address again | — | Not proposed |
+| **Exempt the router's NTP from the IPv6 rejection** | Yes: `ntpd` works on either address, IPv4 directly or IPv6 through WARP | One script; two more `ip6tables -C` per tick | **Proposed (F43)** |
+
+### 21.8 Proposed fix (superseded by §21.12)
+
+- **F43, in `google_wan_policy.sh`.** In OUTPUT only, replace the catch-all
+  Google IPv6 REJECT with two narrower ones, `! -p udp` and
+  `-p udp ! --dport 123`. Keep the TCP-reset rule.
+  - The upgrade removes the old catch-all, as the script already does for the
+    `icmp6-no-route` variant. FORWARD is unchanged (F44 is separate).
+  - Effect: the router's NTP to Google IPv6 leaves through `tun0` while WARP
+    is up. Everything else the router sends to Google over IPv6 is still
+    rejected.
+  - Test first, in `tests/test_google_policy.py`:
+    - no OUTPUT REJECT for either set matches UDP port 123;
+    - the narrower rules are installed, and an existing catch-all is removed;
+    - FORWARD keeps its rules.
+- **F45, in `ensure_network.sh`, log only (like F21).** After a direct probe
+  succeeds, at most every 10 minutes, compare its `Date` header with the
+  clock. Above 120 s, log a WARNING with the skew.
+  - BusyBox parses the header with `date -u -D '%a, %d %b %Y %H:%M:%S'`
+    (checked in `busybox:1.33.1`).
+  - It costs about 3 processes per 10 minutes.
+  - F21's check stays: it is the only one that works when TLS fails.
+- **F44:** a separate small change, decided after check 8. Either keep the
+  FORWARD REJECTs above the ACCEPT, or have `tunnel.sh` append the ACCEPT
+  instead of inserting it.
+
+**At deployment** no restart is needed. Within 32 s of the new rules, the
+stuck `ntpd`'s next send to `2001:4860:4806::` goes out through `tun0`, and
+it steps the clock forward about 91 minutes. That step's side effects, all
+benign, are in §21.5's fourth column. Deploying needs your go-ahead, as
+always.
+
+### 21.9 Live checks (read-only; run on 25 October, §21.11)
+
+This is one SSH session from the Mac, about 2 minutes:
+`ssh -o BatchMode=yes -o ConnectTimeout=5 root@192.168.8.1 sh -s < clock_checks.sh`.
+The script is below; it is not in the repository.
+- It writes nothing on the router and restarts nothing.
+- `ntpd -w` queries but never sets the clock. In BusyBox 1.33.2, `-w`
+  skips `update_local_clock()`, the only path to `adjtimex()` and
+  `settimeofday()`. Without `-l`, it binds no port.
+- It reads no secrets, and it masks credential-like words in log lines.
+- It passes `sh -n`, `dash -n` and `shellcheck -s sh`. Its BusyBox-specific
+  parts ran in `busybox:1.33.1`.
+
+```sh
+cd /root/router-script || exit 1
+echo "== 1 clock: UTC epoch, then uptime"
+date -u '+%s %Y-%m-%d %H:%M:%S UTC'
+cat /proc/uptime
+echo "== 2 RTC"
+ls /dev/rtc* 2>&1
+echo "== 3 newest files under /etc (names and times only)"
+find /etc -type f 2>/dev/null | while read -r f; do
+    printf '%s %s\n' "$(date -r "$f" '+%Y-%m-%d %H:%M:%S')" "$f"
+done | sort | tail -n 6
+echo "== 4 pstore"
+ls /sys/fs/pstore 2>&1
+echo "== 5 ntpd"
+for p in $(pidof ntpd); do
+    tr '\0' ' ' < "/proc/$p/cmdline"; echo
+    awk '{ printf "started %.0f s after boot\n", $22 / 100 }' "/proc/$p/stat"
+    grep -E '^(Uid|CapEff)' "/proc/$p/status"
+done
+echo "== 6 sysntpd"
+ubus call service list '{"name":"sysntpd"}' 2>&1 | grep -E '"(jail|user|stdout|stderr)"'
+uci -q show system.ntp
+ls /etc/hotplug.d/ntp 2>&1
+echo "== 7 routes for NTP"
+ip -6 route show default
+printf 'global IPv6 addresses on tun0: '
+ip -6 addr show dev tun0 scope global 2>/dev/null | grep -c inet6
+ip -6 route get 2001:4860:4806:: 2>&1
+ip route get 216.239.35.0 mark 0x100000 2>&1
+echo "== 8 first IPv6 OUTPUT and FORWARD rules"
+ip6tables -S OUTPUT | head -n 6
+ip6tables -S FORWARD | head -n 6
+echo "== 9 Google IPv6 REJECT counters, 70 s apart"
+ip6tables -L OUTPUT -v -n -x | grep google
+sleep 70
+ip6tables -L OUTPUT -v -n -x | grep google
+echo "== 10 IPv4 NTP flows"
+conntrack -L -p udp --dport 123 2>/dev/null
+echo "== 11 the address BusyBox picks for time1.google.com now"
+ping -c 1 -W 2 time1.google.com 2>&1 | head -n 2
+echo "== 12 query-only NTP"
+for PEER in time1.google.com 216.239.35.0 time.cloudflare.com; do
+    echo "-- $PEER"
+    timeout 12 ntpd -n -w -d -p "$PEER" 2>&1 | head -n 6
+done
+echo "== 13 boot window"
+logread -e usque-rs 2>/dev/null | head -n 3
+LAST="$(awk '/^20[0-9][0-9]-/ { ts = $1 " " $2; if (prev != "" && ts < prev) last = NR; prev = ts } END { print last + 0 }' logs/ensure.log)"
+if [ "$LAST" -gt 0 ]; then
+    sed -n "${LAST},$((LAST + 60))p" logs/ensure.log | grep -E '^20[0-9][0-9]-' |
+        sed -E 's/((user|pass|token)[A-Za-z]*[=:] *)[^ &]+/\1<masked>/g' | head -n 25
+fi
+```
+
+| Check | F43 holds if |
+|---|---|
+| 1 clock | The offset against the Mac is still about 5,477 s |
+| 2–4 boot clock | There is no RTC, and the newest `/etc` file is from about 06:56. This explains the 91 minutes only |
+| 5–6 `ntpd` | It has one peer and started early in the boot (or was respawned later), and its output is not captured |
+| 7 routes | An IPv6 default via `tun0`, a global address on `tun0`, and Google IPv4 via `eth0` |
+| 8 rule order | OUTPUT starts with the Google REJECTs. In FORWARD, the LAN→`tun0` ACCEPT is above the Google REJECT (F44) |
+| 9 counters | The Google IPv6 REJECT counter grows by about 2 a minute: one send every 32 s |
+| 10 IPv4 flows | There is no NTP flow to `216.239.35.x` |
+| 11 `ping` | BusyBox picks `2001:4860:4806::`, and the send is refused |
+| 12 query-only NTP | `time1.google.com` gives the IPv6 address and "send failed". `216.239.35.0` and `time.cloudflare.com` reply, with offsets of about +5,477 s |
+| 13 boot window | The portal or DNS was not ready before WARP started |
+
+If check 9 does not grow and check 10 shows IPv4 queries without replies,
+F43 is wrong and the fault is on the router's IPv4 path. I would then
+re-plan before proposing a change.
+
+### 21.10 What I could not verify
+
+- The router's live state: all of §21.9.
+- GL.iNet's BusyBox build options. I assumed OpenWrt 21.02's defaults;
+  check 11 shows the actual behaviour.
+- Whether Cloudflare checks the dates on the client certificate.
+- Why the router restarted at about 08:28. Check 4 may show a crash.
+- Whether the campus allows NTP to servers other than Google on the direct
+  path. The Mac's other traffic goes through WARP, so only Google's servers
+  could be tested.
+
+### 21.11 Live checks — 25 October 2026, 19:11–19:20 IST
+
+You authorised §21.9 as written. You then authorised two more read-only
+rounds, each shown to you first: one on the firmware and time client, one on
+chrony. Nothing was written or restarted, and `.env` and `config.json` were
+never read.
+
+**The router had changed since §21.1.** At about 17:21 IST you upgraded the
+firmware to GL.iNet 4.11.0 (OpenWrt 21.02-SNAPSHOT r15812+926), which
+rebooted the router.
+- 4.11.0 has no BusyBox `ntpd`: `/usr/sbin/ntpd`, `ntpd-hotplug` and
+  `sysntpd` are gone. It runs `chronyd` from `chrony-nts` 4.1 instead
+  (`S15chronyd`).
+- So check 12 found no `ntpd`, and the morning's stuck process could not be
+  observed.
+
+| Check | Result | Meaning |
+|---|---|---|
+| 1 | The router read 13:41:48 UTC, the same second as the Mac. Uptime 6,646 s | Correct now; booted at 17:21 |
+| 2 | No `/dev/rtc*` | The boot clock comes from `/etc` (§21.2) |
+| 3 | Newest is GL.iNet's `/etc/oui-tertf/client.db` (18:22), then five files from 17:44–17:51, among them the Blinkit hosts file | GL.iNet writes `/etc` routinely, so the boot clock restarts at its last write before the power went. The 91 minutes are the time without power plus the time since that write. The morning's files are no longer the newest, so they cannot be seen |
+| 4 | `/sys/fs/pstore` is empty | No crash record (if this kernel keeps them) |
+| 5–6 | No `ntpd`. `system.ntp.server` is still `time1.google.com`, now unused | The upgrade replaced it |
+| 7 | IPv6 default `dev tun0 metric 5`, and one global address on `tun0`. `2001:4860:4806::` routes via `tun0` with WARP's `2606:4700:110:…` as source. Marked `216.239.35.0` routes via table 102 and `eth0` | As §21.4. The resolver's sort counts IPv6 to Google as usable |
+| 8 | OUTPUT begins with the four Google REJECTs. FORWARD begins with the two `tun0` ACCEPTs, then GL.iNet's `parental_control`, then the Google REJECTs | **F44 confirmed** |
+| 9 | 5,046 → 5,116 rejects on `google_dns6` in 70 s, all 104-byte packets | About one a second, but not NTP: an IPv6 NTP query is 96 bytes. It matches check H, GL.iNet's `network-quality-ethernet-ping google.com 1 1000` |
+| 10 | One NTP flow, `172.16.0.2` (`tun0`) to `192.53.103.108` (PTB), answered, with 256-byte packets | chrony with NTS, through WARP |
+| 11 | `PING time1.google.com (2001:4860:4806::)`, then `sendto: Operation not permitted` | **F43's mechanism confirmed on the router**: BusyBox picks the IPv6 address while WARP is up, and router-script refuses the send |
+| 12 | `ntpd` not found | Not run |
+| 13 | `logread` starts at 17:57:15 (it has wrapped); its oldest WARP lines are a start at 17:57:24. `ensure.log` has no backward time step | Neither boot is still in `logread` |
+
+**chrony on 4.11.0** (checks F–H):
+- `/etc/config/chrony` lists six NTS sources: `ntppool1.time.nl`,
+  `nts.netnod.se`, `ptbtime1.ptb.de`, `time.dfm.dk`, `time.cifelli.xyz`, and
+  the pool `time.cloudflare.com`. None is Google's, so the Google policy
+  never touches them. They use WARP while it is up.
+- `makestep 1.0 3` steps a large offset during the first three updates.
+- `nocerttimecheck 1` lets the first update ignore certificate dates, so NTS
+  still works when the boot clock is months off.
+- All nine sources (the pool gave four addresses) were reachable, with NTS
+  cookies. chrony was synced to `162.159.200.1`, 0.86 ms slow.
+- The oscillator runs 252 ppm slow, about 22 s a day. The drift file is in
+  `/var/run`, so chrony relearns the rate after every boot.
+- `allow` serves time to the LAN.
+
+### 21.12 What this changes
+
+- **The cause of 25 October stands.**
+  - §21.2 is confirmed: there is no RTC, so the boot clock came from `/etc`.
+  - For §21.3, checks 7, 8 and 11 confirm facts 2–4 on the router itself.
+    Fact 5 comes from BusyBox's source; the stuck process was gone before it
+    could be seen.
+- **The upgrade removed F43's effect on the clock.** chrony uses six
+  non-Google NTS sources, so the time no longer depends on Google or on the
+  IPv6 rejection. The F43 fix in §21.8 (letting UDP port 123 through) would
+  now change nothing, so I withdraw it.
+- **The rejection still breaks single-address tools on the router.**
+  - GL.iNet's network-quality pings `google.com` once a second. Each ping
+    resolves to Google's IPv6 address and is refused (5,116 so far), so that
+    test always reads as a failure.
+  - router-script itself never needs the OUTPUT rejection. All its own Google
+    traffic is IPv4 (`curl -4`, IPv4 resolvers), and its IPv6 probes go to
+    Cloudflare.
+
+**Revised proposal (needs your approval):**
+- **F43, revised (Low).** Stop rejecting the router's own IPv6 traffic to
+  Google.
+  - Take OUTPUT out of `google_wan_policy.sh`'s IPv6 loop, and remove the
+    existing OUTPUT rules on upgrade. The LAN policy (FORWARD) stays.
+  - The router's IPv6 traffic to Google then goes through WARP.
+  - Today this only fixes GL.iNet's network-quality test, so it is optional.
+- **F44 (Low).** Make the LAN rejection effective: keep the FORWARD REJECTs
+  above the LAN→`tun0` ACCEPT.
+- **F45 (Low), as in §21.8.** Log a WARNING when the clock and the probe's
+  `Date` header differ by more than 120 s.
+  - It does not depend on which time client the firmware ships, and today's
+    upgrade swapped that client without notice.
+- **Not needed now:** more servers, NTP through WARP, and an HTTPS `Date`
+  step. chrony's configuration covers what they were for.
+
+**Residual risk, not addressed.** After a long power-off, the clock can come
+up months behind.
+- chrony copes with that (`nocerttimecheck`), but only once it can reach its
+  servers.
+- If the portal session has also expired, `login.sh` checks the portal's
+  certificate against the wrong clock and may fail. Then nothing reaches the
+  internet, WARP included, since its transport uses the same direct path.
+- This was possible before the upgrade too. Fixing it would mean relaxing the
+  portal's certificate check, so I have not proposed it.
+
+**Still not verified:**
+- Whether Cloudflare checks the dates on the WARP client certificate.
+- Why the router lost power, or restarted, in the morning.
+- Whether the campus lets NTS through on the direct path before WARP starts:
+  TCP 4460 for the key exchange, then UDP 123.
+
+### 21.13 Fixes for F43–F45 — 25 October 2026, not deployed
+
+You approved F43 (revised), F44 and F45. There is one commit for each, test
+first, on `claude/funny-chaplygin-b3e102`. Nothing was deployed.
+
+| Finding | Commit | Change |
+|---|---|---|
+| F43 | `8a587a5` | `google_wan_policy.sh` no longer rejects the router's own IPv6 traffic to Google. When `ip6tables -S OUTPUT` still shows a Google set, the OUTPUT rejects older versions added are removed, all three variants. Comments in `diagnose.sh`, `rotate_tunnel_ip.sh` and two tests no longer claim the rejection |
+| F44 | `68b24d1` | The policy checks the FORWARD order with `ip6tables -S FORWARD` and awk. If any of the four rejects is missing or below the LAN→`tun0` ACCEPT, it removes them all (with any duplicate or the September `icmp6-no-route` variant), puts the four back on top and logs "Google IPv6 rejects reinstalled above the LAN to tun0 accept." |
+| F45 | `3d798e4` | Once the direct probe has passed, `ensure_network.sh` compares the clock with the `Date` header of a direct request to the first probe URL. Above 120 s it logs "WARNING: the clock is Ns behind (or ahead of) the Date header from URL." It runs once every 600 s of uptime |
+
+**Design notes.**
+- **F43** keeps the LAN half, since the policy exists so that LAN clients reach
+  Google from the campus address. router-script's own Google traffic is all
+  IPv4 (`curl -4`, IPv4 resolvers), and its IPv6 probes go to Cloudflare.
+- **F44.** `tunnel.sh` runs the policy after inserting its ACCEPT (line 280),
+  so a WARP start restores the order at once. After an fw3 rebuild, the hook's
+  health check runs the policy before the F03 repair re-inserts the ACCEPT. The
+  order is then restored by the next check, within 30 s.
+- **F45** reads `/proc/uptime` with `read`, so no clock step moves its
+  schedule, and a tick on which it is not due starts no process. awk turns the
+  header into seconds itself (days since 1970), so neither BusyBox's nor GNU's
+  `date` parser matters.
+
+**Tests and checks.**
+- Eleven new tests:
+  - F43 (2): no OUTPUT rule after a run; an upgrade removes the old OUTPUT
+    rules.
+  - F44 (4): the policy moves the rejects above the ACCEPT and logs it; rules
+    already in order are left alone, with no `-I` or `-D`; the next health
+    check restores the order; a `tunnel.sh` start restores it.
+  - F45 (5): a clock behind, a clock ahead, a clock within two minutes (no
+    warning), one check per 600 s of uptime, and an unreadable header.
+  - Each finding's tests failed before its fix, except the unreadable-header
+    guard, which passes either way.
+- The sandbox's `curl` stub writes response headers for `-D`. The `Date`
+  header is the clock's own unless a test sets it.
+- The suite passes under macOS `sh` and `dash` at every commit: 133 tests
+  before, then 135, 139 and 144.
+- The F45 function and its awk ran in `busybox:1.33.1`:
+  - the awk gave the right second for eight dates, including leap days in
+    2000, 2024 and 2028 and the non-leap 2100;
+  - the warnings, the 600 s schedule and an unreadable header behaved as in
+    the sandbox.
+- F44's awk order check ran on the router's own FORWARD rules from check 8,
+  under macOS awk and BusyBox awk. Both flagged that order for repair, and
+  both accepted the rejects-first order.
+- `shellcheck -s sh` reports the same findings as before, by file, severity
+  and code.
+- A healthy tick (the third of three in a fresh sandbox) starts 281
+  processes, against 290 before; `ip6tables` calls fell from 18 to 8.
+
+**Invariants.**
+- Only `google_wan_policy.sh` and `ensure_network.sh` behave differently.
+  `diagnose.sh` and `rotate_tunnel_ip.sh` changed only in comments.
+- DNS, routes and rules 690 and 710, the Google IPv4 marks, NAT, MSS, WARP
+  start and stop, game mode, the locks, and the handling of `.env` and
+  `config.json` are unchanged.
+- The behaviour changes:
+  - the router's IPv6 traffic to Google goes through WARP instead of being
+    refused (F43);
+  - the LAN's is refused again, as designed on 23 September (F44);
+  - two new log lines can appear.
+
+**Deploying (needs your go-ahead).**
+- Files: `google_wan_policy.sh`, `ensure_network.sh`, `diagnose.sh` and
+  `rotate_tunnel_ip.sh`. No binary, configuration or uci change, and no
+  restart.
+- Follow §19.6: stage, compare the router's hashes with `main`, run `sh -n`,
+  and promote under the maintenance lock.
+- Expect on the first health check after promotion:
+  - "Google IPv6 rejects reinstalled above the LAN to tun0 accept." once;
+  - the OUTPUT rejects gone, so GL.iNet's network-quality pings of
+    `google.com` go through WARP and succeed;
+  - the clock check runs (its marker is absent) and logs nothing while
+    chrony keeps time.
+- LAN clients that use IPv6 for Google get rejects from then on, and
+  reconnect over IPv4.
+- Check afterwards, read-only:
+  - `ip6tables -S OUTPUT | grep -c google` prints 0;
+  - `ip6tables -S FORWARD | head -n 6` lists the four Google rejects first;
+  - from the Mac, `ping6 -c 1 2001:4860:4806::` is refused, and
+    `curl -4 https://www.google.com/generate_204` still works;
+  - `ensure.log` has no "WARNING: the clock is" line.
+- Rollback: stage the previous versions from git (§17.3). The old policy
+  re-adds the OUTPUT rejects on its next run.
+
 ## 22. router-script on firmware 4.11.0 (F46–F52) — 25 October 2026, audit only
 
 **Status (20:49 IST): audit only.** Nothing on the router was changed, and

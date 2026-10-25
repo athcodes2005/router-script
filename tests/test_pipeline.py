@@ -1,5 +1,7 @@
 """Whole-script runs of the health pipeline inside the isolated sandbox."""
+from email.utils import formatdate
 import os
+import re
 import time
 import unittest
 
@@ -188,6 +190,70 @@ class PipelineTests(unittest.TestCase):
         log = self.box.log('ensure')
         self.assertIn("earlier than this script's modification time", log)
         self.assertIn('Health check passed.', log)
+
+    def fake_uptime(self, seconds):
+        uptime = self.box.sysroot / 'proc/uptime'
+        uptime.parent.mkdir(parents=True, exist_ok=True)
+        uptime.write_text('%d.42 9000.00\n' % seconds)
+
+    def clock_check_due(self, server_offset):
+        """The probe's Date header reads our clock plus server_offset seconds."""
+        (self.box.state / 'http_date').write_text(formatdate(time.time() + server_offset, usegmt=True) + '\n')
+        # The check is scheduled by uptime; without /proc/uptime it never runs.
+        self.fake_uptime(7000)
+        (self.box.tmp / 'router-script-clock-checked-at').unlink(missing_ok=True)
+
+    def date_requests(self):
+        return [call for call in self.box.calls() if call.startswith('curl ') and ' -D - ' in call]
+
+    def clock_warnings(self):
+        return re.findall(r'WARNING: the clock is (\d+)s (behind|ahead of) the Date header from (\S+)\. ',
+                          self.box.log('ensure'))
+
+    def clock_warning(self):
+        warnings = self.clock_warnings()
+        self.assertEqual(len(warnings), 1, self.box.log('ensure'))
+        return warnings[0]
+
+    # F45: on 25 October the clock stayed 91 minutes slow for hours, and F21's
+    # check said nothing: the clock was still later than the scripts' mtime.
+    def test_clock_behind_the_probe_date_is_reported(self):
+        self.clock_check_due(5477)
+        self.assertEqual(self.tick().returncode, 0)
+        seconds, direction, url = self.clock_warning()
+        self.assertAlmostEqual(int(seconds), 5477, delta=10)
+        self.assertEqual((direction, url), ('behind', 'https://www.google.com/generate_204'))
+        self.assertIn('Health check passed.', self.box.log('ensure'))
+
+    def test_clock_ahead_of_the_probe_date_is_reported(self):
+        self.clock_check_due(-600)
+        self.assertEqual(self.tick().returncode, 0)
+        seconds, direction, _ = self.clock_warning()
+        self.assertAlmostEqual(int(seconds), 600, delta=10)
+        self.assertEqual(direction, 'ahead of')
+
+    def test_a_clock_within_two_minutes_is_not_reported(self):
+        self.clock_check_due(60)
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.clock_warnings(), [])
+        self.assertEqual(len(self.date_requests()), 1)
+
+    def test_the_clock_is_checked_once_per_interval_of_uptime(self):
+        self.clock_check_due(5477)
+        self.tick()
+        self.tick()
+        self.assertEqual(len(self.clock_warnings()), 1)
+        self.fake_uptime(7000 + 600)
+        self.tick()
+        self.assertEqual(len(self.clock_warnings()), 2)
+        self.assertEqual(len(self.date_requests()), 2)
+
+    def test_a_date_header_it_cannot_read_is_ignored(self):
+        self.clock_check_due(0)
+        (self.box.state / 'http_date').write_text('yesterday\n')
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.clock_warnings(), [])
+        self.assertIn('Health check passed.', self.box.log('ensure'))
 
     # F12: refresh_blinkit_dns.sh publishes on every tick, but the public
     # refresher runs only on healthy ones. A record set replaced while WARP was

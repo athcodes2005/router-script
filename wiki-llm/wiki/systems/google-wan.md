@@ -22,9 +22,27 @@ campus public IP. User-visible disappearance of warnings is not yet confirmed.
 
 ## IPv6 and recovery
 
-There is no usable native WAN IPv6 exit. Google IPv6 destinations are rejected
-with TCP resets or ICMPv6 port-unreachable so dual-stack applications use IPv4.
-Other IPv6 destinations retain WARP. IPv6-only Google clients cannot connect.
+There is no usable native WAN IPv6 exit. The LAN's Google IPv6 destinations are
+rejected with TCP resets or ICMPv6 port-unreachable so dual-stack applications
+use IPv4. Other IPv6 destinations retain WARP. IPv6-only Google clients cannot
+connect.
+
+The router's own IPv6 traffic to Google is not rejected; it goes through WARP.
+Before F43 (report §21) it was rejected too, in OUTPUT, and tools that use a
+single address cannot fall back to IPv4: once WARP's IPv6 route exists, the
+resolver puts Google's IPv6 address first and BusyBox uses it. On 2026-10-25
+BusyBox `ntpd` had therefore never synced since boot (the clock stayed 91
+minutes slow), and GL.iNet's network-quality ping of `google.com` failed every
+second. The policy removes the old OUTPUT rules.
+
+`tunnel.sh` and the health check insert the LAN→`tun0` ACCEPT at the top of
+FORWARD whenever it is missing, as after every WARP restart. Rejects below it
+never match: before F44, every WARP restart left them there, and they were
+there when checked on 2026-10-25. So the policy checks the order on every run:
+if any reject is missing or below that ACCEPT, all four are reinstalled on top,
+and "Google IPv6 rejects reinstalled above the LAN to tun0 accept." is logged.
+`tunnel.sh` runs the policy after its own rules; after an fw3 rebuild the next
+health check fixes the order.
 
 `google_wan_policy.sh` creates destination sets, atomically swaps updated static
 sets, and installs only missing rules. Tunnel startup and every health run invoke

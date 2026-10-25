@@ -148,8 +148,8 @@ run ping -6 -W 3 -c 3 2606:4700:4700::1111
 section "HTTP/HTTPS TESTS"
 run curl -4 -sS --interface "$WAN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'direct_ipv4_status=%{http_code}\n' https://www.google.com/generate_204
 run curl -4 -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv4_status=%{http_code}\n' https://www.google.com/generate_204
-# Router IPv6 to Google is rejected by google_wan_policy.sh, so probe
-# Cloudflare's trace by IP literal instead (expect 200; no DNS involved).
+# Probe Cloudflare's trace by IP literal (expect 200; no DNS involved): it does
+# not depend on the Google policy, which rejected router IPv6 until F43.
 run curl -6 -g -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 -o /dev/null -w 'warp_ipv6_status=%{http_code}\n' 'https://[2606:4700:4700::1111]/cdn-cgi/trace'
 
 section "TUNNEL INTERFACE"

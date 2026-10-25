@@ -34,6 +34,20 @@ class TunnelStartTests(unittest.TestCase):
         self.assertIn('[SUCCESS] Full tunnel active', log)
         self.assertEqual(self.box.count('ip route add default dev tun0 metric 5'), 1)
 
+    # F44: the start inserts the LAN->tun0 ACCEPT at the top of FORWARD, then
+    # runs the Google policy, which must put the LAN's Google IPv6 rejects back
+    # above it.
+    def test_start_keeps_the_google_ipv6_rejects_above_the_accept(self):
+        rules = self.box.state / 'ip6tables.rules'
+        accept = 'filter FORWARD -i br-lan -o tun0 -j ACCEPT'
+        rules.write_text(''.join(line + '\n' for line in rules.read_text().splitlines() if line != accept))
+        status, log = self.start()
+        self.assertEqual(status, 0, log)
+        forward = [line for line in rules.read_text().splitlines() if line.startswith('filter FORWARD ')]
+        google = [i for i, line in enumerate(forward) if '--match-set google_' in line]
+        self.assertEqual(len(google), 4, forward)
+        self.assertLess(max(google), forward.index(accept), forward)
+
     # F32: deleting every host route before resolving put those hosts on WARP
     # (tun0 is the live default on this path), and a failed lookup lost its route.
     def test_start_removes_no_host_routes(self):
