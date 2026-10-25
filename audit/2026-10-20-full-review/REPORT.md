@@ -2149,8 +2149,9 @@ test refuses requests of 100 MB or more (HTTP 403).
 - The other five runs set `DOWNLOAD_URL=…?bytes=75000000`, the largest size
   that was served. At these rates even that ends after 6–12 s, so the download
   phase is only partly loaded.
-- Fixing the default is a small follow-up: repeat a 75 MB download until the
-  phase ends.
+- **Fixed on branch `latency-tool-download-loop`, not deployed.** The default is
+  now 75 MB, repeated until the phase ends. A refused or failed request ends
+  the load and is reported as "no download (HTTP code)" rather than as 0.0 Mbit/s.
 
 | Run | Client | Idle median (max) | Upload median / max | Upload | Download median / max | Download |
 |---|---|---|---|---|---|---|
