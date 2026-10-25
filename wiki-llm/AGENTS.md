@@ -42,4 +42,4 @@ The canonical implementation remains the parent codebase; the wiki explains it.
 ## Sources
 
 - The Wiki-LLM structure specification supplied as a session attachment.
-- `../README.md` and `../PROJECT_CONTEXT.md` define project intent.
+- `../README.md` and `raw/sources/project-context-2026-10-25.md` define project intent.

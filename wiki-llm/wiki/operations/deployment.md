@@ -37,14 +37,26 @@ new WARP identities on the router and leaves the local copy stale. Only SHA-256
 hashes are compared; the file holds the private key and is never printed. A
 router without a registration (first deploy) is not blocked.
 
-## First-time bootstrap
+## First-time bootstrap and firmware upgrade survival
 
-`bootstrap_router.sh` runs, in order, `configure_wifi.sh`, `configure_dns.sh`,
+`bootstrap_router.sh` registers `/root/router-script/` and `/etc/router-script/`
+in `/etc/sysupgrade.conf` so firmware upgrades preserve the router infrastructure
+(audit F46). It then runs, in order, `configure_wifi.sh`, `configure_dns.sh`,
 `configure_lan_ipv6.sh`, `install_cron_pipeline.sh`, `install_firewall_hook.sh`
-(the fw3 include, [[health-recovery]]) and one `ensure_network.sh` pass. It does not call `login.sh` or `tunnel.sh` directly; that health pass
-performs portal login recovery and starts WARP when required.
-`install_cron_pipeline.sh` installs the twice-per-minute health check plus six-hour log
-rotation and diagnostic snapshot tasks.
+(the fw3 include, [[health-recovery]]) and one `ensure_network.sh` pass.
+`install_cron_pipeline.sh` installs the twice-per-minute health check, the
+15-minute `update_from_git.sh` updater, and the six-hour log rotation and
+diagnostic snapshot tasks.
+
+## Git CD updater (`update_from_git.sh`)
+
+When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
+`update_from_git.sh` checks `DEPLOY_BRANCH` (default `deploy`) every 15 minutes:
+- verifies all GitHub Actions check-runs on the commit completed and succeeded;
+- downloads the commit tarball, checks `sh -n` syntax on every script, and
+  promotes the deployable files via `promote_staged.sh` under `lock.sh`;
+- runs `ensure_network.sh` as a health gate and records `.deployed_commit`, or
+  immediately rolls back to the pre-update backup if the health check fails.
 
 ## Verification checklist
 
@@ -61,6 +73,7 @@ rotation and diagnostic snapshot tasks.
 ## Sources
 
 - `../../../sync_to_router.sh`, `../../../promote_staged.sh`, `../../../lock.sh`
+- `../../../update_from_git.sh`, `../../../.github/workflows/ci.yml`
 - `../../../sync_from_router.sh`
 - `../../../bootstrap_router.sh`
 - `../../../install_cron_pipeline.sh`, `../../../install_firewall_hook.sh`

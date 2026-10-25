@@ -25,8 +25,10 @@
 
 ## Operations scripts
 
-- `install_cron_pipeline.sh`: installs staggered twice-per-minute health and
-  periodic maintenance jobs.
+- `install_cron_pipeline.sh`: installs staggered twice-per-minute health,
+  15-minute Git updater, and periodic maintenance jobs.
+- `update_from_git.sh`: polls `DEPLOY_BRANCH` on GitHub, verifies CI check-runs,
+  promotes under `lock.sh`, gates on `ensure_network.sh`, and rolls back on failure.
 - `rotate_logs.sh`: bounds logs by size and retention count.
 - `rotate_tunnel_ip.sh`: registers a new WARP identity with verified rollback.
 - `sync_to_router.sh`: staged deployment with a SHA-256 manifest and bounded
@@ -58,9 +60,9 @@
 
 ## Documentation and local metadata
 
-- `README.md`: installation, architecture, and operational commands.
-- `PROJECT_CONTEXT.md`: detailed project state and defaults.
-- `.claude/plan.md`: superseded split-routing proposal.
+- `README.md`: short entry point linking to `wiki-llm/wiki/index.md`.
+- `wiki-llm/`: all architecture, system, operations, and historical audit docs.
+- `.github/workflows/ci.yml`: GitHub Actions CI for shell, sandbox, and Rust tests.
 - `.claude/settings.local.json`: local tool permission configuration.
 - `logs/.gitkeep`: preserves the local logs directory in version control systems.
 

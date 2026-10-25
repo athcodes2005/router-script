@@ -36,13 +36,14 @@ capture is outside routine automation.
 
 ## Historical policy
 
-`.claude/plan.md` proposed selected-client and blocklist-driven routing. It is
-marked superseded. Legacy files remain solely for rollback compatibility.
+`../raw/sources/historical-split-routing-plan-2026-07-31.md` proposed
+selected-client and blocklist-driven routing. It is marked superseded. Legacy
+files remain solely for rollback compatibility.
 
 ## Sources
 
 - `../../../tunnel.sh`
 - `../../../ensure_network.sh`
 - `../../../configure_dns.sh`
-- `../../../.claude/plan.md`
+- `../../raw/sources/historical-split-routing-plan-2026-07-31.md`
 - [[architecture]]

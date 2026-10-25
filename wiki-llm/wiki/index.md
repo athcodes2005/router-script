@@ -53,6 +53,7 @@ the active topology. This index lists every maintained wiki page.
 - [[bugs/clash-royale-warp-port-2026-09-22]] — Clash Royale’s game-session port required direct WAN egress.
 - [[bugs/game-latency-audit-2026-09-19]] — intermittent game latency, recovery hardening, validation and remaining limits.
 - [[bugs/opencode-pqc-mss-clamping-2026-10-08]] — OpenCode Post-Quantum TLS failure resolved via bidirectional MSS clamping.
+- [[bugs/full-review-2026-10-20]] — October 2026 full review (F01–F52), firmware 4.11.0 audit, and Git CD pipeline.
 - [[bugs/known-issues]] — limitations and remaining operational risks.
 - [[security/secrets-and-trust]] — credentials, file modes, and endpoint trust.
 - [[policies/architecture-decisions]] — current design decisions and rationale.
@@ -61,4 +62,4 @@ the active topology. This index lists every maintained wiki page.
 
 - All pages linked above.
 - `../../README.md`
-- `../../PROJECT_CONTEXT.md`
+- `../raw/sources/project-context-2026-10-25.md`

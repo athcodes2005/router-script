@@ -49,6 +49,6 @@ full-tunnel architecture. See [[policies/architecture-decisions]].
 ## Sources
 
 - `../../README.md`
-- `../../PROJECT_CONTEXT.md`
+- `../raw/sources/project-context-2026-10-25.md`
 - `../../tunnel.sh`
 - `../../install_cron_pipeline.sh`

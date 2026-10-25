@@ -895,3 +895,31 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 22.8)
 - `../../ensure_network.sh`, `../../configure_lan_ipv6.sh`, `../../refresh_blinkit_dns.sh`
 - `../../tests/test_lan_ipv6.py`, `../../tests/test_platform.py`, `../../tests/test_sync.py`
+
+## 2026-10-26 — Consolidated CI/CD pipeline, upgrade survival, and wiki-llm docs
+
+- Merged `claude/funny-chaplygin-b3e102` (F43–F45) with the firmware 4.11.0
+  fixes (F47, F48, F50–F52).
+- Added Linux/BusyBox `stat -c %Y` fallback for `date -r` in `lock.sh` and
+  `ensure_network.sh`.
+- Added `.github/workflows/ci.yml` at the repository root to run POSIX/dash
+  syntax checks, ShellCheck, all Python sandbox tests, and Rust `fmt`, `clippy`,
+  and unit/pipeline tests.
+- Added `update_from_git.sh` (scheduled every 15 minutes in cron) to poll the
+  configured `deploy` branch on GitHub, verify CI check-runs succeeded, promote
+  under `lock.sh`, gate on `ensure_network.sh`, and roll back automatically on
+  failure.
+- Updated `bootstrap_router.sh` and `check_platform_once` to register and check
+  `/root/router-script/` and `/etc/router-script/` in `/etc/sysupgrade.conf` so
+  firmware upgrades preserve the router setup (F46).
+- Consolidated all stray markdown and audit files (`PROJECT_CONTEXT.md`,
+  `CHANGES_EXPLAINED.md`, `.claude/plan.md`, `usque-rs-optimized/README.md`,
+  `usque-rs-optimized/SETUP_NOTES.md`, and `audit/`) into `wiki-llm/raw/sources/`
+  and synthesized [[bugs/full-review-2026-10-20]], leaving only a concise
+  root `README.md` and `usque-rs-optimized/LICENSE.md` outside `wiki-llm/`.
+
+## Sources
+
+- `../../.github/workflows/ci.yml`, `../../update_from_git.sh`, `../../bootstrap_router.sh`
+- `../../tests/test_updater.py`, `../../tests/test_platform.py`
+- [[bugs/full-review-2026-10-20]], [[operations/deployment]], [[sources]]
