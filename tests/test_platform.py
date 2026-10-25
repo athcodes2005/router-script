@@ -45,6 +45,33 @@ class PlatformCheckTests(unittest.TestCase):
         (self.box.tmp / 'router-script-game-mode').write_text('on\n')
         self.assertIn('Platform check passed.', self.tick())
 
+    # F52: what GL.iNet 4.11.0 changed passed the check unnoticed (report section 22).
+    def add_ipv6_hook(self):
+        hook = self.box.sysroot / 'etc/hotplug.d/iface/99-disable_ipv6'
+        hook.parent.mkdir(parents=True)
+        hook.write_text('# GL.iNet 4.11.0 turns IPv6 off on every ifup while its switch is off.\n')
+
+    def test_gl_inets_ipv6_hook_is_named_while_its_switch_is_off(self):
+        self.add_ipv6_hook()
+        self.assertIn("GL.iNet's IPv6 switch is off, so its 99-disable_ipv6 hook turns IPv6 off on every ifup",
+                      self.tick())
+
+    def test_gl_inets_ipv6_hook_is_harmless_while_its_switch_is_on(self):
+        self.add_ipv6_hook()
+        self.box.flag('glipv6_switch_on')
+        self.assertIn('Platform check passed.', self.tick())
+
+    def test_a_stopped_doh_fallback_is_named(self):
+        self.box.flag('dnscrypt_down')
+        self.assertIn("dnscrypt-proxy is not running, so dnsmasq's last upstream (127.0.0.1#5453) is dead",
+                      self.tick())
+
+    def test_a_dnsmasq_pid_file_the_blinkit_refresher_cannot_find_is_named(self):
+        (self.box.sysroot / 'var/run/dnsmasq/dnsmasq.cfg01411c.pid').unlink()
+        log = self.tick()
+        self.assertIn('dnsmasq has no PID file under ', log)
+        self.assertIn(', so Blinkit record changes cannot reach it', log)
+
 
 if __name__ == '__main__':
     unittest.main()

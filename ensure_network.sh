@@ -545,6 +545,20 @@ check_platform_once() {
     fi
     [ "$(uci -q get firewall.router_script.path 2>/dev/null || true)" = "$DIR/firewall_hook.sh" ] ||
         PROBLEMS="$PROBLEMS; the fw3 include is not registered (run install_firewall_hook.sh)"
+    if [ -f /etc/hotplug.d/iface/99-disable_ipv6 ] &&
+        [ "$(uci -q get glipv6.globals.enabled 2>/dev/null || echo 0)" != 1 ]; then
+        PROBLEMS="$PROBLEMS; GL.iNet's IPv6 switch is off, so its 99-disable_ipv6 hook turns IPv6 off on every ifup"
+    fi
+    pidof dnscrypt-proxy >/dev/null 2>&1 ||
+        PROBLEMS="$PROBLEMS; dnscrypt-proxy is not running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
+    PID_FOUND=0
+    for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq/dnsmasq*.pid "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
+        [ -f "$PID_FILE" ] || continue
+        PID_FOUND=1
+        break
+    done
+    [ "$PID_FOUND" -eq 1 ] ||
+        PROBLEMS="$PROBLEMS; dnsmasq has no PID file under $DNSMASQ_PID_DIR, so Blinkit record changes cannot reach it"
     if [ -n "$PROBLEMS" ]; then
         log "WARNING: platform check:${PROBLEMS#;}."
     else

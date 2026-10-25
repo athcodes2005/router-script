@@ -21,6 +21,7 @@ REWRITES = [
     ('/etc/init.d/', '${SYSROOT}/etc/init.d/'),
     ('/etc/dnscrypt-proxy2/', '${SYSROOT}/etc/dnscrypt-proxy2/'),
     ('/etc/router-script/', '${SYSROOT}/etc/router-script/'),
+    ('/etc/hotplug.d/', '${SYSROOT}/etc/hotplug.d/'),
     ('/sys/class/net/', '${SYSROOT}/sys/class/net/'),
     ('"/proc/', '"${SYSROOT}/proc/'),
     ('/var/run', '${SYSROOT}/var/run'),
@@ -150,6 +151,7 @@ case "$key" in
   'network.globals.ula_prefix') echo 'fd63:3b28:d1ea::/48' ;;
   wireless.mt798111|wireless.mt798112) flag wifi_sections_missing || echo wifi-device ;;
   firewall.router_script.path) flag firewall_hook_missing && exit 1; echo "$SIM_PROJ/firewall_hook.sh" ;;
+  glipv6.globals.enabled) flag glipv6_switch_on || exit 1; echo 1 ;;
   wireless.*.country) echo IN ;;
   wireless.mt798111.htmode) echo HE20 ;;
   wireless.mt798112.htmode) if flag wifi_drift; then echo HE160; else echo HE80; fi ;;
@@ -204,6 +206,7 @@ STUBS = {
     if flag client_absent_once; then @RM@ -f "$SIM_STATE/client_absent_once"; exit 1; fi
     @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
   dnsmasq) flag dnsmasq_down && exit 1; echo 123 ;;
+  dnscrypt-proxy) flag dnscrypt_down && exit 1; echo 789 ;;
   *) exit 1 ;;
 esac''',
     'ubus': '@CAT@ "$SIM_STATE/wireless.json" 2>/dev/null || echo "{}"',
@@ -301,6 +304,10 @@ class Sandbox:
         for name in SERVICES:
             _write_exec(box.sysroot / 'etc/init.d' / name, '#!%s\n%s:\n' % (SHELL, PRELUDE))
         (box.sysroot / 'sys/class/net/eth0/carrier').write_text('1\n')
+        # Where OpenWrt's dnsmasq writes its PID file. Not a number, so nothing
+        # in the sandbox can ever signal a real process.
+        (box.sysroot / 'var/run/dnsmasq').mkdir()
+        (box.sysroot / 'var/run/dnsmasq/dnsmasq.cfg01411c.pid').write_text('sandbox\n')
         (box.sysroot / 'etc/dnscrypt-proxy2/dnscrypt-proxy.toml').write_text(
             "server_names = ['quad9-doh-ip4-port443-nofilter-ecs-pri']\n"
             "listen_addresses = ['127.0.0.1:5453']\nblock_ipv6 = false\n")

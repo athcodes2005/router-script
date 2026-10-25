@@ -7,7 +7,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 [ ! -f "$DIR/.env" ] || . "$DIR/.env"
 . "$DIR/defaults.sh"
 BLINKIT_DNS_SERVERS="${BLINKIT_DNS_SERVERS:-8.8.8.8 8.8.4.4}"
-DNSMASQ_PID_DIR="${DNSMASQ_PID_DIR:-/var/run}"
 mkdir -p "$BLINKIT_HOSTS_DIR"
 # Stage outside addn-hosts directory: dnsmasq reads every file inside it.
 WORK="$(mktemp -d /tmp/router-blinkit-dns.XXXXXX)"
