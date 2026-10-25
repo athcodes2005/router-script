@@ -86,17 +86,27 @@ for SET in google_net4 google_dns4; do
     iptables -t mangle -C OUTPUT -m set --match-set "$SET" dst -j MARK --set-xmark "$GOOGLE_MARK/$GOOGLE_MASK" 2>/dev/null ||
         iptables -t mangle -I OUTPUT 1 -m set --match-set "$SET" dst -j MARK --set-xmark "$GOOGLE_MARK/$GOOGLE_MASK"
 done
-# No native WAN IPv6: hard rejection avoids TCP soft-error retry delays.
+# No native WAN IPv6: rejecting the LAN's Google IPv6 makes dual-stack clients
+# use IPv4 at once instead of after TCP soft-error retry delays.
 for SET in google_net6 google_dns6; do
-    for CHAIN in FORWARD OUTPUT; do
-        # OUTPUT protects router clients too; FORWARD is scoped to the LAN.
-        set --
-        [ "$CHAIN" != FORWARD ] || set -- -i "$LAN_IF"
-        ip6tables -C "$CHAIN" "$@" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null ||
-            ip6tables -I "$CHAIN" 1 "$@" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable
-        ip6tables -C "$CHAIN" "$@" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset 2>/dev/null ||
-            ip6tables -I "$CHAIN" 1 "$@" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset
-        # Remove the initial soft-error variant during an in-place upgrade.
-        ip6tables -D "$CHAIN" "$@" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-no-route 2>/dev/null || true
-    done
+    ip6tables -C FORWARD -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable 2>/dev/null ||
+        ip6tables -I FORWARD 1 -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-port-unreachable
+    ip6tables -C FORWARD -i "$LAN_IF" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset 2>/dev/null ||
+        ip6tables -I FORWARD 1 -i "$LAN_IF" -p tcp -m set --match-set "$SET" dst -j REJECT --reject-with tcp-reset
+    # Remove the initial soft-error variant during an in-place upgrade.
+    ip6tables -D FORWARD -i "$LAN_IF" -m set --match-set "$SET" dst -j REJECT --reject-with icmp6-no-route 2>/dev/null || true
 done
+# The router's own IPv6 traffic to Google is not rejected; it goes through WARP
+# (F43). Single-address tools such as BusyBox ntpd and ping never fall back to
+# IPv4, so the reject failed them for good. Remove what older versions added.
+case "$(ip6tables -S OUTPUT 2>/dev/null)" in
+    *google_net6*|*google_dns6*)
+        for SET in google_net6 google_dns6; do
+            for REJECT in tcp-reset icmp6-port-unreachable icmp6-no-route; do
+                set --
+                [ "$REJECT" != tcp-reset ] || set -- -p tcp
+                while ip6tables -D OUTPUT "$@" -m set --match-set "$SET" dst -j REJECT --reject-with "$REJECT" 2>/dev/null; do :; done
+            done
+        done
+        ;;
+esac

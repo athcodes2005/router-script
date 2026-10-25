@@ -21,8 +21,8 @@ log() {
 }
 
 # The new identity must carry traffic itself: probe through tun0 and require
-# Cloudflare's trace to report WARP. Google IPv6 is rejected by
-# google_wan_policy.sh and Google IPv4 bypasses WARP, so neither validates it.
+# Cloudflare's trace to report WARP. Google IPv4 bypasses WARP, and only the
+# trace says which identity carried a request, so Google cannot validate it.
 warp_trace_ok() {
     curl "$1" -g -sS --interface "$TUN_IF" --connect-timeout 5 --max-time 15 "$2" 2>/dev/null |
         grep -Eq '^warp=(on|plus)$'

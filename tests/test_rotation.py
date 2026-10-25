@@ -15,7 +15,8 @@ class RotationTests(unittest.TestCase):
         (proj / 'config.json').write_text(ORIGINAL)
         (proj / 'stop_tunnel.sh').write_text('exit 0\n')
         (proj / 'tunnel.sh').write_text('[ -f "$(dirname "$0")/config.json" ] || printf \'%s\\n\' \'{"dummy": "new-registration"}\' > "$(dirname "$0")/config.json"\n')
-        # Google IPv6 is rejected by google_wan_policy.sh since 2026-09-23.
+        # The check must not depend on Google: google_wan_policy.sh rejected
+        # router IPv6 to Google from 2026-09-23 until F43.
         self.box.flag('google_v6_rejected')
 
     def test_rotation_succeeds_when_warp_carries_both_families(self):
