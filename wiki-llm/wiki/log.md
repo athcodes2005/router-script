@@ -788,3 +788,25 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../audit/2026-10-20-full-review/REPORT.md` (section 21)
+
+## 2026-10-25 — Clock checks after the firmware upgrade to 4.11.0
+
+- With the user's permission, ran the read-only checks in report section 21.9
+  and two more read-only rounds. Nothing changed on the router.
+- The user had upgraded the firmware to GL.iNet 4.11.0 at about 17:21. It
+  replaces BusyBox `ntpd` with chrony (`chrony-nts` 4.1): six NTS sources,
+  none of them Google's, with `makestep` and `nocerttimecheck`. The clock was
+  within 1 ms.
+- Confirmed on the router: there is no RTC. BusyBox resolves
+  `time1.google.com` to its IPv6 address while WARP is up, and router-script's
+  OUTPUT rejection refuses the send (F43's mechanism). The LAN→`tun0` ACCEPT
+  sits above the FORWARD Google rejection (F44).
+- GL.iNet's new network-quality pings `google.com` once a second; every ping
+  goes to IPv6 and is refused.
+- Revised proposal: drop the router's own (OUTPUT) Google IPv6 rejection
+  (optional), fix F44's rule order, and add F45's skew warning. The UDP 123
+  exemption is withdrawn. Awaiting the user's approval.
+
+## Sources
+
+- `../../audit/2026-10-20-full-review/REPORT.md` (sections 21.11–21.12)

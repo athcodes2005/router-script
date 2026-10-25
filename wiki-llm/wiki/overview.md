@@ -8,6 +8,11 @@ on the campus WAN.
 ## Platform
 
 - Router: GL.iNet GL-MT3000 running OpenWrt.
+- Firmware: GL.iNet 4.11.0 (OpenWrt 21.02-SNAPSHOT) since 2026-10-25. It
+  keeps time with `chronyd` (`chrony-nts`; NTS sources in
+  `/etc/config/chrony`); earlier firmware used BusyBox `ntpd`. There is no
+  RTC, so after a power cut the clock restarts from the newest file under
+  `/etc` until chrony corrects it.
 - LAN gateway: `192.168.8.1/24` on `br-lan`.
 - Physical WAN: `eth0`, managed as UCI interface `wan`.
 - WARP interface: `tun0`, created by the bundled `usque-rs` binary.
