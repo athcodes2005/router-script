@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  shell-and-tests:
+    name: Shell & Sandbox Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and dash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck dash curl
+
+      - name: Check POSIX and dash syntax
+        run: |
+          for f in *.sh; do
+            sh -n "$f"
+            dash -n "$f"
+          done
+
+      - name: Run ShellCheck
+        run: |
+          shellcheck -s sh -S warning -e SC1087,SC1090,SC1091 *.sh
+
+      - name: Run Python test suite
+        run: |
+          python3 -m unittest discover -s tests -v
+
+  rust-fmt:
+    name: Rust Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: usque-rs-optimized
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  rust-clippy-and-test:
+    name: Rust Clippy & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: usque-rs-optimized
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build golang-go perl \
+            pkg-config clang libclang-dev nasm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: usque-rs-optimized
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Rust unit & pipeline tests
+        run: cargo test --lib --bins
