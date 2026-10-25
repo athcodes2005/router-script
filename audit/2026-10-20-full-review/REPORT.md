@@ -2484,11 +2484,12 @@ logread -e usque-rs | grep -e '\[upload\]' -e '\[connected\]'
   latency and start-path tests ran on the trial merge; run the whole shell
   suite on the real one.
 
-### 20.7 First attempt — 25 October 2026, 14:14 IST: uplink quiet, nothing deployed
+### 20.7 Attempts on 25 October 2026: uplink quiet twice, nothing deployed
 
 You authorised deploying the three files and running §20.5, starting with
-the congestion check. I ran the check first, with the deployed tool and
-binary, so that a quiet uplink would leave the router unchanged.
+the congestion check, and asked for a second check at 14:26. Each check ran
+first, with the deployed tool and binary, so that a quiet uplink would leave
+the router unchanged.
 
 **Pre-flight (read-only).**
 - The three files matched `main` (`usque-rs` `0d1496d3…`).
@@ -2497,17 +2498,19 @@ binary, so that a quiet uplink would leave the router unchanged.
   used.
 - WARP was PID 15323, started with `--congestion-control bbr2 --syslog`.
 
-**Check** (`DOWNLOAD_URL=…?bytes=75000000 sh measure_load_latency.sh 20`,
-14:14:34–14:15:33 by the Mac's clock):
+**Checks** (`DOWNLOAD_URL=…?bytes=75000000 sh measure_load_latency.sh 20`;
+times by the Mac's clock):
 
-| Idle median (max) | Upload median / max | Upload | Download median / max | Download |
-|---|---|---|---|---|
-| 6 (16) ms | 46 / 172 ms | 57.3 Mbit/s | 6 / 45 ms | 78.7 Mbit/s |
+| Start | Idle median (max) | Upload median / max | Upload | Download median / max | Download |
+|---|---|---|---|---|---|
+| 14:14:34 | 6 (16) ms | 46 / 172 ms | 57.3 Mbit/s | 6 / 45 ms | 78.7 Mbit/s |
+| 14:26:03 | 5 (19) ms | 34 / 63 ms | 72.7 Mbit/s | 6 / 74 ms | 78.2 Mbit/s |
 
-**Decision.** The upload ran above 30 Mbit/s with a median under 80 ms, so
-the uplink was not congested, and by §20.5 I stopped.
+**Decision.** Both times the upload ran above 30 Mbit/s with a median under
+80 ms, so the uplink was not congested, and by §20.5 I stopped.
 - Nothing was deployed; the router still runs `main`.
-- The run counts as a quiet-uplink baseline on the deployed binary.
+- Both runs count as quiet-uplink baselines on the deployed binary. The
+  second matches §19.10's quiet run 3 (35 ms at 80.3 Mbit/s).
 
 **Seen in passing (not investigated).** The router's clock is 91 minutes
 slow: it read 12:42 when the Mac read 14:14. The router had rebooted 5 h

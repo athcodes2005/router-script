@@ -790,9 +790,9 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - **Not deployed, not measured.** The report's section 20.5 has the plan: at a
   busy hour, alternate default and `WARP_UPLOAD_CODEL=20` runs, with a
   decision rule. It needs the user's permission.
-- **First attempt, 14:14 IST, with the user's permission:** the congestion
-  check found the uplink quiet (57.3 Mbit/s up, 46 ms median), so nothing was
-  deployed (report section 20.7). The router's clock was 91 minutes slow, and
+- **Two attempts, 14:14 and 14:26 IST, with the user's permission:** each
+  congestion check found the uplink quiet (57.3 and 72.7 Mbit/s up, 46 and
+  34 ms median), so nothing was deployed (report section 20.7). The router's clock was 91 minutes slow, and
   `ntpd` had logged no sync since a reboot that morning.
 - See [[systems/warp-client]] and [[bugs/known-issues]].
 
