@@ -60,7 +60,9 @@ use router-provided DNS for campus-only hosts.
 `configure_dns.sh` writes and commits UCI state, configures `/etc/dnsproxy/dnsproxy.yaml`
 (`dnsproxy` replaced `dnscrypt-proxy2` on firmware 4.11.0+; the legacy
 `dnscrypt-proxy` TOML code is commented out in the scripts), and restarts
-`dnsproxy` and `dnsmasq`. `check_platform_once` warns if `dnsproxy` is not
+`dnsproxy` and `dnsmasq`. A failed `dnsproxy` restart is logged as a warning
+and the script carries on, so the dnsmasq, pin and ipset repair still runs
+(dnsmasq falls back to the plain resolvers). `check_platform_once` warns if `dnsproxy` is not
 running.
 `ensure_network.sh` verifies `strictorder` and
 `noresolv`, that the four upstreams (`127.0.0.1#5453`, `8.8.8.8`, `8.8.4.4`,

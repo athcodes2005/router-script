@@ -81,7 +81,7 @@ uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
 uci commit gl-dns-v2 2>/dev/null || true
 if [ -x /etc/init.d/dnsproxy ]; then
     log "Restarting dnsproxy (encrypted DoT/DoH primary on 127.0.0.1:5453)"
-    /etc/init.d/dnsproxy restart
+    /etc/init.d/dnsproxy restart || log "dnsproxy restart failed; continuing, dnsmasq falls back to the plain resolvers."
 fi
 
 # --- dnsmasq: configure multi-server with strict-order ---
