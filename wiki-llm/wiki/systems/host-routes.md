@@ -27,6 +27,13 @@ file under `/tmp`.
   routes are removed only after every configured name produced IPv4 answers and
   installation succeeded. This avoids CDN-answer races and restarts caused by
   partial DNS failures.
+  The game-session refresher differs: it has no names to resolve and rescans
+  conntrack. It removes routes that no longer appear only when a scan finds at
+  least one live game flow (and installs at least one route). When no game flow
+  exists, it keeps the old routes and state file untouched, so the last
+  session's `/32` routes persist until a later scan finds a flow or
+  `stop_tunnel.sh` runs. A scan killed midway can also leak its small temporary
+  file in `/tmp`.
 - **Shared routes.** Refreshers can share a `/32` (a game server can also be a
   listed public name), so a route is deleted only once no refresher's file
   lists it.

@@ -13,7 +13,7 @@ the active topology. This index lists every maintained wiki page.
 ## Systems
 
 - [[systems/script-map]] — responsibilities of every top-level project file.
-- [[systems/warp-client]] — Rust MASQUE client modules and lifecycle.
+- [[systems/warp-client]] — how the external `usque-rs` MASQUE binary is delivered (`fetch_usque_rs.sh`) and driven by `tunnel.sh` (CLI flags, MTU/MSS, release optimizations).
 - [[systems/google-wan]] — Google/YouTube direct IITB routing and IPv6 fallback.
 - [[systems/dns]] — resolver chain and campus-domain forwarding.
 - [[systems/campus-wan]] — Hostel 01 addressing, gateway, DNS, and campus hops.
