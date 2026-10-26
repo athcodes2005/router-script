@@ -7,3 +7,5 @@ All architecture, system specifications, operational procedures, incident histor
 - **Overview & Architecture:** [`wiki-llm/wiki/overview.md`](wiki-llm/wiki/overview.md) · [`wiki-llm/wiki/architecture.md`](wiki-llm/wiki/architecture.md)
 - **Deployment & Git CD:** [`wiki-llm/wiki/operations/deployment.md`](wiki-llm/wiki/operations/deployment.md) · [`wiki-llm/wiki/operations/health-recovery.md`](wiki-llm/wiki/operations/health-recovery.md)
 - **Wiki Maintenance Contract:** [`wiki-llm/AGENTS.md`](wiki-llm/AGENTS.md)
+
+The Rust WARP client (`usque-rs`) is built in the separate repository [`athcodes2005/usque-rs-openwrt`](https://github.com/athcodes2005/usque-rs-openwrt). `fetch_usque_rs.sh` delivers it by downloading a GitHub release (`USQUE_RELEASE_TAG`, default `latest`, settable to a pinned tag) and verifying its sha256.
