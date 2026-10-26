@@ -181,7 +181,12 @@ class SyncTests(unittest.TestCase):
     def test_a_busy_lock_stops_the_promotion(self):
         lock = self.router / '.ensure_network.lock'
         lock.mkdir()
-        (lock / 'owner').write_text('%d 0 0 game_mode.sh\n' % os.getpid())
+        # lock.sh ages the owner by /proc/uptime; Linux has one, macOS does not.
+        try:
+            since = int(float(Path('/proc/uptime').read_text().split()[0]))
+        except (OSError, ValueError, IndexError):
+            since = 0
+        (lock / 'owner').write_text('%d 0 %d game_mode.sh\n' % (os.getpid(), since))
         (self.router / 'usque-rs').write_text('old binary\n')
         self.env['SYNC_LOCK_WAIT'] = '1'
         result = self.sync()
