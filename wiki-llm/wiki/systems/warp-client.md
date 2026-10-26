@@ -47,9 +47,13 @@ so older rollback binaries remain compatible:
    `enable_early_data()`.
 3. **`[I4]` Dynamic 1,320 B datagram IP MTU:** `effective_datagram_ip_mtu`
    derives the 1,320 B IP ceiling from `dgram_max_writable_len() = 1322 B` minus
-   the 2-byte MASQUE prefix. Live measurement on 2026-10-26 reached **93.6 Mbit/s
-   upload** and **136.9 Mbit/s download** (5 ms idle median, 23 ms download
-   median).
+   the 2-byte MASQUE prefix.
+4. **`v0.2.1` Sub-ms pacing coalescing & `[I3]` `sendmmsg` batching:** coalesces
+   `< 500 µs` pacing deadlines into `UdpSendBatch` (flushed via `sendmmsg(2)`)
+   and drains up to 64 ready TUN packets per wakeup (`try_read_tun_packet`). Live
+   measurement on 2026-10-26 reached **133.3 Mbit/s upload** with **13/19/28 ms**
+   loaded upload RTT (down from 46 ms median on `v0.2.0`) and **5/5/14 ms**
+   loaded download RTT at **90.3 Mbit/s**.
 
 ## Sources
 

@@ -1039,3 +1039,25 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../defaults.sh`, `../../tunnel.sh`, `../../stop_tunnel.sh`, `../../ensure_network.sh`
 - `../../tests/test_defaults.py`, `../../tests/test_network_recovery.py`, `../../tests/test_tunnel_start.py`
 - [[systems/warp-client]], [[bugs/opencode-pqc-mss-clamping-2026-10-08]]
+
+## 2026-10-26 — Rolled out `usque-rs` `v0.2.1` (`sendmmsg` batching & sub-ms pacing coalescing)
+
+- Fixed a missing `libc` target dependency and `musl` `MSG_DONTWAIT` flag cast
+  (`756ec94`) in `athcodes2005/usque-rs-openwrt` so `v0.2.1` built cleanly across
+  all 6 `musl` targets.
+- Ran `fetch_usque_rs.sh --download-only` on the Mac and `fetch_usque_rs.sh` on
+  the router: verified archive SHA-256 `7e8e54a2…`, backed up `v0.2.0`
+  (`83deac89…`) to `usque-rs-upstream-v0.1.0`, promoted `v0.2.1` (`77eb75c4…`,
+  PID `22792`) with `--mtu 1320 --congestion-control bbr2`, and passed the
+  health check.
+- `measure_load_latency.sh 12` on `v0.2.1` recorded:
+  - **Idle:** `min/median/max = 5/5/6 ms` (12 samples, 0 failed)
+  - **Upload:** `min/median/max = 13/19/28 ms` at **133.3 Mbit/s** (upload
+    throughput +42% over `v0.2.0`'s 93.6 Mbit/s while cutting loaded upload
+    median RTT from 46 ms to **19 ms**)
+  - **Download:** `min/median/max = 5/5/14 ms` at **90.3 Mbit/s** (loaded
+    download median RTT equal to 5 ms idle!).
+
+## Sources
+
+- `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`, [[systems/warp-client]]
