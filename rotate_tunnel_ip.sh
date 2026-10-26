@@ -3,6 +3,7 @@
 set -eu
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$DIR/.env"
 CONFIG_FILE="$DIR/config.json"
 BACKUP_FILE="$DIR/config.json.previous"
 BACKUP_TEMP="$BACKUP_FILE.tmp.$$"
@@ -10,6 +11,11 @@ WARP_TRACE_URL_V4="${WARP_TRACE_URL_V4:-https://1.1.1.1/cdn-cgi/trace}"
 WARP_TRACE_URL_V6="${WARP_TRACE_URL_V6:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
 WAS_RUNNING=0
 BACKUP_CREATED=0
+
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 
 . "$DIR/paths.sh"
 . "$DIR/defaults.sh"

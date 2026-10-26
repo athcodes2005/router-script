@@ -3,9 +3,15 @@
 set -eu
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$DIR/.env"
 MAX_LOG_BYTES="${MAX_LOG_BYTES:-1048576}"
 KEEP_ROTATIONS="${KEEP_ROTATIONS:-3}"
 ROTATION_TMP=""
+
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 
 . "$DIR/paths.sh"
 . "$DIR/defaults.sh"

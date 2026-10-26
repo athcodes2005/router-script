@@ -34,6 +34,15 @@ class RotationTests(unittest.TestCase):
         self.assertEqual((self.box.proj / 'config.json').read_text(), ORIGINAL)
         self.assertFalse((self.box.proj / 'config.json.previous').exists())
 
+    # A6: neither script loaded .env, so a LOG_DIR set there was ignored.
+    def test_rotation_honours_log_dir_from_env_file(self):
+        alt = self.box.tmp / 'alt-logs'
+        (self.box.proj / '.env').write_text('LOG_DIR=%s\n' % alt)  # sandbox .env, not the real one
+        result = self.box.run('rotate_tunnel_ip.sh')
+        self.assertEqual(result.returncode, 0, self.box.log('maintenance'))
+        self.assertIn('rotat', (alt / 'maintenance.log').read_text().lower())
+        self.assertEqual(self.box.log('maintenance'), '')
+
 
 if __name__ == '__main__':
     unittest.main()
