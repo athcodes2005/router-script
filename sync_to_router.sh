@@ -51,6 +51,10 @@ trap 'exit 143' TERM
 
 chmod 600 "$DIR/.env" "$DIR/config.json" 2>/dev/null || true
 
+if [ ! -f "$DIR/usque-rs" ] && [ -f "$DIR/fetch_usque_rs.sh" ]; then
+    sh "$DIR/fetch_usque_rs.sh" --download-only || true
+fi
+
 # Use --force to push a blocklist or config.json that diverges from the router's copy.
 FORCE=0
 case "${1:-}" in
@@ -97,7 +101,7 @@ fi
 # Sync into a private staging directory first, then promote the complete set.
 # A failed transfer therefore leaves the installed scripts untouched. The
 # helpers other scripts source come first: promotion follows this order.
-FILES="paths.sh lock.sh defaults.sh usque-rs usque-rs-upstream-v0.1.0 config.json .env blocked_sites.txt warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh update_from_git.sh README.md"
+FILES="paths.sh lock.sh defaults.sh usque-rs usque-rs-upstream-v0.1.0 config.json .env blocked_sites.txt warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh fetch_usque_rs.sh update_from_git.sh README.md"
 
 echo "Staging project files on the router."
 run_ssh "$REMOTE" "rm -rf '$REMOTE_STAGE' && mkdir -m 700 '$REMOTE_STAGE'"

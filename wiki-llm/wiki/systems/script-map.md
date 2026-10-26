@@ -29,6 +29,10 @@
   15-minute Git updater, and periodic maintenance jobs.
 - `update_from_git.sh`: polls `DEPLOY_BRANCH` on GitHub, verifies CI check-runs,
   promotes under `lock.sh`, gates on `ensure_network.sh`, and rolls back on failure.
+- `fetch_usque_rs.sh`: fetches and SHA-256 verifies the `usque-rs` release binary
+  from `USQUE_REPO` (`athcodes2005/usque-rs-openwrt`), backs up the previous
+  binary to `usque-rs-upstream-v0.1.0`, promotes under `lock.sh`, and rolls back
+  if the health check fails.
 - `rotate_logs.sh`: bounds logs by size and retention count.
 - `rotate_tunnel_ip.sh`: registers a new WARP identity with verified rollback.
 - `sync_to_router.sh`: staged deployment with a SHA-256 manifest and bounded

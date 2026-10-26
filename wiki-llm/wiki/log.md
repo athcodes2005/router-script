@@ -978,3 +978,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../sync_to_router.sh`, `../../update_from_git.sh`, `../../ensure_network.sh`
 - Live router verification on 2026-10-26 00:36 IST.
+
+## 2026-10-26 — Split `usque-rs` into `athcodes2005/usque-rs-openwrt` and wired `fetch_usque_rs.sh`
+
+- Split the Rust client source and its internal `wiki-llm/` into the public fork
+  `https://github.com/athcodes2005/usque-rs-openwrt`
+  (`/Users/atharva/projects/usque-rs-openwrt`), with `upstream` tracking
+  `Diniboy1123/usque-rs` and GitHub Releases publishing verified static
+  `aarch64-unknown-linux-musl` assets on `v*.*.*` tags and the `release` branch.
+- Removed `usque-rs-optimized/` and tracked binaries from `router-script`.
+- Added `fetch_usque_rs.sh` (invoked by `update_from_git.sh` and
+  `sync_to_router.sh`) to fetch, SHA-256 verify, back up (`usque-rs-upstream-v0.1.0`),
+  promote under `lock.sh`, and health-gate new `usque-rs` binary releases with
+  automatic rollback.
+
+## Sources
+
+- `../../fetch_usque_rs.sh`, `../../update_from_git.sh`, `../../defaults.sh`
+- `../../tests/test_updater.py`, [[systems/warp-client]], [[sources]]

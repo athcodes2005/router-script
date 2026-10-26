@@ -29,7 +29,12 @@ GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
 DEPLOY_COMMIT_FILE="${DEPLOY_COMMIT_FILE:-$DIR/.deployed_commit}"
 UPDATE_LOCK_WAIT="${UPDATE_LOCK_WAIT:-30}"
 
-# Nothing to do until a repository is configured.
+# Check for new usque-rs releases from USQUE_REPO when enabled.
+if [ -x "$DIR/fetch_usque_rs.sh" ] && [ "${AUTO_FETCH_USQUE:-1}" = "1" ]; then
+    sh "$DIR/fetch_usque_rs.sh" || true
+fi
+
+# Nothing to do for scripts until a repository is configured.
 [ -n "$GITHUB_REPO" ] || exit 0
 
 log() {
@@ -134,7 +139,7 @@ for SCRIPT in "$SRC_DIR"/*.sh; do
 done
 
 # Deployable files from git (never .env, config.json, or blocked_sites.txt if edited locally).
-DEPLOY_FILES="paths.sh lock.sh defaults.sh usque-rs usque-rs-upstream-v0.1.0 warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh update_from_git.sh README.md"
+DEPLOY_FILES="paths.sh lock.sh defaults.sh usque-rs usque-rs-upstream-v0.1.0 warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh fetch_usque_rs.sh update_from_git.sh README.md"
 
 rm -rf "$STAGE" "$BACKUP"
 mkdir -m 700 "$STAGE" "$BACKUP"

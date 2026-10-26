@@ -34,6 +34,8 @@ EXPECTED = {
     'GAME_MODE_MARKER': '/tmp/router-script-game-mode',
     'WARP_ENDPOINTS': '162.159.198.1 162.159.192.1', 'WARP_READY_FILE': '/tmp/router-script-warp-ready',
     'WARP_CLIENT_TABLE': '100',
+    'USQUE_REPO': 'athcodes2005/usque-rs-openwrt', 'USQUE_RELEASE_TAG': 'latest',
+    'USQUE_ASSET_NAME': 'usque-rs-aarch64-linux-musl.tar.gz',
     'INTERNET_PROBE_URLS': 'https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204',
     'INTERACTIVE_LOGIN_MARKER': '/tmp/router-script-interactive-login-required',
     'WIFI_COUNTRY': 'IN', 'WIFI_2G_DEVICE': 'mt798111', 'WIFI_5G_DEVICE': 'mt798112',

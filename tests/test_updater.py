@@ -116,10 +116,11 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
 
     def run_updater(self, **env):
         return self.box.run('update_from_git.sh', GITHUB_REPO='owner/router-script',
-                            GITHUB_TOKEN='ghp_testtoken123', API_DIR=str(self.api), **env)
+                            GITHUB_TOKEN='ghp_testtoken123', AUTO_FETCH_USQUE='0',
+                            API_DIR=str(self.api), **env)
 
     def test_unconfigured_repo_is_a_clean_noop(self):
-        res = self.box.run('update_from_git.sh')
+        res = self.box.run('update_from_git.sh', AUTO_FETCH_USQUE='0')
         self.assertEqual(res.returncode, 0)
         self.assertEqual(self.box.log('maintenance'), '')
 
@@ -160,6 +161,81 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual((self.box.proj / 'ensure_network.sh').read_text(), '#!/bin/sh\nexit 0\n')
         self.assertFalse((self.box.proj / '.deployed_commit').exists())
         self.assertIn('rolling back', self.box.log('maintenance'))
+
+
+class UsqueFetchTests(unittest.TestCase):
+    def setUp(self):
+        self.box = Sandbox.fresh(self)
+        for tool in ('tar', 'python3'):
+            if not (self.box.bin / tool).exists():
+                (self.box.bin / tool).symlink_to(shutil.which(tool))
+        self.rel = self.box.base / 'releases'
+        self.rel.mkdir()
+        curl_body = r'''#!/bin/sh
+out=; url=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out=$2; shift 2 ;;
+    -K) cat > "$SIM_STATE/usque_auth"; shift 2 ;;
+    --connect-timeout|--max-time) shift 2 ;;
+    -*) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+case "$url" in
+  *.sha256) cp "$REL_DIR/asset.sha256" "$out" ;;
+  *.tar.gz) cp "$REL_DIR/asset.tar.gz" "$out" ;;
+  *) exit 22 ;;
+esac
+'''
+        (self.box.bin / 'curl').write_text(curl_body)
+        (self.box.bin / 'curl').chmod(0o755)
+        sha_body = r'''#!/bin/sh
+python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest(), " ", sys.argv[1])' "$1"
+'''
+        (self.box.bin / 'sha256sum').write_text(sha_body)
+        (self.box.bin / 'sha256sum').chmod(0o755)
+
+    def make_release(self, script_body, corrupt_sha=False):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = Path(tmp) / 'usque-rs'
+            bin_path.write_text(script_body)
+            bin_path.chmod(0o755)
+            archive = self.rel / 'asset.tar.gz'
+            with tarfile.open(archive, 'w:gz') as tar:
+                tar.add(bin_path, arcname='usque-rs')
+            digest = '0' * 64 if corrupt_sha else hashlib.sha256(archive.read_bytes()).hexdigest()
+            (self.rel / 'asset.sha256').write_text('%s  usque-rs-aarch64-linux-musl.tar.gz\n' % digest)
+            return digest
+
+    def test_download_only_fetches_and_verifies_binary(self):
+        digest = self.make_release('#!/bin/sh\necho "--congestion-control --ready-file --syslog"\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.box.proj / 'usque-rs').exists())
+        self.assertEqual((self.box.proj / '.usque_release_sha').read_text().strip(), digest)
+
+    def test_corrupt_archive_sha_is_rejected(self):
+        (self.box.proj / 'usque-rs').write_text('#!/bin/sh\necho old\n')
+        self.make_release('#!/bin/sh\necho new\n', corrupt_sha=True)
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), '#!/bin/sh\necho old\n')
+        self.assertIn('SHA-256 mismatch', self.box.log('maintenance'))
+
+    def test_router_install_backs_up_previous_and_rolls_back_on_health_failure(self):
+        old_bin = '#!/bin/sh\necho "--congestion-control --ready-file --syslog"\n'
+        (self.box.proj / 'usque-rs').write_text(old_bin)
+        (self.box.proj / 'usque-rs').chmod(0o755)
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit 1\n')
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        self.make_release('#!/bin/sh\necho "--congestion-control --ready-file --syslog --upload-codel"\n')
+        res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+        self.assertEqual((self.box.proj / 'usque-rs-upstream-v0.1.0').read_text(), old_bin)
+        self.assertIn('rolling back to previous binary', self.box.log('maintenance'))
 
 
 if __name__ == '__main__':
