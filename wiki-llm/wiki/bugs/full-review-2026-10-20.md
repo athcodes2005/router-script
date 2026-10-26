@@ -57,5 +57,5 @@ upgrade produced 52 numbered findings (F01–F52) and 10 architecture items
 
 - `../../raw/sources/audit/2026-10-20-full-review/REPORT.md`
 - `../../raw/sources/changes-explained-2026-10-25.md`
-- `../../raw/sources/audit/2026-10-25-warp-official-vs-usque/evidence/digests.txt`
+- `../../raw/sources/audit/2026-10-25-warp-official-vs-usque/REPORT.md` (binary-derived evidence files removed from the public repo on 2026-10-26)
 - `../../../ensure_network.sh`, `../../../defaults.sh`, `../../../lock.sh`, `../../../update_from_git.sh`
