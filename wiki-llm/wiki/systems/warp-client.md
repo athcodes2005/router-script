@@ -9,7 +9,8 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 ## Binary delivery (`fetch_usque_rs.sh`)
 
 - `defaults.sh` sets `USQUE_REPO=athcodes2005/usque-rs-openwrt`,
-  `USQUE_RELEASE_TAG=latest`, and
+  `USQUE_RELEASE_TAG=v0.2.1` (pinned: a new release reaches the router only
+  after the tag is bumped in a commit; `latest` still works when set in `.env`), and
   `USQUE_ASSET_NAME=usque-rs-aarch64-linux-musl.tar.gz`.
 - `fetch_usque_rs.sh` downloads `.sha256` from the GitHub Release, compares it
   with `.usque_release_sha`, downloads and verifies the archive when updated,

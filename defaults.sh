@@ -56,7 +56,9 @@ WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
 WARP_READY_FILE="${WARP_READY_FILE:-/tmp/router-script-warp-ready}"
 WARP_CLIENT_TABLE="${WARP_CLIENT_TABLE:-100}"
 USQUE_REPO="${USQUE_REPO:-athcodes2005/usque-rs-openwrt}"
-USQUE_RELEASE_TAG="${USQUE_RELEASE_TAG:-latest}"
+# Pinned: a new release reaches the router only after this tag is bumped in a
+# commit. USQUE_RELEASE_TAG=latest in .env still follows the newest release.
+USQUE_RELEASE_TAG="${USQUE_RELEASE_TAG:-v0.2.1}"
 USQUE_ASSET_NAME="${USQUE_ASSET_NAME:-usque-rs-aarch64-linux-musl.tar.gz}"
 
 # Wi-Fi

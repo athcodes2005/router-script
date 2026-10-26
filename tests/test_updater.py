@@ -182,6 +182,7 @@ while [ $# -gt 0 ]; do
     *) url=$1; shift ;;
   esac
 done
+echo "$url" >> "$SIM_STATE/usque_urls"
 case "$url" in
   *.sha256) cp "$REL_DIR/asset.sha256" "$out" ;;
   *.tar.gz) cp "$REL_DIR/asset.tar.gz" "$out" ;;
@@ -215,6 +216,26 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertTrue((self.box.proj / 'usque-rs').exists())
         self.assertEqual((self.box.proj / '.usque_release_sha').read_text().strip(), digest)
+
+    def fetched_urls(self):
+        return (self.box.state / 'usque_urls').read_text().split()
+
+    def test_default_tag_is_pinned_not_latest(self):
+        # B1: cron must not follow "latest"; a new release needs a tag bump in a commit.
+        self.make_release('#!/bin/sh\necho ok\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        for url in self.fetched_urls():
+            self.assertIn('/releases/download/v0.2.1/', url)
+            self.assertNotIn('/latest/', url)
+
+    def test_explicit_latest_tag_still_follows_latest(self):
+        self.make_release('#!/bin/sh\necho ok\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel),
+                           USQUE_RELEASE_TAG='latest')
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        for url in self.fetched_urls():
+            self.assertIn('/releases/latest/download/', url)
 
     def test_corrupt_archive_sha_is_rejected(self):
         (self.box.proj / 'usque-rs').write_text('#!/bin/sh\necho old\n')
