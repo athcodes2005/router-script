@@ -268,7 +268,7 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         for url in self.fetched_urls():
-            self.assertIn('/releases/download/v0.2.1/', url)
+            self.assertIn('/releases/download/v0.2.2/', url)
             self.assertNotIn('/latest/', url)
 
     def test_explicit_latest_tag_still_follows_latest(self):
