@@ -11,11 +11,14 @@ by Google IPv4 resolvers (`8.8.8.8`, `8.8.4.4`) and the IITB campus DNS server
 (`10.200.1.11`) as fallbacks. dnsmasq uses strict ordering (`strictorder=1`).
 
 On GL.iNet 4.11.0, `configure_dns.sh` configures `/usr/sbin/dnsproxy`
-(`/etc/dnsproxy/dnsproxy.yaml`) on `127.0.0.1:5453` in parallel upstream mode
-across Cloudflare DoT/DoH (`tls://1.1.1.1:853`, `tls://1.0.0.1:853`,
+(`/etc/dnsproxy/dnsproxy.yaml`) on `127.0.0.1:5453` with dnsproxy's default
+upstream mode (the YAML sets no `upstream-mode`), using this upstream list:
+Cloudflare DoT/DoH (`tls://1.1.1.1:853`, `tls://1.0.0.1:853`,
 `https://cloudflare-dns.com/dns-query`) and Quad9 DoT/DoH (`tls://9.9.9.9:853`,
-`https://dns.quad9.net/dns-query`), returning whichever encrypted resolver
-answers fastest (~20 ms warm lookup).
+`https://dns.quad9.net/dns-query`). Parallel mode is deliberately not set: the
+router's dnsproxy version is unverified and an unknown key could stop the
+daemon and cut DNS. An earlier note of a ~20 ms warm lookup was measured, not
+configured, and does not imply parallel mode.
 
 Selected campus names are explicitly forwarded to campus DNS:
 
