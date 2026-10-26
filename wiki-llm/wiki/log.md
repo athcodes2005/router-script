@@ -1061,3 +1061,38 @@ Append new entries at the end. Preserve older entries as historical evidence.
 ## Sources
 
 - `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`, [[systems/warp-client]]
+
+## 2026-10-26 — Validation audit of router-script and usque-rs-openwrt
+
+- Read-only audit of both repos against this wiki (report:
+  `raw/sources/audit/2026-10-26-validation/REPORT.md`). Baseline: 169 tests,
+  `cargo test` and clippy green; deployed `usque-rs` (`77eb75c4…`) matches the
+  v0.2.1 release; MTU/MSS/DNS settings consistent across code and wiki.
+- Fixed on branch `validation-2026-10-26` (not yet deployed or merged):
+  - B1: `USQUE_RELEASE_TAG` defaults to `v0.2.1`; a new usque-rs release no
+    longer auto-deploys through the 15-minute updater.
+  - B2/B7: a release or commit that fails its health check is recorded
+    (`.usque_failed_sha`, `.git_failed_commit`) and skipped until it changes or
+    `--retry-failed` is passed.
+  - B3: rollback slot renamed `usque-rs.prev`, router-local and never shipped;
+    falls back to legacy `usque-rs-upstream-v0.1.0` (which held v0.2.0 on the
+    router, but v0.1.0 on the Mac).
+  - B4: test keeps `update_from_git.sh` and `sync_to_router.sh` file lists equal.
+  - A2/A4: a failed dnsproxy restart no longer aborts `configure_dns.sh`;
+    `ensure_network.sh` restarts a dead dnsproxy once per tick. A1: dnsproxy
+    runs in its default upstream mode (wiki corrected; not "parallel").
+  - A5 `game_mode.sh` status re-exec, A6 `.env` before `paths.sh` in rotate
+    scripts, A7 `latency.log` rotation.
+  - D1–D3, A10: dead Sources paths repointed, README notes the usque-rs split,
+    index and host-route wording corrected.
+- This log has historical ordering quirks (2026-09-19 entries after 2026-09-22,
+  a mid-file maintenance section); left as is because the log is append-only.
+- usque-rs-openwrt branch `fix-validation-2026-10-26` (not pushed): release
+  workflow gated on tests and tag/version match; `warp-svc`-derived evidence and
+  local details removed from the public tree (history unchanged).
+
+## Sources
+
+- `../raw/sources/audit/2026-10-26-validation/REPORT.md`
+- `../../fetch_usque_rs.sh`, `../../update_from_git.sh`, `../../configure_dns.sh`, `../../ensure_network.sh`
+- [[bugs/known-issues]], [[operations/deployment]]

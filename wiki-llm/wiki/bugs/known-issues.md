@@ -87,6 +87,15 @@ local zones and refreshed IPv4 hosts instead. See
 [[blinkit-ipv6-vpn-warning-2026-09-19]]. Clients using independent encrypted DNS
 can bypass the router's domain-specific policy.
 
+## 2026-10-26 validation follow-ups
+
+Open low-severity items from the 2026-10-26 validation audit: `rotate_logs.sh`
+exits 1 on success (N1); several scripts source `.env` after `paths.sh`, so a
+`LOG_DIR` override there is ignored (N2); `dnsproxy_alive_repair` restarts a
+crash-looping dnsproxy every tick without backoff; a release that fails its
+health check during an unrelated outage stays skipped until `--retry-failed`.
+Also open: A3, A8, A9, A11, A13 and usque-rs-openwrt C2-C6, C12 (see report).
+
 ## Diagnostic sensitivity
 
 Snapshots and packet captures may expose client destinations or topology. Keep
@@ -96,6 +105,7 @@ them local, bounded, and sanitized before documentation or sharing.
 
 - Workspace and live-router audit on 2026-08-01.
 - `../../raw/sources/project-context-2026-10-25.md`
+- `../../raw/sources/audit/2026-10-26-validation/REPORT.md`
 - `../../../ensure_network.sh`
 - `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/Cargo.toml`
 - [[outage-hardening-2026-08-01]]
