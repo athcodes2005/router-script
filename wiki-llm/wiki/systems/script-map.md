@@ -33,7 +33,9 @@
   from `USQUE_REPO` (`athcodes2005/usque-rs-openwrt`), backs up the previous
   binary to `usque-rs.prev`, promotes under `lock.sh`, and rolls back
   if the health check fails.
-- `rotate_logs.sh`: bounds logs by size and retention count.
+- `rotate_logs.sh`: bounds logs by size and retention count. Like
+  `rotate_tunnel_ip.sh` it sources `.env` before `paths.sh`, so `LOG_DIR` /
+  `DIAGNOSTICS_DIR` overrides apply.
 - `rotate_tunnel_ip.sh`: registers a new WARP identity with verified rollback.
 - `sync_to_router.sh`: staged deployment with a SHA-256 manifest and bounded
   SSH/SCP sessions; `promote_staged.sh` then promotes the set on the router

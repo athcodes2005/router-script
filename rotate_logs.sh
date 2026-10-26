@@ -3,9 +3,15 @@
 set -eu
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$DIR/.env"
 MAX_LOG_BYTES="${MAX_LOG_BYTES:-1048576}"
 KEEP_ROTATIONS="${KEEP_ROTATIONS:-3}"
 ROTATION_TMP=""
+
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 
 . "$DIR/paths.sh"
 . "$DIR/defaults.sh"
@@ -57,6 +63,7 @@ rotate_file "$(prepare_log_file ensure)"
 rotate_file "$(prepare_log_file maintenance)"
 rotate_file "$(prepare_log_file wifi)"
 rotate_file "$(prepare_log_file game_monitor)"
+rotate_file "$(prepare_log_file latency)"
 
 if [ "$MAX_DIAGNOSTICS" -gt 0 ] 2>/dev/null; then
     ls -1t "$DIAGNOSTICS_DIR"/diagnostic_*.log 2>/dev/null | sed -n "$((MAX_DIAGNOSTICS + 1)),\$p" | while IFS= read -r OLD_FILE; do
