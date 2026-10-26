@@ -63,6 +63,10 @@ When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
   `update_from_git.sh --retry-failed`. The file is router-local, gitignored and
   never shipped or deleted by sync/promote.
 
+The git updater keeps its own `DEPLOY_FILES` list. It must equal `FILES` in
+`sync_to_router.sh`, in the same order, minus the Mac-only `config.json`, `.env`
+and `blocked_sites.txt`; `tests/test_sync.py` asserts this.
+
 ## Verification checklist
 
 - Confirm shell syntax on the router.

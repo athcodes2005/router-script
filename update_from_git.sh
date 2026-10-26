@@ -160,6 +160,8 @@ for SCRIPT in "$SRC_DIR"/*.sh; do
 done
 
 # Deployable files from git (never .env, config.json, or blocked_sites.txt if edited locally).
+# Keep this the same list, in the same order, as FILES in sync_to_router.sh minus
+# those three Mac-only files; tests/test_sync.py checks it.
 DEPLOY_FILES="paths.sh lock.sh defaults.sh usque-rs warp_clients.txt login.sh tunnel.sh stop_tunnel.sh game_mode.sh monitor_game_network.sh configure_wifi.sh configure_dns.sh refresh_blinkit_dns.sh google_wan_policy.sh google_service_ranges.txt google_domains.txt configure_lan_ipv6.sh ensure_network.sh diagnose.sh collect_diagnostics.sh dns_flow.sh rotate_logs.sh install_cron_pipeline.sh bootstrap_router.sh download_emergency_diagnostics.sh rotate_tunnel_ip.sh firewall_hook.sh install_firewall_hook.sh promote_staged.sh measure_load_latency.sh fetch_usque_rs.sh update_from_git.sh README.md"
 
 rm -rf "$STAGE" "$BACKUP"

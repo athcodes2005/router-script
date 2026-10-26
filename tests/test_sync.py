@@ -122,6 +122,20 @@ class SyncTests(unittest.TestCase):
         missing = sorted(p.name for p in ROOT.glob('*.sh') if p.name not in mac_only and p.name not in files)
         self.assertEqual(missing, [])
 
+    def test_git_deploy_list_matches_sync_list(self):
+        # B4: update_from_git.sh keeps its own DEPLOY_FILES. The two lists must agree, in the same
+        # order (helpers first), except for the files only the Mac holds: secrets and local config
+        # are never fetched from git.
+        def names(script, var):
+            return re.search(r'^%s="([^"]*)"' % var, (ROOT / script).read_text(), re.M).group(1).split()
+        mac_only = ['config.json', '.env', 'blocked_sites.txt']
+        sync_list = names('sync_to_router.sh', 'FILES')
+        deploy_list = names('update_from_git.sh', 'DEPLOY_FILES')
+        self.assertEqual(len(set(sync_list)), len(sync_list), 'duplicate in sync list')
+        self.assertEqual(len(set(deploy_list)), len(deploy_list), 'duplicate in deploy list')
+        self.assertEqual([f for f in sync_list if f not in mac_only], deploy_list)
+        self.assertEqual(sorted(set(sync_list) - set(deploy_list)), sorted(mac_only))
+
     def test_rollback_slot_is_router_local_and_never_shipped(self):
         # B3: the slot holds the router's previous binary; the Mac copy must not replace it.
         (self.router / 'usque-rs.prev').write_text('router previous\n')
