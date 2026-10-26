@@ -38,5 +38,5 @@ diagnostics use snapshots and do not start packet capture.
 - Live router process, filesystem, and `/tmp` inspection on 2026-08-01.
 - `../../../ensure_network.sh`
 - `../../../diagnose.sh`
-- `../../../usque-rs-optimized/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`
 - [[operations/diagnostics]]

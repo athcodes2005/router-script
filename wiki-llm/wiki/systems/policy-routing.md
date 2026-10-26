@@ -55,6 +55,6 @@ Read-only checks: `ip rule show` and `iptables -t mangle -S | grep -i mark`.
 ## Sources
 
 - `../../../google_wan_policy.sh`, `../../../tunnel.sh`, `../../../ensure_network.sh`
-- `../../../diagnostics/diagnostic_20260801_193111_6385.log` (policy-rule section)
-- `../../../audit/2026-10-20-full-review/REPORT.md` (F08, F24)
+- router diagnostic 2026-08-01 19:31 (policy-rule section; local-only, not in the repo, contains sensitive data)
+- `../../raw/sources/audit/2026-10-20-full-review/REPORT.md` (F08, F24)
 - [[google-wan]], [[../flows/traffic-routing]]

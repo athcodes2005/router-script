@@ -42,6 +42,6 @@ WARP, while loading successfully over mobile data.
 - `../../../stop_tunnel.sh`
 - `../../../ensure_network.sh`
 - `../../../tests/test_network_recovery.py`
-- `../../../audit/2026-10-08-mss-clamping/`
+- `../../raw/sources/audit/2026-10-08-mss-clamping/`
 - [[../architecture]]
 - [[../flows/traffic-routing]]

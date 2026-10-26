@@ -60,6 +60,6 @@ See [[../systems/warp-client]], [[../operations/health-recovery]], and
 ## Sources
 
 - Live router and Wi-Fi-client measurements on 2026-08-07.
-- `../../../usque-rs-optimized/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`
 - `../../../ensure_network.sh`
 - `../../../login.sh`

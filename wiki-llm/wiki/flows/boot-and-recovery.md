@@ -54,4 +54,4 @@ feedback loop documented in [[bugs/tmp-exhaustion-2026-08-01]].
 - `../../../bootstrap_router.sh`
 - `../../../ensure_network.sh`
 - `../../../login.sh`
-- `../../../usque-rs-optimized/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`

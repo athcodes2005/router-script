@@ -70,5 +70,5 @@ MASQUE remain upstream dependencies. See [[known-issues]] and
 - `../../../tunnel.sh`
 - `../../../login.sh`
 - `../../../paths.sh`
-- `../../../usque-rs-optimized/src/tunnel.rs`
-- `../../../usque-rs-optimized/src/packet.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/packet.rs`
