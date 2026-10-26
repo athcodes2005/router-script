@@ -16,7 +16,7 @@ EXPECTED = {
     'LAN_IP6IFACEID': '::1', 'LAN_RA_DEFAULT': '2',
     'CAMPUS_DNS_IP': '10.200.1.11', 'CAMPUS_NETS': '10.0.0.0/8 103.21.124.0/22',
     'CAMPUS_DOMAINS': 'internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in '
-                      'portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in',
+                      'portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in bighome.iitb.ac.in',
     'CAMPUS_DIRECT_DOMAINS': 'www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in '
                              'mulyankan.cse.iitb.ac.in webmail.iitb.ac.in',
     'PORTAL_IP': '10.201.250.201', 'SSO_IP': '10.200.1.100',

@@ -1114,3 +1114,10 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../sync_to_router.sh`, `../../promote_staged.sh`, `../../update_from_git.sh`
 - [[operations/deployment]]
+
+## 2026-10-26 — BigHome internal DNS fix
+
+- Diagnosed `bighome.iitb.ac.in` failing from LAN clients: internal-only name,
+  missing from `CAMPUS_DOMAINS`, so dnsmasq returned NXDOMAIN while routing was fine.
+- Added it to the `CAMPUS_DOMAINS` default (not `CAMPUS_DIRECT_DOMAINS`) with
+  tests; new page [[bugs/bighome-internal-dns-2026-10-26]]. Verification pending deploy.

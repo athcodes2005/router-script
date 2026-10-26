@@ -18,7 +18,7 @@ TUN_IPV6_MSS="${TUN_IPV6_MSS:-1260}"
 # Campus network, portal and DNS
 CAMPUS_NETS="${CAMPUS_NETS:-10.0.0.0/8 103.21.124.0/22}"
 CAMPUS_DNS_IP="${CAMPUS_DNS_IP:-10.200.1.11}"
-CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
+CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in bighome.iitb.ac.in}"
 PORTAL_IP="${PORTAL_IP:-10.201.250.201}"
 SSO_IP="${SSO_IP:-10.200.1.100}"
 # Replaced by dnsproxy (DNSPROXY_YAML) on firmware 4.11.0+:

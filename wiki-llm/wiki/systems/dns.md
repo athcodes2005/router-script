@@ -29,6 +29,8 @@ Selected campus names are explicitly forwarded to campus DNS:
 - `portal.iitb.ac.in`
 - `mulyankan.cse.iitb.ac.in`
 - `webmail.iitb.ac.in` (see [[../bugs/webmail-split-dns-2026-09-12]])
+- `bighome.iitb.ac.in` (see [[../bugs/bighome-internal-dns-2026-10-26]]; not a direct-route
+  domain, since its address is already inside `CAMPUS_NETS`)
 
 These names resolve into `10.0.0.0/8` through campus DNS, so their resulting
 traffic follows the more-specific physical-WAN campus route rather than WARP.

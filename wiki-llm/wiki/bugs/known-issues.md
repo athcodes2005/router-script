@@ -53,6 +53,8 @@ failures are fixed and documented in
 [[bgmi-portal-stale-session-2026-08-11]],
 [[ipv6-repair-loop-2026-08-13]], [[campus-site-routing-2026-08-14]], and
 [[campus-dns-outage-2026-08-19]], and [[mulyankan-internal-dns-2026-08-20]].
+The 2026-10-26 BigHome split-DNS omission is fixed in code and pending deploy:
+[[bighome-internal-dns-2026-10-26]].
 The corresponding health, cooldown, DNS, portal-pin, and route controls are
 active.
 

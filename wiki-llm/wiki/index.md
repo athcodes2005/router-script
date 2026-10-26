@@ -46,6 +46,7 @@ the active topology. This index lists every maintained wiki page.
 - [[bugs/campus-site-routing-2026-08-14]] — Moodle and ASC were missing from campus DNS/direct routing.
 - [[bugs/campus-dns-outage-2026-08-19]] — campus DNS outage blocked captive-portal resolution and room egress.
 - [[bugs/mulyankan-internal-dns-2026-08-20]] — Mulyankan required campus split DNS and router-provided client DNS.
+- [[bugs/bighome-internal-dns-2026-10-26]] — BigHome (internal-only name) needed campus split DNS; fix pending deploy.
 - [[bugs/blinkit-warp-egress-2026-09-10]] — Blinkit endpoints required direct WAN egress instead of shared WARP.
 - [[bugs/blinkit-ipv6-vpn-warning-2026-09-19]] — IPv6 gap and captured legacy API omitted from the Blinkit bypass.
 - [[bugs/webmail-split-dns-2026-09-12]] — Webmail required campus split DNS instead of its public address.

@@ -138,8 +138,9 @@ case "$key" in
     if flag dns_order_drift; then printf '10.200.1.11 127.0.0.1#5453 8.8.8.8 8.8.4.4'
     else printf '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11'; fi
     printf ' /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'
-    for d in internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in; do
+    for d in internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in bighome.iitb.ac.in; do
       [ "$d" = webmail.iitb.ac.in ] && flag dns_drift && continue
+      [ "$d" = bighome.iitb.ac.in ] && flag dns_drift_bighome && continue
       printf ' /%s/10.200.1.11' "$d"
     done
     flag dns_zone_forward && printf ' /iitb.ac.in/10.200.1.11'
