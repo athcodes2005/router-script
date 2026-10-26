@@ -7,7 +7,7 @@ import unittest
 
 from sandbox import Sandbox
 
-DISRUPTIVE = ('ifdown', 'ifup', 'wifi reload', 'dnsmasq restart', 'dnscrypt-proxy restart', 'killall')
+DISRUPTIVE = ('ifdown', 'ifup', 'wifi reload', 'dnsmasq restart', 'dnsproxy restart', 'killall')
 
 
 class PipelineTests(unittest.TestCase):

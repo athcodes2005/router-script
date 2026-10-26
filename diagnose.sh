@@ -59,7 +59,9 @@ section "CRON"
 run crontab -l
 
 section "KEY PROCESSES"
-run sh -c "ps w | grep -E 'dnscrypt-proxy|dnsmasq|odhcpd|usque-rs|tcpdump' | grep -v grep"
+# Replaced dnscrypt-proxy with dnsproxy on firmware 4.11.0+:
+# run sh -c "ps w | grep -E 'dnscrypt-proxy|dnsmasq|odhcpd|usque-rs|tcpdump' | grep -v grep"
+run sh -c "ps w | grep -E 'dnsproxy|dnsmasq|odhcpd|usque-rs|tcpdump' | grep -v grep"
 
 section "INTERFACES"
 run ip addr show
@@ -119,8 +121,10 @@ run sh -c "netstat -lntup 2>/dev/null | grep -E '(:53 |:53$|:5453 |:5453$)'"
 section "DNSMASQ UCI"
 run uci show dhcp
 
-section "DNSCRYPT SUMMARY"
-run sh -c "grep -n 'server_names\|listen_addresses\|forwarding_rules\|block_ipv6' '$DNSCRYPT_TOML'"
+section "DNSPROXY SUMMARY (replaced dnscrypt-proxy2 on firmware 4.11.0+)"
+# Replaced by dnsproxy:
+# run sh -c "grep -n 'server_names\|listen_addresses\|forwarding_rules\|block_ipv6' '$DNSCRYPT_TOML'"
+run cat "$DNSPROXY_YAML"
 
 section "LEGACY BLOCKED SITES (unused by full tunnel)"
 if [ -f "$DIR/blocked_sites.txt" ]; then
@@ -178,7 +182,9 @@ show_log_tail "ENSURE LOG" "$(prepare_log_file ensure)"
 show_log_tail "WI-FI LOG" "$(prepare_log_file wifi)"
 
 section "RECENT SYSTEM LOGS"
-run sh -c "logread | grep -E 'wan|udhcpc|eth0|dnsmasq|dnscrypt|odhcpd|usque|tun0|wireless|wifi' | tail -n 100"
+# Replaced dnscrypt with dnsproxy on firmware 4.11.0+:
+# run sh -c "logread | grep -E 'wan|udhcpc|eth0|dnsmasq|dnscrypt|odhcpd|usque|tun0|wireless|wifi' | tail -n 100"
+run sh -c "logread | grep -E 'wan|udhcpc|eth0|dnsmasq|dnsproxy|odhcpd|usque|tun0|wireless|wifi' | tail -n 100"
 
 echo ""
 echo "========================================"

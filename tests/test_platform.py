@@ -62,14 +62,9 @@ class PlatformCheckTests(unittest.TestCase):
         self.assertIn('Platform check passed.', self.tick())
 
     def test_a_stopped_doh_fallback_is_named(self):
-        self.box.flag('dnscrypt_down')
-        self.assertIn("neither dnscrypt-proxy nor dnsproxy is running, so dnsmasq's last upstream (127.0.0.1#5453) is dead",
+        self.box.flag('dnsproxy_down')
+        self.assertIn("dnsproxy is not running, so dnsmasq's primary encrypted upstream (127.0.0.1#5453) is dead",
                       self.tick())
-
-    def test_dnsproxy_on_4_11_0_satisfies_the_doh_fallback_check(self):
-        self.box.flag('dnscrypt_down')
-        self.box.flag('dnsproxy_up')
-        self.assertIn('Platform check passed.', self.tick())
 
     def test_a_dnsmasq_pid_file_the_blinkit_refresher_cannot_find_is_named(self):
         (self.box.sysroot / 'var/run/dnsmasq/dnsmasq.cfg01411c.pid').unlink()

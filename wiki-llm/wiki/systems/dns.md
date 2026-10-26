@@ -45,25 +45,28 @@ These answers win even when campus DNS is down, so portal login can still start.
 
 ## IPv6 behavior
 
-AAAA filtering is disabled. dnscrypt-proxy2 is configured with
-`block_ipv6 = false`, allowing dual-stack clients to resolve public IPv6 names.
+AAAA filtering is disabled. `dnsproxy` (which replaced `dnscrypt-proxy2` on
+firmware 4.11.0+) forwards both A and AAAA queries without IPv6 blocking,
+allowing dual-stack clients to resolve public IPv6 names.
 DNS exposure to the LAN is through the router, not direct client policy.
 Clients that manually select a public resolver bypass split-horizon IITB names;
 use router-provided DNS for campus-only hosts.
 
 ## Repair and inspection
 
-`configure_dns.sh` writes and commits UCI state, adjusts dnscrypt-proxy2, and
-restarts affected services. On firmware 4.11.0, GL.iNet replaced
-`dnscrypt-proxy` with `dnsproxy` (`/etc/dnsproxy/dnsproxy.yaml`, Quad9 DoH on
-port `5453`); `check_platform_once` accepts either `dnscrypt-proxy` or
-`dnsproxy` and warns only if neither DoH daemon is running (F49, F52).
+`configure_dns.sh` writes and commits UCI state, configures `/etc/dnsproxy/dnsproxy.yaml`
+(`dnsproxy` replaced `dnscrypt-proxy2` on firmware 4.11.0+; the legacy
+`dnscrypt-proxy` TOML code is commented out in the scripts), and restarts
+`dnsproxy` and `dnsmasq`. `check_platform_once` warns if `dnsproxy` is not
+running.
 `ensure_network.sh` verifies `strictorder` and
-`noresolv`, that the four upstreams come first and in order, forwards for
+`noresolv`, that the four upstreams (`127.0.0.1#5453`, `8.8.8.8`, `8.8.4.4`,
+`10.200.1.11`) come first and in order, forwards for
 exactly the listed campus hosts (a whole-zone `/iitb.ac.in/` forward counts as
-drift), portal/SSO `address=` pins, dnscrypt listen on `127.0.0.1:5453`, and
-IPv6 allowance. `dns_flow.sh`
-prints policy (including pins) and executes representative lookups.
+drift), portal/SSO `address=` pins, and `/etc/dnsproxy/dnsproxy.yaml` (port
+`5453` and `tls://1.1.1.1:853`). `dns_flow.sh`
+prints policy (including pins and `dnsproxy.yaml`) and executes representative
+lookups.
 
 DNS choice and packet routing are related but separate: a private campus answer
 is sent direct because of `10.0.0.0/8`. Public answers inside IITB's routed

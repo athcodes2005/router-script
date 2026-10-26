@@ -16,10 +16,10 @@
 - `stop_tunnel.sh`: terminates WARP with a bounded wait and restores direct WAN.
 - `configure_wifi.sh`: applies the India regulatory domain and stable widths.
 - `configure_dns.sh`: configures dnsmasq, campus forwarding, portal/SSO
-  `address=` pins, and dnscrypt-proxy2 on `127.0.0.1#5453`.
+  `address=` pins, and `dnsproxy` (which replaced `dnscrypt-proxy2`) on `127.0.0.1#5453`.
 - `configure_lan_ipv6.sh`: configures ULA-based LAN IPv6, RA, SLAAC, and DHCPv6.
 - `ensure_network.sh`: serialized health checks, drift repair (including DNS
-  pin and dnscrypt listen checks), recovery, fallback. Honors game-mode marker.
+  pin and `dnsproxy` config checks), recovery, fallback. Honors game-mode marker.
 - `game_mode.sh`: prefer direct WAN for low-latency gaming; demote WARP default.
 - `bootstrap_router.sh`: one-shot boot pipeline for config, login, and WARP.
 

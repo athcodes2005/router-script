@@ -23,8 +23,10 @@ echo "internet.iitb.ac.in -> $PORTAL_IP"
 echo "sso.iitb.ac.in -> $SSO_IP"
 
 echo ""
-echo "=== DNSCRYPT SUMMARY ==="
-grep -n 'server_names\|listen_addresses\|block_ipv6' /etc/dnscrypt-proxy2/dnscrypt-proxy.toml 2>/dev/null || echo "dnscrypt-proxy.toml not found"
+echo "=== DNSPROXY SUMMARY (replaced dnscrypt-proxy2 on firmware 4.11.0+) ==="
+# Replaced by dnsproxy:
+# grep -n 'server_names\|listen_addresses\|block_ipv6' /etc/dnscrypt-proxy2/dnscrypt-proxy.toml 2>/dev/null || echo "dnscrypt-proxy.toml not found"
+cat "$DNSPROXY_YAML" 2>/dev/null || echo "dnsproxy.yaml not found"
 
 echo ""
 echo "=== ROUTE TO DNS SERVERS ==="

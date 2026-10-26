@@ -27,38 +27,36 @@ log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
 }
 
-# --- Encrypted DNS daemon on 127.0.0.1#5453 (dnsproxy on 4.11+, dnscrypt-proxy on older firmware) ---
+# --- Encrypted DNS daemon on 127.0.0.1#5453 (dnsproxy; dnscrypt-proxy2 was replaced by dnsproxy in 4.11.0) ---
 
-# Set a TOML key to a literal value, inserting it at the end if the key is missing.
-set_toml_key() {
-    _toml="$1"; _key="$2"; _value="$3"
-    if [ -f "$_toml" ] && grep -q "^$_key[[:space:]]*=" "$_toml"; then
-        sed -i "s|^$_key[[:space:]]*=.*|$_key = $_value|" "$_toml"
-    else
-        printf '\n%s = %s\n' "$_key" "$_value" >> "$_toml"
-    fi
-}
+# Replaced by dnsproxy on firmware 4.11.0+:
+# set_toml_key() {
+#     _toml="$1"; _key="$2"; _value="$3"
+#     if [ -f "$_toml" ] && grep -q "^$_key[[:space:]]*=" "$_toml"; then
+#         sed -i "s|^$_key[[:space:]]*=.*|$_key = $_value|" "$_toml"
+#     else
+#         printf '\n%s = %s\n' "$_key" "$_value" >> "$_toml"
+#     fi
+# }
+# [ -d "$(dirname "$DNSCRYPT_TOML")" ] || mkdir -p "$(dirname "$DNSCRYPT_TOML")"
+# [ -f "$DNSCRYPT_TOML" ] || : > "$DNSCRYPT_TOML"
+# if ! grep -q "^server_names[[:space:]]*=" "$DNSCRYPT_TOML" && [ -f "$DNSCRYPT_TOML" ]; then
+#     if [ -f "$DNSCRYPT_TOML.bak" ]; then
+#         cp "$DNSCRYPT_TOML.bak" "$DNSCRYPT_TOML"
+#         log "dnscrypt-proxy config lacked server_names; restored from backup."
+#     else
+#         set_toml_key "$DNSCRYPT_TOML" server_names "['quad9-doh-ip4-port443-nofilter-ecs-pri','quad9-doh-ip6-port443-nofilter-ecs-pri']"
+#     fi
+# fi
+# set_toml_key "$DNSCRYPT_TOML" listen_addresses "['127.0.0.1:5453']"
+# set_toml_key "$DNSCRYPT_TOML" block_ipv6 false
+# if [ -x /etc/init.d/dnscrypt-proxy ]; then
+#     log "Restarting dnscrypt-proxy (DoH fallback)"
+#     /etc/init.d/dnscrypt-proxy restart
+# fi
 
-# Ensure the dnscrypt-proxy config (and its directory) exists before editing.
-[ -d "$(dirname "$DNSCRYPT_TOML")" ] || mkdir -p "$(dirname "$DNSCRYPT_TOML")"
-[ -f "$DNSCRYPT_TOML" ] || : > "$DNSCRYPT_TOML"
-
-if ! grep -q "^server_names[[:space:]]*=" "$DNSCRYPT_TOML" \
-    && [ -f "$DNSCRYPT_TOML" ]; then
-    if [ -f "$DNSCRYPT_TOML.bak" ]; then
-        cp "$DNSCRYPT_TOML.bak" "$DNSCRYPT_TOML"
-        log "dnscrypt-proxy config lacked server_names; restored from backup."
-    else
-        set_toml_key "$DNSCRYPT_TOML" server_names "['quad9-doh-ip4-port443-nofilter-ecs-pri','quad9-doh-ip6-port443-nofilter-ecs-pri']"
-    fi
-fi
-
-set_toml_key "$DNSCRYPT_TOML" listen_addresses "['127.0.0.1:5453']"
-set_toml_key "$DNSCRYPT_TOML" block_ipv6 false
-
-if [ -x /usr/sbin/dnsproxy ] && [ -x /etc/init.d/dnsproxy ]; then
-    [ -d "$(dirname "$DNSPROXY_YAML")" ] || mkdir -p "$(dirname "$DNSPROXY_YAML")"
-    cat > "$DNSPROXY_YAML" <<'EOF'
+[ -d "$(dirname "$DNSPROXY_YAML")" ] || mkdir -p "$(dirname "$DNSPROXY_YAML")"
+cat > "$DNSPROXY_YAML" <<'EOF'
 ---
 upstream:
   - "tls://1.1.1.1:853"
@@ -77,15 +75,13 @@ listen-ports:
   - 5453
 timeout: '5s'
 EOF
-    chmod 600 "$DNSPROXY_YAML"
-    uci set gl-dns-v2.@dns[0].mode='secure' 2>/dev/null || true
-    uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
-    uci commit gl-dns-v2 2>/dev/null || true
+chmod 600 "$DNSPROXY_YAML"
+uci set gl-dns-v2.@dns[0].mode='secure' 2>/dev/null || true
+uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
+uci commit gl-dns-v2 2>/dev/null || true
+if [ -x /etc/init.d/dnsproxy ]; then
     log "Restarting dnsproxy (encrypted DoT/DoH primary on 127.0.0.1:5453)"
     /etc/init.d/dnsproxy restart
-elif [ -x /etc/init.d/dnscrypt-proxy ]; then
-    log "Restarting dnscrypt-proxy (encrypted DoH on 127.0.0.1:5453)"
-    /etc/init.d/dnscrypt-proxy restart
 fi
 
 # --- dnsmasq: configure multi-server with strict-order ---
@@ -149,8 +145,10 @@ log "  Campus domains -> $CAMPUS_DNS_IP:"
 for DOMAIN in $CAMPUS_DOMAINS; do
     log "    $DOMAIN"
 done
-log "  dnscrypt-proxy (DoH): 127.0.0.1:5453 (last resort)"
-log "  block_ipv6 = false"
+log "  dnsproxy (DoT/DoH): 127.0.0.1:5453 (primary)"
+# Replaced by dnsproxy on firmware 4.11.0+:
+# log "  dnscrypt-proxy (DoH): 127.0.0.1:5453 (last resort)"
+# log "  block_ipv6 = false"
 log "  Portal/SSO pinned IPs (campus-DNS fallback):"
 log "    internet.iitb.ac.in -> $PORTAL_IP"
 log "    sso.iitb.ac.in -> $SSO_IP"

@@ -215,8 +215,9 @@ STUBS = {
     if flag client_absent_once; then @RM@ -f "$SIM_STATE/client_absent_once"; exit 1; fi
     @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
   dnsmasq) flag dnsmasq_down && exit 1; echo 123 ;;
-  dnscrypt-proxy) flag dnscrypt_down && exit 1; echo 789 ;;
-  dnsproxy) flag dnsproxy_up || exit 1; echo 790 ;;
+  # Replaced by dnsproxy on firmware 4.11.0+:
+  # dnscrypt-proxy) flag dnscrypt_down && exit 1; echo 789 ;;
+  dnsproxy) flag dnsproxy_down && exit 1; echo 790 ;;
   *) exit 1 ;;
 esac''',
     'ubus': '@CAT@ "$SIM_STATE/wireless.json" 2>/dev/null || echo "{}"',
@@ -261,7 +262,7 @@ esac''',
 }
 NO_OPS = ['fw3', 'killall', 'ifdown', 'wifi', 'logread', 'dmesg', 'tc', 'netstat',
           'crontab', 'free', 'uptime', 'uname', 'ps', 'ping', 'du', 'logger', 'sync']
-SERVICES = ['dnsmasq', 'odhcpd', 'dnscrypt-proxy', 'cron', 'firewall']
+SERVICES = ['dnsmasq', 'odhcpd', 'dnsproxy', 'cron', 'firewall']
 
 
 def _write_exec(path, body):
@@ -287,7 +288,7 @@ class Sandbox:
     def build(cls, base):
         box = cls(base)
         for path in [box.proj, box.bin, box.tmp, box.state, box.sysroot / 'etc/init.d',
-                     box.sysroot / 'etc/dnscrypt-proxy2', box.sysroot / 'etc/router-script/blinkit-hosts',
+                     box.sysroot / 'etc/dnsproxy', box.sysroot / 'etc/router-script/blinkit-hosts',
                      box.sysroot / 'sys/class/net/eth0', box.sysroot / 'var/run',
                      box.tmp / 'router-script-google']:
             path.mkdir(parents=True, exist_ok=True)
@@ -318,9 +319,12 @@ class Sandbox:
         # in the sandbox can ever signal a real process.
         (box.sysroot / 'var/run/dnsmasq').mkdir()
         (box.sysroot / 'var/run/dnsmasq/dnsmasq.cfg01411c.pid').write_text('sandbox\n')
-        (box.sysroot / 'etc/dnscrypt-proxy2/dnscrypt-proxy.toml').write_text(
-            "server_names = ['quad9-doh-ip4-port443-nofilter-ecs-pri']\n"
-            "listen_addresses = ['127.0.0.1:5453']\nblock_ipv6 = false\n")
+        # Replaced by dnsproxy on firmware 4.11.0+:
+        # (box.sysroot / 'etc/dnscrypt-proxy2/dnscrypt-proxy.toml').write_text(
+        #     "server_names = ['quad9-doh-ip4-port443-nofilter-ecs-pri']\n"
+        #     "listen_addresses = ['127.0.0.1:5453']\nblock_ipv6 = false\n")
+        (box.sysroot / 'etc/dnsproxy/dnsproxy.yaml').write_text(
+            '---\nupstream:\n  - "tls://1.1.1.1:853"\nlisten-ports:\n  - 5453\n')
         (box.sysroot / 'etc/sysupgrade.conf').write_text('%s/\n/etc/router-script/\n' % box.proj)
         (box.tmp / 'router-script-google/ranges.sha').write_text('simhash\n')
         (box.tmp / 'router-script-warp-ready').write_text('456\n')

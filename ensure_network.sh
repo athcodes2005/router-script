@@ -144,14 +144,13 @@ dns_config_ok() {
     echo "$CURRENT_ADDRESSES" | grep -Fq "/sso.iitb.ac.in/$SSO_IP" || return 1
 
     # Check encrypted DNS config on 127.0.0.1:5453 (must not steal :53).
-    [ -f "$DNSCRYPT_TOML" ] || return 1
-    grep -Eq "^block_ipv6[[:space:]]*= *false$" "$DNSCRYPT_TOML" || return 1
-    grep -Eq "^listen_addresses[[:space:]]*=.*127\.0\.0\.1:5453" "$DNSCRYPT_TOML" || return 1
-    if [ -x /usr/sbin/dnsproxy ] && [ -x /etc/init.d/dnsproxy ]; then
-        [ -f "$DNSPROXY_YAML" ] || return 1
-        grep -Fq "tls://1.1.1.1:853" "$DNSPROXY_YAML" || return 1
-        grep -Fq "5453" "$DNSPROXY_YAML" || return 1
-    fi
+    # Replaced by dnsproxy on firmware 4.11.0+:
+    # [ -f "$DNSCRYPT_TOML" ] || return 1
+    # grep -Eq "^block_ipv6[[:space:]]*= *false$" "$DNSCRYPT_TOML" || return 1
+    # grep -Eq "^listen_addresses[[:space:]]*=.*127\.0\.0\.1:5453" "$DNSCRYPT_TOML" || return 1
+    [ -f "$DNSPROXY_YAML" ] || return 1
+    grep -Fq "tls://1.1.1.1:853" "$DNSPROXY_YAML" || return 1
+    grep -Fq "5453" "$DNSPROXY_YAML" || return 1
 
     return 0
 }
@@ -554,9 +553,11 @@ check_platform_once() {
         [ "$(uci -q get glipv6.globals.enabled 2>/dev/null || echo 0)" != 1 ]; then
         PROBLEMS="$PROBLEMS; GL.iNet's IPv6 switch is off, so its 99-disable_ipv6 hook turns IPv6 off on every ifup"
     fi
-    if ! pidof dnscrypt-proxy >/dev/null 2>&1 && ! pidof dnsproxy >/dev/null 2>&1; then
-        PROBLEMS="$PROBLEMS; neither dnscrypt-proxy nor dnsproxy is running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
-    fi
+    # Replaced by dnsproxy on firmware 4.11.0+:
+    # pidof dnscrypt-proxy >/dev/null 2>&1 ||
+    #     PROBLEMS="$PROBLEMS; dnscrypt-proxy is not running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
+    pidof dnsproxy >/dev/null 2>&1 ||
+        PROBLEMS="$PROBLEMS; dnsproxy is not running, so dnsmasq's primary encrypted upstream (127.0.0.1#5453) is dead"
     PID_FOUND=0
     for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq/dnsmasq*.pid "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
         [ -f "$PID_FILE" ] || continue

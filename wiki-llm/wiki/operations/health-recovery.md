@@ -16,9 +16,10 @@ in the future after a clock reset).
    (after a reboot, before NTP syncs; this breaks lock ageing and TLS).
 2. Bound project logs when overlay storage crosses the warning threshold.
 3. Repair Wi-Fi configuration or reload a configured but down radio.
-4. Repair DNS configuration (the four upstreams first and in strict order,
-   forwards for exactly the listed campus hosts, portal/SSO address pins, the
-   dnscrypt listen address) and the dnsmasq runtime.
+4. Repair DNS configuration (the four upstreams first and in strict order with
+   `127.0.0.1#5453` primary, forwards for exactly the listed campus hosts,
+   portal/SSO address pins, and the `dnsproxy` configuration that replaced
+   `dnscrypt-proxy2`) and the dnsmasq runtime.
 5. Repair LAN IPv6 configuration drift.
 6. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN.
 7. Verify the core campus route separately from optional resolved site routes.

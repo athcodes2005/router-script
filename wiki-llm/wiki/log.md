@@ -996,3 +996,20 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../fetch_usque_rs.sh`, `../../update_from_git.sh`, `../../defaults.sh`
 - `../../tests/test_updater.py`, [[systems/warp-client]], [[sources]]
+
+## 2026-10-26 — Encrypted DoT/DoH primary via `dnsproxy` (replacing `dnscrypt-proxy2`)
+
+- Benchmarked DoT and DoH resolvers on the router: Cloudflare DoT/DoH (`1.1.1.1`,
+  `1.0.0.1`) and Quad9 DoT (`9.9.9.9`) answered in ~20 ms over warm connections.
+- Promoted `127.0.0.1#5453` (`dnsproxy` in parallel upstream mode across
+  Cloudflare DoT/DoH and Quad9 DoT/DoH) to primary (`DNS_SERVERS="127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11"`).
+- Commented out the legacy `dnscrypt-proxy2` code across `defaults.sh`,
+  `configure_dns.sh`, `ensure_network.sh`, `dns_flow.sh`, and `diagnose.sh` with
+  notes that `dnscrypt-proxy2` was replaced by `dnsproxy` on firmware 4.11.0+.
+- Updated [[systems/dns]], [[systems/script-map]], [[operations/health-recovery]],
+  and [[bugs/known-issues]].
+
+## Sources
+
+- `../../defaults.sh`, `../../configure_dns.sh`, `../../ensure_network.sh`
+- `../../dns_flow.sh`, `../../diagnose.sh`, [[systems/dns]]

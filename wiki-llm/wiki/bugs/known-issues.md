@@ -32,15 +32,17 @@ tool compatibility. Editing them does not change the active full-tunnel policy.
 ## External dependencies
 
 Operation depends on IITB portal/DNS availability, Cloudflare registration and
-MASQUE endpoints, local dnscrypt-proxy2, and OpenWrt firewall tools. The health
-pipeline can recover or fall back but cannot repair an upstream outage.
+MASQUE endpoints, local `dnsproxy` (which replaced `dnscrypt-proxy2` on firmware
+4.11.0+), and OpenWrt firewall tools. The health pipeline can recover or fall
+back but cannot repair an upstream outage.
 
 Portal and SSO hostnames are pinned locally (dnsmasq `address=` plus login
 `--resolve`) so a campus-DNS-only outage no longer blocks captive-portal login.
 Other campus names still require `10.200.1.11` or public resolvers as configured.
 
-dnscrypt-proxy2 often reports a multi-gigabyte virtual size on OpenWrt; resident
-usage is typically tens of megabytes. Prefer RSS over VSZ when judging memory.
+`dnsproxy` (and formerly `dnscrypt-proxy2`) is a Go daemon that often reports a
+multi-gigabyte virtual size on OpenWrt; resident usage is typically tens of
+megabytes. Prefer RSS over VSZ when judging memory.
 
 The known 2026-08-07 timer spin, 2026-08-09 forwarding starvation, 2026-08-11
 stale portal-session, 2026-08-13 LAN IPv6 repair-loop, 2026-08-14 campus-site

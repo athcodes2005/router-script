@@ -20,7 +20,8 @@ EXPECTED = {
     'CAMPUS_DIRECT_DOMAINS': 'www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in '
                              'mulyankan.cse.iitb.ac.in webmail.iitb.ac.in',
     'PORTAL_IP': '10.201.250.201', 'SSO_IP': '10.200.1.100',
-    'DNSCRYPT_TOML': '/etc/dnscrypt-proxy2/dnscrypt-proxy.toml',
+    # Replaced by dnsproxy on firmware 4.11.0+:
+    # 'DNSCRYPT_TOML': '/etc/dnscrypt-proxy2/dnscrypt-proxy.toml',
     'DNSPROXY_YAML': '/etc/dnsproxy/dnsproxy.yaml',
     'DNS_SERVERS': '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11',
     'DIRECT_PUBLIC_DOMAINS': 'api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io '
