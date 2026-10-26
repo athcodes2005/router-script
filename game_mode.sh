@@ -112,7 +112,7 @@ case "$CMD" in
         # repairs WAN/DNS/portal, but must not yank the default back to tun0.
         printf 'on\n' > "$MARKER"
         log "game_mode ON: public IPv4 prefers $WAN_IF (WARP demoted, IPv6 isolated)."
-        "$0" status
+        sh "$DIR/game_mode.sh" status
         ;;
     off)
         rm -f "$MARKER"
@@ -140,7 +140,7 @@ case "$CMD" in
             log "game_mode OFF: marker cleared; tunnel not running — start via ensure_network/tunnel.sh."
             sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
         fi
-        "$0" status
+        sh "$DIR/game_mode.sh" status
         ;;
     *)
         usage

@@ -1,4 +1,5 @@
 """F41: game mode isolates IPv6 with a REJECT rule; dnsmasq 2.85 cannot filter AAAA."""
+import subprocess
 import unittest
 
 from sandbox import Sandbox
@@ -31,6 +32,15 @@ class GameModeTests(unittest.TestCase):
         self.box.run('ensure_network.sh')
         self.assertIn('LAN IPv6 configuration drift detected', self.box.log('ensure'))
         self.assertIn('uci set dhcp.@dnsmasq[0].filter_aaaa=0', self.box.calls())
+
+    # A5: the trailing status call re-exec'd a bare "$0", which is not in PATH.
+    def test_on_and_off_report_status_when_run_by_bare_filename(self):
+        for mode in ('on', 'off'):
+            result = subprocess.run(['sh', 'game_mode.sh', mode], cwd=self.box.proj, env=self.box.env(),
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('game_mode', result.stdout)
+            self.assertNotIn('not found', result.stderr)
 
 
 if __name__ == '__main__':
