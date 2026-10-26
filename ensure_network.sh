@@ -173,6 +173,18 @@ dns_runtime_ok() {
     timeout 8 nslookup internet.iitb.ac.in 127.0.0.1 2>/dev/null | grep -q 'Address [0-9]*: 10\.'
 }
 
+# dnsmasq's primary upstream is dnsproxy on 127.0.0.1#5453. When it dies,
+# queries fall back to plain resolvers and dns_runtime_ok still passes
+# (the pinned name is answered locally). Restart it, once per tick.
+dnsproxy_alive_repair() {
+    [ -x /etc/init.d/dnsproxy ] && [ -f "$DNSPROXY_YAML" ] || return 0
+    grep -Fq "5453" "$DNSPROXY_YAML" || return 0
+    pidof dnsproxy >/dev/null 2>&1 && return 0
+    log "dnsproxy is not running; restarting it."
+    /etc/init.d/dnsproxy restart >> "$LOG_FILE" 2>&1 || log "WARNING: dnsproxy restart failed."
+    return 0
+}
+
 lan_ipv6_uci_ok() {
     [ "$(uci -q get dhcp.@dnsmasq[0].filter_aaaa 2>/dev/null || echo "")" = "0" ] || return 1
     [ "$(uci -q get dhcp.lan.ra 2>/dev/null || echo "")" = "server" ] || return 1
@@ -786,6 +798,8 @@ else
         exit 1
     fi
 fi
+
+dnsproxy_alive_repair
 
 if lan_ipv6_config_ok; then
     rm -f "$LAN_IPV6_RETRY_FILE"

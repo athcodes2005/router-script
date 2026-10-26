@@ -62,8 +62,10 @@ use router-provided DNS for campus-only hosts.
 `dnscrypt-proxy` TOML code is commented out in the scripts), and restarts
 `dnsproxy` and `dnsmasq`. A failed `dnsproxy` restart is logged as a warning
 and the script carries on, so the dnsmasq, pin and ipset repair still runs
-(dnsmasq falls back to the plain resolvers). `check_platform_once` warns if `dnsproxy` is not
-running.
+(dnsmasq falls back to the plain resolvers). Each `ensure_network.sh` tick restarts `dnsproxy` if its process is not running
+(`dnsproxy_alive_repair`: needs `/etc/init.d/dnsproxy` and a `dnsproxy.yaml`
+mentioning `5453`; once per tick, logged, a failed restart only warns).
+`check_platform_once` still warns once per boot if `dnsproxy` is not running.
 `ensure_network.sh` verifies `strictorder` and
 `noresolv`, that the four upstreams (`127.0.0.1#5453`, `8.8.8.8`, `8.8.4.4`,
 `10.200.1.11`) come first and in order, forwards for
