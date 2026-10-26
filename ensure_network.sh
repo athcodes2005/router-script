@@ -42,9 +42,6 @@ CLOCK_CHECK_FILE="${CLOCK_CHECK_FILE:-/tmp/router-script-clock-checked-at}"
 CLOCK_CHECK_INTERVAL="${CLOCK_CHECK_INTERVAL:-600}"
 CLOCK_SKEW_WARN_SECONDS="${CLOCK_SKEW_WARN_SECONDS:-120}"
 
-# DNS servers expected by the new config
-DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"
-
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
 }
@@ -146,10 +143,15 @@ dns_config_ok() {
     echo "$CURRENT_ADDRESSES" | grep -Fq "/internet.iitb.ac.in/$PORTAL_IP" || return 1
     echo "$CURRENT_ADDRESSES" | grep -Fq "/sso.iitb.ac.in/$SSO_IP" || return 1
 
-    # Check dnscrypt-proxy block_ipv6 and listen port (must not steal :53).
-    [ -f "/etc/dnscrypt-proxy2/dnscrypt-proxy.toml" ] || return 1
-    grep -Eq "^block_ipv6[[:space:]]*= *false$" "/etc/dnscrypt-proxy2/dnscrypt-proxy.toml" || return 1
-    grep -Eq "^listen_addresses[[:space:]]*=.*127\.0\.0\.1:5453" "/etc/dnscrypt-proxy2/dnscrypt-proxy.toml" || return 1
+    # Check encrypted DNS config on 127.0.0.1:5453 (must not steal :53).
+    [ -f "$DNSCRYPT_TOML" ] || return 1
+    grep -Eq "^block_ipv6[[:space:]]*= *false$" "$DNSCRYPT_TOML" || return 1
+    grep -Eq "^listen_addresses[[:space:]]*=.*127\.0\.0\.1:5453" "$DNSCRYPT_TOML" || return 1
+    if [ -x /usr/sbin/dnsproxy ] && [ -x /etc/init.d/dnsproxy ]; then
+        [ -f "$DNSPROXY_YAML" ] || return 1
+        grep -Fq "tls://1.1.1.1:853" "$DNSPROXY_YAML" || return 1
+        grep -Fq "5453" "$DNSPROXY_YAML" || return 1
+    fi
 
     return 0
 }

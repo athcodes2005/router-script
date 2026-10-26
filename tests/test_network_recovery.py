@@ -16,7 +16,7 @@ def function(name):
 
 # defaults.sh, then ensure_network.sh's own defaults, as the script sources them.
 DEFAULTS = (ROOT / 'defaults.sh').read_text() + SOURCE[
-    SOURCE.index('. "$DIR/defaults.sh"\n') + len('. "$DIR/defaults.sh"\n'):SOURCE.index('# DNS servers expected')]
+    SOURCE.index('. "$DIR/defaults.sh"\n') + len('. "$DIR/defaults.sh"\n'):SOURCE.index('\nlog() {\n')]
 ALL_FUNCTIONS = ''.join(re.findall(r'^[a-z_0-9]+\(\) [\{\(]\n.*?^[\}\)]\n', SOURCE, re.M | re.S))
 GAME_CHAIN = '\n'.join([
     '-N GAME_SESSION_POLICY',

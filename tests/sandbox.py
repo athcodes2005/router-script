@@ -20,6 +20,7 @@ SHELL = shutil.which('dash') or '/bin/sh'
 REWRITES = [
     ('/etc/init.d/', '${SYSROOT}/etc/init.d/'),
     ('/etc/dnscrypt-proxy2/', '${SYSROOT}/etc/dnscrypt-proxy2/'),
+    ('/etc/dnsproxy/', '${SYSROOT}/etc/dnsproxy/'),
     ('/etc/router-script/', '${SYSROOT}/etc/router-script/'),
     ('/etc/hotplug.d/', '${SYSROOT}/etc/hotplug.d/'),
     ('/etc/sysupgrade.conf', '${SYSROOT}/etc/sysupgrade.conf'),
@@ -129,8 +130,8 @@ case "$key" in
   'dhcp.@dnsmasq[0].strictorder'|'dhcp.@dnsmasq[0].noresolv') echo 1 ;;
   'dhcp.@dnsmasq[0].filter_aaaa') if flag filter_aaaa_on; then echo 1; else echo 0; fi ;;
   'dhcp.@dnsmasq[0].server')
-    if flag dns_order_drift; then printf '10.200.1.11 8.8.8.8 8.8.4.4 127.0.0.1#5453'
-    else printf '8.8.8.8 8.8.4.4 10.200.1.11 127.0.0.1#5453'; fi
+    if flag dns_order_drift; then printf '10.200.1.11 127.0.0.1#5453 8.8.8.8 8.8.4.4'
+    else printf '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11'; fi
     printf ' /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'
     for d in internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in; do
       [ "$d" = webmail.iitb.ac.in ] && flag dns_drift && continue

@@ -1,10 +1,11 @@
 #!/bin/sh
 
-# Configure DNS with plain resolvers first, DoH as last resort:
-#   1. 8.8.8.8 (Google primary)
-#   2. 8.8.4.4 (Google secondary)
-#   3. 10.200.1.11 (campus resolver)
-#   4. 127.0.0.1#5453 (dnscrypt-proxy DoH — fallback only)
+# Configure DNS with encrypted DNS (DoT/DoH on 127.0.0.1#5453) first, plain
+# resolvers as fallback:
+#   1. 127.0.0.1#5453 (dnsproxy DoT/DoH primary — Cloudflare 1.1.1.1 + Quad9 9.9.9.9)
+#   2. 8.8.8.8 (Google fallback)
+#   3. 8.8.4.4 (Google secondary fallback)
+#   4. 10.200.1.11 (campus resolver fallback)
 #
 # Campus-specific domains go directly to 10.200.1.11 via dnsmasq server= directives.
 
@@ -22,14 +23,11 @@ if [ -f "$ENV_FILE" ]; then
 fi
 . "$DIR/defaults.sh"
 
-# DNS servers in priority order
-DNS_SERVERS="8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP 127.0.0.1#5453"
-
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
 }
 
-# --- dnscrypt-proxy: keep running as last-resort upstream on 127.0.0.1#5453 ---
+# --- Encrypted DNS daemon on 127.0.0.1#5453 (dnsproxy on 4.11+, dnscrypt-proxy on older firmware) ---
 
 # Set a TOML key to a literal value, inserting it at the end if the key is missing.
 set_toml_key() {
@@ -45,9 +43,6 @@ set_toml_key() {
 [ -d "$(dirname "$DNSCRYPT_TOML")" ] || mkdir -p "$(dirname "$DNSCRYPT_TOML")"
 [ -f "$DNSCRYPT_TOML" ] || : > "$DNSCRYPT_TOML"
 
-# If a truncated config lost its resolver list, restore the known-good backup so
-# dnscrypt-proxy has server_names (otherwise it exits with "No servers
-# configured"). The statements below re-apply the listen/block_ipv6 overrides.
 if ! grep -q "^server_names[[:space:]]*=" "$DNSCRYPT_TOML" \
     && [ -f "$DNSCRYPT_TOML" ]; then
     if [ -f "$DNSCRYPT_TOML.bak" ]; then
@@ -58,14 +53,38 @@ if ! grep -q "^server_names[[:space:]]*=" "$DNSCRYPT_TOML" \
     fi
 fi
 
-# dnscrypt-proxy MUST answer on 127.0.0.1:5453 (dnsmasq's last-resort upstream).
-# Without an explicit listen_addresses it defaults to 127.0.0.1:53 and collides
-# with dnsmasq, crashing in a bind()-use loop.
 set_toml_key "$DNSCRYPT_TOML" listen_addresses "['127.0.0.1:5453']"
 set_toml_key "$DNSCRYPT_TOML" block_ipv6 false
 
-if [ -x /etc/init.d/dnscrypt-proxy ]; then
-    log "Restarting dnscrypt-proxy (DoH fallback)"
+if [ -x /usr/sbin/dnsproxy ] && [ -x /etc/init.d/dnsproxy ]; then
+    [ -d "$(dirname "$DNSPROXY_YAML")" ] || mkdir -p "$(dirname "$DNSPROXY_YAML")"
+    cat > "$DNSPROXY_YAML" <<'EOF'
+---
+upstream:
+  - "tls://1.1.1.1:853"
+  - "tls://1.0.0.1:853"
+  - "https://cloudflare-dns.com/dns-query"
+  - "tls://9.9.9.9:853"
+  - "https://dns.quad9.net/dns-query"
+bootstrap:
+  - "8.8.8.8:53"
+  - "8.8.4.4:53"
+  - "1.1.1.1:53"
+listen-addrs:
+  - "127.0.0.1"
+  - "::1"
+listen-ports:
+  - 5453
+timeout: '5s'
+EOF
+    chmod 600 "$DNSPROXY_YAML"
+    uci set gl-dns-v2.@dns[0].mode='secure' 2>/dev/null || true
+    uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
+    uci commit gl-dns-v2 2>/dev/null || true
+    log "Restarting dnsproxy (encrypted DoT/DoH primary on 127.0.0.1:5453)"
+    /etc/init.d/dnsproxy restart
+elif [ -x /etc/init.d/dnscrypt-proxy ]; then
+    log "Restarting dnscrypt-proxy (encrypted DoH on 127.0.0.1:5453)"
     /etc/init.d/dnscrypt-proxy restart
 fi
 

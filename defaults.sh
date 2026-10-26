@@ -21,6 +21,8 @@ CAMPUS_DOMAINS="${CAMPUS_DOMAINS:-internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.
 PORTAL_IP="${PORTAL_IP:-10.201.250.201}"
 SSO_IP="${SSO_IP:-10.200.1.100}"
 DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
+DNSPROXY_YAML="${DNSPROXY_YAML:-/etc/dnsproxy/dnsproxy.yaml}"
+DNS_SERVERS="${DNS_SERVERS:-127.0.0.1#5453 8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP}"
 INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
 INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
 

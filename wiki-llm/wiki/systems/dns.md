@@ -6,8 +6,16 @@ resolvers from silently bypassing the configured chain.
 
 ## Upstream policy
 
-The expected server list contains Google IPv4 resolvers, the IITB campus DNS
-server, and dnscrypt-proxy2 on `127.0.0.1#5453`. dnsmasq uses strict ordering.
+The expected server list places encrypted DNS (`127.0.0.1#5453`) first, followed
+by Google IPv4 resolvers (`8.8.8.8`, `8.8.4.4`) and the IITB campus DNS server
+(`10.200.1.11`) as fallbacks. dnsmasq uses strict ordering (`strictorder=1`).
+
+On GL.iNet 4.11.0, `configure_dns.sh` configures `/usr/sbin/dnsproxy`
+(`/etc/dnsproxy/dnsproxy.yaml`) on `127.0.0.1:5453` in parallel upstream mode
+across Cloudflare DoT/DoH (`tls://1.1.1.1:853`, `tls://1.0.0.1:853`,
+`https://cloudflare-dns.com/dns-query`) and Quad9 DoT/DoH (`tls://9.9.9.9:853`,
+`https://dns.quad9.net/dns-query`), returning whichever encrypted resolver
+answers fastest (~20 ms warm lookup).
 
 Selected campus names are explicitly forwarded to campus DNS:
 
