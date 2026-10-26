@@ -57,6 +57,7 @@
 ## Data and executable files
 
 - `.env`: secret credentials plus optional interface and policy overrides.
+- `.env.example`: template listing required credentials and optional WARP / Git updater settings.
 - `config.json`: secret WARP registration and tunnel addressing.
 - `blocked_sites.txt`: legacy per-destination bypass data.
 - `warp_clients.txt`: legacy per-client WARP selection data.
