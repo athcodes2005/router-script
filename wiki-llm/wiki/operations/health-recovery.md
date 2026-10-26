@@ -19,7 +19,11 @@ in the future after a clock reset).
 4. Repair DNS configuration (the four upstreams first and in strict order with
    `127.0.0.1#5453` primary, forwards for exactly the listed campus hosts,
    portal/SSO address pins, and the `dnsproxy` configuration that replaced
-   `dnscrypt-proxy2`) and the dnsmasq runtime.
+   `dnscrypt-proxy2`) and the dnsmasq runtime. Then, when `/etc/init.d/dnsproxy`
+   exists and `dnsproxy.yaml` names port 5453, restart `dnsproxy` if its process
+   is gone (at most once per tick, logged; a failed restart only warns). Routers
+   without `dnsproxy` are untouched. `dns_runtime_ok` cannot see this failure,
+   because its probe name is a local `address=` pin.
 5. Repair LAN IPv6 configuration drift.
 6. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN.
 7. Verify the core campus route separately from optional resolved site routes.
