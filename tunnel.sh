@@ -24,8 +24,8 @@ WARP_CC="${WARP_CC:-cubic}"
 # Datagrams the client may queue before it pauses TUN reads; 0 leaves it off.
 WARP_TUN_BACKPRESSURE="${WARP_TUN_BACKPRESSURE:-0}"
 # The client's CoDel target, in ms, for upload datagrams waiting to be sent;
-# 0 leaves it off.
-WARP_UPLOAD_CODEL="${WARP_UPLOAD_CODEL:-0}"
+# on at 20 ms by default (measured 2026-10-26), 0 turns it off.
+WARP_UPLOAD_CODEL="${WARP_UPLOAD_CODEL:-20}"
 WARP_STARTUP_TIMEOUT="${WARP_STARTUP_TIMEOUT:-25}"
 
 exec >> "$LOG_FILE" 2>&1

@@ -155,9 +155,14 @@ class TunnelLaunchTests(unittest.TestCase):
         self.assertNotIn('--tun-backpressure', args)
         self.assertIn('[WARNING] Ignoring WARP_TUN_BACKPRESSURE=lots: not a number.', log)
 
-    # F10: the upload CoDel stays off unless WARP_UPLOAD_CODEL asks for it.
-    def test_upload_codel_is_off_by_default(self):
-        args, log = self.launch('--congestion-control --ready-file --syslog --upload-codel')
+    # The upload CoDel is on at 20 ms by default; WARP_UPLOAD_CODEL=0 turns it off.
+    def test_upload_codel_is_on_by_default(self):
+        args, _ = self.launch('--congestion-control --ready-file --syslog --upload-codel')
+        self.assertEqual(args[args.index('--upload-codel') + 1], '20')
+
+    def test_upload_codel_zero_disables_it(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog --upload-codel',
+                                WARP_UPLOAD_CODEL='0')
         self.assertNotIn('--upload-codel', args)
         self.assertNotIn('CoDel', log)
 

@@ -40,7 +40,7 @@ so older rollback binaries remain compatible:
 - `--ready-file <PATH>` (`WARP_READY_FILE`): `tunnel.sh` waits up to 25 s for
   this PID marker before installing public default routes.
 - `--syslog`: logs session lifecycle and disconnect reasons to `logread -e usque-rs`.
-- `--upload-codel <MS>` (from `WARP_UPLOAD_CODEL`, off by default).
+- `--upload-codel <MS>` (from `WARP_UPLOAD_CODEL`, default 20; `0` turns it off).
 - `--tun-backpressure <N>` (from `WARP_TUN_BACKPRESSURE`, off by default).
 
 ## `v0.2.0` WARP audit optimizations (deployed 2026-10-26)
