@@ -27,9 +27,15 @@ Internet, WARP and campus routing all healthy. Same failure class as
 
 ## Verification
 
-Pending deploy. After deploy, confirm the router resolves the name to a private
-10.200.x address and that a LAN client loads the page (clients must use
-router-provided DNS).
+Deployed 2026-10-26 (`6108c55`): only `defaults.sh` was swapped in atomically
+under the maintenance lock, without stopping WARP (PID unchanged). The next
+health tick logged DNS drift and reapplied `configure_dns.sh` (a few seconds of
+DNS unavailability while dnsmasq restarted).
+- The router and a LAN Mac (router DNS, IPv4 and IPv6) resolve the name to a
+  private 10.200.x address, routed via `eth0`.
+- HTTPS from the Mac returns `302` to `/index.php/login` in about 53 ms.
+- Clients that cached the earlier NXDOMAIN need a DNS cache flush (macOS:
+  `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`).
 
 ## Sources
 
