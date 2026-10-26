@@ -37,7 +37,8 @@ uses bounded SSH/SCP sessions to transfer evidence to the workstation.
 
 `paths.sh` selects persistent log locations and moves new project output to
 `/tmp` if the project filesystem is at least 97 percent used or unwritable.
-`rotate_logs.sh` bounds size, generations, and snapshot counts; cron invokes it
+`rotate_logs.sh` bounds size, generations, and snapshot counts (including
+`latency.log` from `measure_load_latency.sh`); cron invokes it
 every six hours. Tunnel status rendering is redirected away from persistent
 flash because it rewrites a line continuously.
 

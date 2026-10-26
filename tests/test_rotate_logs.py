@@ -27,6 +27,15 @@ class RotateLogsTests(unittest.TestCase):
         self.assertIn('Log maintenance completed', result.stdout)  # exit status is not asserted: the EXIT trap leaks 1
         self.assertEqual(len(list(alt.glob('diagnostic_*.log'))), 2)
 
+    # A7: measure_load_latency.sh writes latency.log, which was never rotated.
+    def test_rotates_latency_log(self):
+        latency = self.box.proj / 'logs' / 'latency.log'
+        latency.write_text('x' * 5000)
+        result = self.box.run('rotate_logs.sh', MAX_LOG_BYTES='1000')
+        self.assertIn('Log maintenance completed', result.stdout)  # exit status is not asserted: the EXIT trap leaks 1
+        self.assertEqual(latency.read_text(), '')
+        self.assertEqual(len((self.box.proj / 'logs' / 'latency.log.1').read_text()), 1000)
+
 
 if __name__ == '__main__':
     unittest.main()

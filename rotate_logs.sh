@@ -63,6 +63,7 @@ rotate_file "$(prepare_log_file ensure)"
 rotate_file "$(prepare_log_file maintenance)"
 rotate_file "$(prepare_log_file wifi)"
 rotate_file "$(prepare_log_file game_monitor)"
+rotate_file "$(prepare_log_file latency)"
 
 if [ "$MAX_DIAGNOSTICS" -gt 0 ] 2>/dev/null; then
     ls -1t "$DIAGNOSTICS_DIR"/diagnostic_*.log 2>/dev/null | sed -n "$((MAX_DIAGNOSTICS + 1)),\$p" | while IFS= read -r OLD_FILE; do
