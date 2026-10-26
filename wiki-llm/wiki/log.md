@@ -1013,3 +1013,29 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../defaults.sh`, `../../configure_dns.sh`, `../../ensure_network.sh`
 - `../../dns_flow.sh`, `../../diagnose.sh`, [[systems/dns]]
+
+## 2026-10-26 — Raised `tun0` MTU to 1,320 B and aligned TCP MSS to 1280/1260 (`usque-rs` `v0.2.0`)
+
+- Added `TUN_MTU=1320`, `TUN_IPV4_MSS=1280` (`1320 - 40`), and `TUN_IPV6_MSS=1260`
+  (`1320 - 60`) in `defaults.sh` to match `usque-rs` `v0.2.0`'s 1,320 B dynamic
+  datagram IP payload ceiling (`[I4]`).
+- Updated `tunnel.sh` to pass `--mtu "$TUN_MTU"` on launch and apply
+  `ip link set dev "$TUN_IF" mtu "$TUN_MTU"` on reuse; updated `ensure_network.sh`
+  (`nat_rules_ok`, `ensure_nat_and_mss_rules`) and `stop_tunnel.sh` to verify,
+  repair, and clean up `tun0` MTU and `1280`/`1260` MSS rules in place.
+- All 169 Python sandbox and unit tests pass.
+- Deployed `edb40fc` and `usque-rs` `v0.2.0` (`83deac89…`) to the router and
+  verified live:
+  - `ip link show dev tun0` reports `mtu 1320`.
+  - `iptables`/`ip6tables -t mangle -S FORWARD` clamp `tun0` ingress SYNs to
+    `1280` (IPv4) and `1260` (IPv6).
+  - 1,320 B packets (`ping -4 -s 1292 -I tun0 1.1.1.1 -c 3`) pass with 0% loss
+    (3.58–4.78 ms RTT).
+  - `measure_load_latency.sh 12` recorded **4/5/6 ms** idle RTT, **93.6 Mbit/s
+    upload** (27/46/67 ms RTT), and **136.9 Mbit/s download** (8/23/54 ms RTT).
+
+## Sources
+
+- `../../defaults.sh`, `../../tunnel.sh`, `../../stop_tunnel.sh`, `../../ensure_network.sh`
+- `../../tests/test_defaults.py`, `../../tests/test_network_recovery.py`, `../../tests/test_tunnel_start.py`
+- [[systems/warp-client]], [[bugs/opencode-pqc-mss-clamping-2026-10-08]]

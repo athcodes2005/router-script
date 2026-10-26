@@ -5,7 +5,7 @@
 1. The client sends a packet to its LAN gateway on `br-lan`.
 2. The destination does not match a configured direct-WAN exception.
 3. The preferred IPv4 default selects `tun0`.
-4. The router clamps TCP MSS bidirectionally (1240 IPv4 / 1220 IPv6) and masquerades at `tun0`.
+4. The router clamps TCP MSS bidirectionally (1280 IPv4 / 1260 IPv6 for `tun0` MTU 1320) and masquerades at `tun0`.
 5. `usque-rs` carries the IP packet inside CONNECT-IP over QUIC.
 6. The QUIC transport itself reaches the WARP endpoint through an explicit
    physical-WAN route, avoiding recursive tunneling.

@@ -23,14 +23,17 @@ WARP, while loading successfully over mobile data.
 
 ## Repair
 
-- Added inbound TCP MSS clamping on `tun0` for IPv4 (`--set-mss 1240`) and IPv6
-  (`--set-mss 1220`) in `tunnel.sh` and `stop_tunnel.sh`.
+- Added inbound TCP MSS clamping on `tun0` for IPv4 (`--set-mss 1240` at MTU
+  1280, updated on 2026-10-26 to `--set-mss 1280` when `TUN_MTU` was raised to
+  `1320`) and IPv6 (`--set-mss 1220` at MTU 1280, updated to `--set-mss 1260`
+  at `TUN_MTU=1320`) in `tunnel.sh` and `stop_tunnel.sh`.
 - Extended `ensure_network.sh`'s `nat_rules_ok` and added `ensure_nat_and_mss_rules`
-  to verify and repair both outbound and inbound MSS clamping in-place.
-- Deployed to the router with staged promotion and lock protection; WARP PID
-  remained unchanged.
+  to verify and repair `tun0` link MTU (`1320`) and both outbound and inbound
+  MSS clamping in-place.
+- Deployed to the router with staged promotion and lock protection.
 - Validated with live OpenSSL `X25519MLKEM768` handshakes, Python urllib requests,
-  and 21 regression tests in `tests/test_network_recovery.py`.
+  unfragmented 1,320 B ICMP probes (`ping -4 -s 1292 -I tun0 1.1.1.1`), and
+  regression tests in `tests/test_network_recovery.py`.
 
 ## Sources
 

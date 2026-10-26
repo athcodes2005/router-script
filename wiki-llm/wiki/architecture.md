@@ -25,7 +25,8 @@ fallback are described in [[systems/google-wan]].
 - Explicit campus-only public hosts have narrow direct routes through `eth0`.
 - Every configured/current WARP endpoint has a direct route through `eth0`.
 - IPv4 and IPv6 LAN traffic is masqueraded when leaving `tun0`.
-- TCP MSS is clamped bidirectionally for traffic traversing `tun0` (1240 IPv4 / 1220 IPv6).
+- `tun0` uses link MTU `1320` (`TUN_MTU`), and TCP MSS is clamped bidirectionally
+  for traffic traversing `tun0` (1280 IPv4 / 1260 IPv6).
 
 ## Control-plane invariants
 
