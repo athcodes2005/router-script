@@ -162,6 +162,47 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertFalse((self.box.proj / '.deployed_commit').exists())
         self.assertIn('rolling back', self.box.log('maintenance'))
 
+    def test_failed_commit_is_recorded_and_not_retried(self):
+        # B7: a commit that fails the health gate is rolled back once, not every cron run.
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit 0\n')
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        self.make_tarball(healthy=False)
+        self.assertEqual(self.run_updater().returncode, 1)
+        failed = self.box.proj / '.git_failed_commit'
+        self.assertEqual(failed.read_text().strip(), SHA)
+        # Even a now-healthy tarball for the same commit is skipped.
+        self.make_tarball(healthy=True)
+        res = self.run_updater()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn('previously failed its health check', self.box.log('maintenance'))
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
+        self.assertFalse((self.box.proj / '.deployed_commit').exists())
+
+    def test_failed_commit_skip_ends_when_file_removed_or_flag_given(self):
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / '.git_failed_commit').write_text(SHA + '\n')
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
+        res = self.box.run('update_from_git.sh', '--retry-failed', GITHUB_REPO='owner/router-script',
+                           GITHUB_TOKEN='ghp_testtoken123', AUTO_FETCH_USQUE='0', API_DIR=str(self.api))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
+        self.assertFalse((self.box.proj / '.git_failed_commit').exists())
+        # Removing the file by hand also ends the skip.
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / '.deployed_commit').unlink()
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
+
+    def test_different_commit_is_not_blocked_by_an_old_failure(self):
+        (self.box.proj / '.git_failed_commit').write_text('f' * 40 + '\n')
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+        self.assertFalse((self.box.proj / '.git_failed_commit').exists())
+
 
 class UsqueFetchTests(unittest.TestCase):
     def setUp(self):
@@ -257,6 +298,57 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
         self.assertEqual((self.box.proj / 'usque-rs-upstream-v0.1.0').read_text(), old_bin)
         self.assertIn('rolling back to previous binary', self.box.log('maintenance'))
+
+    def install_router_case(self, ensure_ok):
+        old_bin = '#!/bin/sh\necho "--congestion-control --ready-file --syslog"\n'
+        (self.box.proj / 'usque-rs').write_text(old_bin)
+        (self.box.proj / 'usque-rs').chmod(0o755)
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit %d\n' % (0 if ensure_ok else 1))
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        for name in ('tunnel.sh', 'stop_tunnel.sh'):
+            (self.box.proj / name).write_text('#!/bin/sh\nexit 0\n')
+        return old_bin
+
+    def tarball_downloads(self):
+        return sum(1 for u in self.fetched_urls() if u.endswith('.tar.gz'))
+
+    def test_failed_archive_is_recorded_and_not_retried(self):
+        # B2: a release that fails the health check is rolled back once, not every cron run.
+        old_bin = self.install_router_case(ensure_ok=False)
+        digest = self.make_release('#!/bin/sh\necho "--syslog bad"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 1)
+        self.assertEqual((self.box.proj / '.usque_failed_sha').read_text().strip(), digest)
+        self.assertEqual(self.tarball_downloads(), 1)
+        res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.tarball_downloads(), 1)
+        self.assertIn('previously failed its health check', self.box.log('maintenance'))
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+
+    def test_failed_archive_skip_ends_on_new_sha_flag_or_file_removal(self):
+        self.install_router_case(ensure_ok=True)
+        failed = self.box.proj / '.usque_failed_sha'
+        digest = self.make_release('#!/bin/sh\necho "--syslog v2"\n')
+        failed.write_text(digest + '\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 0)
+        # --retry-failed installs it, and success clears the record.
+        res = self.box.run('fetch_usque_rs.sh', '--retry-failed', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.tarball_downloads(), 1)
+        self.assertFalse(failed.exists())
+        # A different archive is not blocked by an older failure.
+        failed.write_text('e' * 64 + '\n')
+        self.make_release('#!/bin/sh\necho "--syslog v3"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 2)
+        self.assertFalse(failed.exists())
+        # Removing the file by hand ends the skip too.
+        digest = self.make_release('#!/bin/sh\necho "--syslog v4"\n')
+        failed.write_text(digest + '\n')
+        failed.unlink()
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 3)
 
 
 if __name__ == '__main__':

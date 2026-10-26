@@ -13,6 +13,8 @@ usque-rs
 usque-rs-upstream-v0.1.0
 .usque_release_sha
 .deployed_commit
+.usque_failed_sha
+.git_failed_commit
 __pycache__/
 *.pyc
 .DS_Store

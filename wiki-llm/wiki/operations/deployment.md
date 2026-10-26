@@ -57,6 +57,11 @@ When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
   promotes the deployable files via `promote_staged.sh` under `lock.sh`;
 - runs `ensure_network.sh` as a health gate and records `.deployed_commit`, or
   immediately rolls back to the pre-update backup if the health check fails.
+- a commit that failed the health gate is recorded in `.git_failed_commit` and
+  skipped on later runs (no 15-minute retry loop). The skip ends when the deploy
+  branch moves to another commit, when the file is removed, or with
+  `update_from_git.sh --retry-failed`. The file is router-local, gitignored and
+  never shipped or deleted by sync/promote.
 
 ## Verification checklist
 

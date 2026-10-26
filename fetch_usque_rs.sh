@@ -4,7 +4,11 @@
 #
 # Modes:
 #   ./fetch_usque_rs.sh --download-only   (Mac or router: download & verify into $DIR/usque-rs if missing or outdated)
-#   ./fetch_usque_rs.sh                   (Router: check release, back up to usque-rs-upstream-v0.1.0, promote under lock, restart WARP, and roll back if health check fails)
+#   ./fetch_usque_rs.sh [--retry-failed]  (Router: check release, back up to usque-rs-upstream-v0.1.0, promote under lock, restart WARP, and roll back if health check fails)
+#
+# An archive that failed the health check is recorded in .usque_failed_sha and
+# skipped on later runs. The skip ends when the release's sha changes, when
+# that file is removed, or with --retry-failed.
 
 set -eu
 
@@ -20,9 +24,14 @@ fi
 . "$DIR/defaults.sh"
 
 DOWNLOAD_ONLY=0
-case "${1:-}" in
-    --download-only) DOWNLOAD_ONLY=1 ;;
-esac
+RETRY_FAILED=0
+for ARG in "$@"; do
+    case "$ARG" in
+        --download-only) DOWNLOAD_ONLY=1 ;;
+        --retry-failed) RETRY_FAILED=1 ;;
+    esac
+done
+FAILED_SHA_FILE="$DIR/.usque_failed_sha"
 
 GITHUB_Download_Base="${USQUE_DOWNLOAD_BASE_URL:-https://github.com/$USQUE_REPO/releases}"
 if [ "$USQUE_RELEASE_TAG" = "latest" ]; then
@@ -86,6 +95,12 @@ if [ -f "$DIR/usque-rs" ] && [ "$EXPECTED_ARCHIVE_SHA" = "$RECORDED_ARCHIVE_SHA"
     exit 0
 fi
 
+FAILED_ARCHIVE_SHA="$(cat "$FAILED_SHA_FILE" 2>/dev/null || true)"
+if [ "$RETRY_FAILED" -eq 0 ] && [ -n "$FAILED_ARCHIVE_SHA" ] && [ "$EXPECTED_ARCHIVE_SHA" = "$FAILED_ARCHIVE_SHA" ]; then
+    log "Skipping usque-rs release $EXPECTED_ARCHIVE_SHA: it previously failed its health check (remove $FAILED_SHA_FILE or use --retry-failed to try again)."
+    exit 0
+fi
+
 if ! fetch_url "$ARCHIVE_URL" -o "$WORK/$USQUE_ASSET_NAME" 2>/dev/null; then
     log "WARNING: failed to download $ARCHIVE_URL."
     exit 1
@@ -113,6 +128,7 @@ fi
 
 if [ "$NEW_BIN_SHA" = "$CURRENT_BIN_SHA" ]; then
     printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$DIR/.usque_release_sha"
+    rm -f "$FAILED_SHA_FILE"
     exit 0
 fi
 
@@ -174,11 +190,13 @@ release_maintenance_lock
 
 if [ "$INSTALLED_OK" -eq 1 ] && sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1; then
     printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$DIR/.usque_release_sha"
+    rm -f "$FAILED_SHA_FILE"
     sync
     log "Updated usque-rs ($NEW_BIN_SHA) and passed the health check."
     exit 0
 fi
 
+printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$FAILED_SHA_FILE"
 log "ERROR: usque-rs ($NEW_BIN_SHA) failed startup or health check; rolling back to previous binary."
 if [ -f "$DIR/usque-rs-upstream-v0.1.0" ] && acquire_maintenance_lock "$LOCK_WAIT"; then
     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true

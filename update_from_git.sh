@@ -8,6 +8,11 @@
 #   GITHUB_TOKEN=<fine-grained read-only token>
 #   DEPLOY_BRANCH=deploy
 #   GITHUB_API_URL=https://api.github.com
+#
+# A commit that fails the post-update health check is rolled back and recorded
+# in .git_failed_commit; later runs skip it. The skip ends when the deploy
+# branch moves to another commit, when that file is removed, or with
+# ./update_from_git.sh --retry-failed (which is also passed to fetch_usque_rs.sh).
 
 set -eu
 
@@ -22,16 +27,26 @@ if [ -f "$ENV_FILE" ]; then
 fi
 . "$DIR/defaults.sh"
 
+RETRY_FAILED=0
+for ARG in "$@"; do
+    [ "$ARG" != "--retry-failed" ] || RETRY_FAILED=1
+done
+
 GITHUB_REPO="${GITHUB_REPO:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-deploy}"
 GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
 DEPLOY_COMMIT_FILE="${DEPLOY_COMMIT_FILE:-$DIR/.deployed_commit}"
+GIT_FAILED_FILE="${GIT_FAILED_FILE:-$DIR/.git_failed_commit}"
 UPDATE_LOCK_WAIT="${UPDATE_LOCK_WAIT:-30}"
 
 # Check for new usque-rs releases from USQUE_REPO when enabled.
 if [ -x "$DIR/fetch_usque_rs.sh" ] && [ "${AUTO_FETCH_USQUE:-1}" = "1" ]; then
-    sh "$DIR/fetch_usque_rs.sh" || true
+    if [ "$RETRY_FAILED" -eq 1 ]; then
+        sh "$DIR/fetch_usque_rs.sh" --retry-failed || true
+    else
+        sh "$DIR/fetch_usque_rs.sh" || true
+    fi
 fi
 
 # Nothing to do for scripts until a repository is configured.
@@ -81,6 +96,12 @@ esac
 
 CURRENT_SHA="$(cat "$DEPLOY_COMMIT_FILE" 2>/dev/null || true)"
 if [ "$TARGET_SHA" = "$CURRENT_SHA" ]; then
+    exit 0
+fi
+
+FAILED_SHA="$(cat "$GIT_FAILED_FILE" 2>/dev/null || true)"
+if [ "$RETRY_FAILED" -eq 0 ] && [ -n "$FAILED_SHA" ] && [ "$TARGET_SHA" = "$FAILED_SHA" ]; then
+    log "Skipping $TARGET_SHA: it previously failed its health check (remove $GIT_FAILED_FILE or use --retry-failed to try again)."
     exit 0
 fi
 
@@ -175,11 +196,13 @@ fi
 # Health gate: run ensure_network.sh; if it fails, roll back immediately.
 if sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1; then
     printf '%s\n' "$TARGET_SHA" > "$DEPLOY_COMMIT_FILE"
+    rm -f "$GIT_FAILED_FILE"
     sync
     log "Update to $TARGET_SHA succeeded and passed the health check."
     exit 0
 fi
 
+printf '%s\n' "$TARGET_SHA" > "$GIT_FAILED_FILE"
 log "ERROR: health check failed after promoting $TARGET_SHA; rolling back."
 ROLLBACK_STAGE="$DIR/.git-rollback-$$"
 rm -rf "$ROLLBACK_STAGE"
