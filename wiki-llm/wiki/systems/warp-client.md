@@ -15,8 +15,10 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 - `fetch_usque_rs.sh` downloads `.sha256` from the GitHub Release, compares it
   with `.usque_release_sha`, downloads and verifies the archive when updated,
   checks `./usque-rs nativetun --help`, backs up the previous binary to
-  `usque-rs-upstream-v0.1.0`, promotes under `lock.sh`, restarts WARP, and
-  rolls back to `usque-rs-upstream-v0.1.0` if `ensure_network.sh` fails. An
+  `usque-rs.prev` (router-local, never shipped by sync or git), promotes under
+  `lock.sh`, restarts WARP, and rolls back to it if `ensure_network.sh` fails
+  (falling back to the legacy `usque-rs-upstream-v0.1.0` if `usque-rs.prev` is
+  missing). An
   archive that failed the health check is recorded in `.usque_failed_sha` and
   skipped on later runs until the release sha changes, the file is removed, or
   `fetch_usque_rs.sh --retry-failed` is used (router-local, gitignored, never

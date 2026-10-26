@@ -1,5 +1,6 @@
 """update_from_git.sh: pull deploy branch, gate on CI check-runs, promote and rollback on health failure."""
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -296,8 +297,24 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
         self.assertEqual(res.returncode, 1)
         self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
-        self.assertEqual((self.box.proj / 'usque-rs-upstream-v0.1.0').read_text(), old_bin)
+        self.assertEqual((self.box.proj / 'usque-rs.prev').read_text(), old_bin)
         self.assertIn('rolling back to previous binary', self.box.log('maintenance'))
+
+    def test_rollback_falls_back_to_legacy_slot_on_an_older_router(self):
+        # B3: a router that only has usque-rs-upstream-v0.1.0 must still roll back.
+        legacy = '#!/bin/sh\necho "--syslog legacy"\n'
+        self.install_router_case(ensure_ok=False)
+        # No current binary, so install makes no usque-rs.prev and only the legacy file can restore one.
+        (self.box.proj / 'usque-rs').unlink()
+        (self.box.proj / 'usque-rs-upstream-v0.1.0').write_text(legacy)
+        self.make_release('#!/bin/sh\necho "--syslog bad"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), legacy)
+
+    def test_update_from_git_does_not_ship_rollback_slots(self):
+        deploy = re.search(r'^DEPLOY_FILES="([^"]*)"', (ROOT / 'update_from_git.sh').read_text(), re.M).group(1).split()
+        self.assertNotIn('usque-rs.prev', deploy)
+        self.assertNotIn('usque-rs-upstream-v0.1.0', deploy)
 
     def install_router_case(self, ensure_ok):
         old_bin = '#!/bin/sh\necho "--congestion-control --ready-file --syslog"\n'

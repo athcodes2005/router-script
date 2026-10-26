@@ -16,8 +16,8 @@ keeps running, with a SHA-256 manifest of every file. Staging needs no lock.
   for the whole step and no health check takes it over by age; a busy lock
   ends it with status 75 after `SYNC_LOCK_WAIT` (30 s);
 - it stops WARP and moves the files in manifest order, sourced helpers first;
-- scripts, the executable and the rollback binary `usque-rs-upstream-v0.1.0`
-  receive mode `0755`, and `.env` and `config.json` mode `0600`;
+- scripts and the executable receive mode `0755` (the rollback binary
+  `usque-rs.prev` is router-local and never shipped), and `.env` and `config.json` mode `0600`;
 - it ends with `sync`, so a power cut right after a deploy cannot leave
   zero-length files;
 - it ignores SIGHUP and SIGPIPE and does not stop on a failed write, so a
