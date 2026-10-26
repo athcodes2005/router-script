@@ -1096,3 +1096,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../raw/sources/audit/2026-10-26-validation/REPORT.md`
 - `../../fetch_usque_rs.sh`, `../../update_from_git.sh`, `../../configure_dns.sh`, `../../ensure_network.sh`
 - [[bugs/known-issues]], [[operations/deployment]]
+
+## 2026-10-26 — Deployed validation fixes (`336e7f5`)
+
+- Read-only pre-check: every deployed file matched `main` (`0225890`), the
+  binary was v0.2.1, `.env`/`config.json`/`blocked_sites.txt` matched the Mac by
+  hash, and the legacy rollback slot held v0.2.0 (`83deac89…`).
+- Shipped only the 32 code files (no `.env`, `config.json`, `blocked_sites.txt`
+  or binary) through the staged manifest and `promote_staged.sh`, wrote
+  `.deployed_commit`, and ran a health tick: hashes matched, WARP restarted,
+  default route on `tun0`, Cloudflare trace `warp=on`.
+- `main` and `deploy` now point at `336e7f5`. GitHub Actions has never run for
+  this repository (0 runs), so `update_from_git.sh`'s CI gate would block
+  any git-driven update; the maintenance log shows no updater activity.
+
+## Sources
+
+- `../../sync_to_router.sh`, `../../promote_staged.sh`, `../../update_from_git.sh`
+- [[operations/deployment]]
