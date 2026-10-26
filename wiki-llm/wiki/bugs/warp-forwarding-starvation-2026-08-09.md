@@ -82,6 +82,6 @@ See [[warp-cpu-spin-2026-08-07]], [[../systems/warp-client]], and
 ## Sources
 
 - Live router measurements on 2026-08-08 and 2026-08-09.
-- `../../../usque-rs-optimized/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`
 - `../../../ensure_network.sh`
-- `../../../usque-rs-optimized/tests/tunnel_mtu.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/tests/tunnel_mtu.rs`

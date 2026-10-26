@@ -81,6 +81,6 @@ Packet captures are considered sensitive even when they contain no payload.
 - `../../../tunnel.sh`, `../../../ensure_network.sh` (tun0 input rule)
 - `../../../sync_to_router.sh`
 - `../../../rotate_tunnel_ip.sh`
-- `../../../usque-rs-optimized/src/config.rs`
-- `../../../usque-rs-optimized/src/tls.rs`
-- `../../../usque-rs-optimized/src/tunnel.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/config.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tls.rs`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/src/tunnel.rs`

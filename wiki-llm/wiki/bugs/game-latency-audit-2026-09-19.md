@@ -47,8 +47,8 @@ See [[../operations/health-recovery]], [[../operations/diagnostics]],
 
 ## Sources
 
-- `../../../audit/2026-09-19/REPORT.md`
-- `../../../audit/2026-09-19/changes.patch`
+- `../../raw/sources/audit/2026-09-19/REPORT.md`
+- `../../raw/sources/audit/2026-09-19/changes.patch`
 - `../../../tests/test_network_recovery.py`
 - `../../../ensure_network.sh`
 - `../../../game_mode.sh`

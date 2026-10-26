@@ -95,7 +95,7 @@ them local, bounded, and sanitized before documentation or sharing.
 ## Sources
 
 - Workspace and live-router audit on 2026-08-01.
-- `../../../PROJECT_CONTEXT.md`
+- `../../raw/sources/project-context-2026-10-25.md`
 - `../../../ensure_network.sh`
-- `../../../usque-rs-optimized/Cargo.toml`
+- `https://github.com/athcodes2005/usque-rs-openwrt/blob/main/Cargo.toml`
 - [[outage-hardening-2026-08-01]]

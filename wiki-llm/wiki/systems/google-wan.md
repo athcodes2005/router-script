@@ -87,6 +87,6 @@ can retain their old source/NAT state. No router-wide connection flush was used.
 - `../../../google_service_ranges.txt`, `../../../tools/update_google_ranges.py`
 - `../../../ensure_network.sh`, `../../../configure_dns.sh`, `../../../tunnel.sh`
 - `../../../tests/test_google_ranges.py`, `../../../tests/test_network_recovery.py`
-- `../../../audit/2026-09-23-google/deploy.py`
+- `../../raw/sources/audit/2026-09-23-google/deploy.py`
 - [Google documented service-range subtraction](https://docs.cloud.google.com/vpc/docs/configure-private-google-access)
 - Live router checks on 2026-09-23; user request and YouTube screenshot.
