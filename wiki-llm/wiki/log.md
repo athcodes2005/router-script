@@ -1131,3 +1131,29 @@ Append new entries at the end. Preserve older entries as historical evidence.
   request (the one exception to raw/ immutability); its values remain in
   [[systems/campus-wan]]. Updated [[sources]] and campus-wan citations. The
   2026-10-26 validation REPORT.md still names the PNG (immutable history).
+
+## 2026-10-26 — Upload CoDel on by default and usque-rs v0.2.2 deployed (`9433af8`)
+
+- Performance tests (rounds 1–3, 15:43–18:02 IST) found sustained LAN uploads
+  pushed tunnel latency to ~0.8–1 s (campus gateway stayed at 0.7 ms) and
+  downloads caused thousands of UDP `RcvbufErrors` (the QUIC socket used the
+  212,992-byte kernel default). GL.iNet's Network Quality score pings
+  `google.com` through the tunnel, and Google answers ICMP from WARP unreliably.
+- An interleaved A/B/C test (18:58–19:14) isolated the fixes; then
+  `WARP_UPLOAD_CODEL` defaulted to 20 ms, `WARP_UDP_RECV_BUFFER` was added, and
+  usque-rs v0.2.2 (`--udp-recv-buffer`, default 4 MiB, `SO_RCVBUFFORCE`) was
+  pinned. Deployed 20:29 by atomic swap of `defaults.sh`/`tunnel.sh` plus
+  `fetch_usque_rs.sh` (archive `176a4b46…`, binary `b70bae6d…`, previous kept
+  as `usque-rs.prev`); the client logs an 8,388,608-byte effective buffer.
+- Confirmation (NEW vs OLD ×3, 20:28–20:45, router-side pings): upload p50
+  35–41 ms vs 764–896 ms, p95 117–122 ms vs 0.96–3.0 s; download drops 0 vs
+  3,629–52,450 per run; download ping loss 1.3–2.7% vs 12–16%; throughput
+  unchanged within campus variation. Cost: download-load median latency
+  +10–20 ms. Router stayed within bounds: CPU ≤ 70% avg, ≥ 220 MB RAM free,
+  usque-rs RSS ≤ 7 MB, UDP socket memory ≤ 2.2 MB, overlay 14%.
+- Report: the "WARP Tunnel Performance Report — 2026-10-26" Claude Doc.
+
+## Sources
+
+- `../../tunnel.sh`, `../../defaults.sh`, `../../fetch_usque_rs.sh`
+- [[systems/warp-client]], [[bugs/known-issues]]
