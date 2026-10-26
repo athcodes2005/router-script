@@ -17,8 +17,8 @@ SHA = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
 class UpdaterTests(unittest.TestCase):
     def setUp(self):
         self.box = Sandbox.fresh(self)
-        # Provide tar and find in the sandbox bin.
-        for tool in ('tar', 'find'):
+        # Provide tar (GNU tar execs gzip), gzip and find in the sandbox bin.
+        for tool in ('tar', 'gzip', 'find'):
             if not (self.box.bin / tool).exists():
                 (self.box.bin / tool).symlink_to(shutil.which(tool))
         self.api = self.box.base / 'api'
@@ -208,7 +208,7 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
 class UsqueFetchTests(unittest.TestCase):
     def setUp(self):
         self.box = Sandbox.fresh(self)
-        for tool in ('tar', 'python3'):
+        for tool in ('tar', 'gzip', 'python3'):
             if not (self.box.bin / tool).exists():
                 (self.box.bin / tool).symlink_to(shutil.which(tool))
         self.rel = self.box.base / 'releases'
