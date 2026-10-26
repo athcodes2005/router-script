@@ -90,6 +90,12 @@ uci delete network.wan.gateway; uci delete network.wan.dns
 uci commit network && /etc/init.d/network reload
 ```
 
+After either reload, expect side effects on firmware 4.11.0: GL.iNet's
+`/etc/hotplug.d/iface/99-disable_ipv6` strips `br-lan`'s ULA and `tun0`'s IPv6
+on every `ifup` (only a WARP restart restores `tun0`'s), and the campus portal
+may require a fresh login; let `ensure_network.sh` run a tick and check its log.
+See [[systems/ipv6]] and [[operations/portal-login]].
+
 ## Freshness
 
 The endpoint was verified on 2026-10-26 and is an undocumented internal
