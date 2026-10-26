@@ -16,8 +16,8 @@ keeps running, with a SHA-256 manifest of every file. Staging needs no lock.
   for the whole step and no health check takes it over by age; a busy lock
   ends it with status 75 after `SYNC_LOCK_WAIT` (30 s);
 - it stops WARP and moves the files in manifest order, sourced helpers first;
-- scripts, the executable and the rollback binary `usque-rs-upstream-v0.1.0`
-  receive mode `0755`, and `.env` and `config.json` mode `0600`;
+- scripts and the executable receive mode `0755` (the rollback binary
+  `usque-rs.prev` is router-local and never shipped), and `.env` and `config.json` mode `0600`;
 - it ends with `sync`, so a power cut right after a deploy cannot leave
   zero-length files;
 - it ignores SIGHUP and SIGPIPE and does not stop on a failed write, so a
@@ -57,6 +57,15 @@ When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
   promotes the deployable files via `promote_staged.sh` under `lock.sh`;
 - runs `ensure_network.sh` as a health gate and records `.deployed_commit`, or
   immediately rolls back to the pre-update backup if the health check fails.
+- a commit that failed the health gate is recorded in `.git_failed_commit` and
+  skipped on later runs (no 15-minute retry loop). The skip ends when the deploy
+  branch moves to another commit, when the file is removed, or with
+  `update_from_git.sh --retry-failed`. The file is router-local, gitignored and
+  never shipped or deleted by sync/promote.
+
+The git updater keeps its own `DEPLOY_FILES` list. It must equal `FILES` in
+`sync_to_router.sh`, in the same order, minus the Mac-only `config.json`, `.env`
+and `blocked_sites.txt`; `tests/test_sync.py` asserts this.
 
 ## Verification checklist
 

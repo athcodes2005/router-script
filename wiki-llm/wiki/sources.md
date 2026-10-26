@@ -25,8 +25,8 @@ The Rust client source and its `wiki-llm` documentation reside in the separate
 repository `https://github.com/athcodes2005/usque-rs-openwrt`
 (`/Users/atharva/projects/usque-rs-openwrt`). `fetch_usque_rs.sh` fetches the
 compiled `aarch64-unknown-linux-musl` binary from GitHub Releases into the
-git-ignored local/router `usque-rs` file and keeps `usque-rs-upstream-v0.1.0`
-as the rollback binary. See [[systems/warp-client]].
+git-ignored local/router `usque-rs` file and keeps `usque-rs.prev` (router-local,
+never shipped) as the rollback binary. See [[systems/warp-client]].
 
 ## Data and documentation
 

@@ -74,7 +74,8 @@ class SyncTests(unittest.TestCase):
         for name in ('sync_to_router.sh', 'lock.sh', 'promote_staged.sh', 'sync_from_router.sh',
                      'download_emergency_diagnostics.sh'):
             shutil.copy(ROOT / name, self.local)
-        files = {'usque-rs': 'binary\n', 'usque-rs-upstream-v0.1.0': 'rollback binary\n',
+        files = {'usque-rs': 'binary\n', 'usque-rs-upstream-v0.1.0': 'mac v0.1.0\n',
+                 'usque-rs.prev': 'mac prev\n',
                  'config.json': LOCAL_CONFIG, '.env': 'DUMMY=1\n', 'blocked_sites.txt': '# none\n',
                  'paths.sh': '# dummy\n'}
         for name, text in files.items():
@@ -121,12 +122,31 @@ class SyncTests(unittest.TestCase):
         missing = sorted(p.name for p in ROOT.glob('*.sh') if p.name not in mac_only and p.name not in files)
         self.assertEqual(missing, [])
 
-    def test_rollback_binary_is_deployed(self):
-        # F25: README's rollback copies usque-rs-upstream-v0.1.0, which sync never shipped.
+    def test_git_deploy_list_matches_sync_list(self):
+        # B4: update_from_git.sh keeps its own DEPLOY_FILES. The two lists must agree, in the same
+        # order (helpers first), except for the files only the Mac holds: secrets and local config
+        # are never fetched from git.
+        def names(script, var):
+            return re.search(r'^%s="([^"]*)"' % var, (ROOT / script).read_text(), re.M).group(1).split()
+        mac_only = ['config.json', '.env', 'blocked_sites.txt']
+        sync_list = names('sync_to_router.sh', 'FILES')
+        deploy_list = names('update_from_git.sh', 'DEPLOY_FILES')
+        self.assertEqual(len(set(sync_list)), len(sync_list), 'duplicate in sync list')
+        self.assertEqual(len(set(deploy_list)), len(deploy_list), 'duplicate in deploy list')
+        self.assertEqual([f for f in sync_list if f not in mac_only], deploy_list)
+        self.assertEqual(sorted(set(sync_list) - set(deploy_list)), sorted(mac_only))
+
+    def test_rollback_slot_is_router_local_and_never_shipped(self):
+        # B3: the slot holds the router's previous binary; the Mac copy must not replace it.
+        (self.router / 'usque-rs.prev').write_text('router previous\n')
+        (self.router / 'usque-rs-upstream-v0.1.0').write_text('router legacy\n')
         result = self.sync()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual((self.router / 'usque-rs-upstream-v0.1.0').read_text(), 'rollback binary\n')
-        self.assertEqual(self.mode('usque-rs-upstream-v0.1.0'), 0o755)
+        self.assertEqual((self.router / 'usque-rs.prev').read_text(), 'router previous\n')
+        self.assertEqual((self.router / 'usque-rs-upstream-v0.1.0').read_text(), 'router legacy\n')
+        sync_files = re.search(r'^FILES="([^"]*)"', (ROOT / 'sync_to_router.sh').read_text(), re.M).group(1).split()
+        self.assertNotIn('usque-rs.prev', sync_files)
+        self.assertNotIn('usque-rs-upstream-v0.1.0', sync_files)
         self.assertEqual(self.mode('usque-rs'), 0o755)
         self.assertEqual(self.mode('.env'), 0o600)
         self.assertEqual(self.mode('config.json'), 0o600)
@@ -175,7 +195,7 @@ class SyncTests(unittest.TestCase):
         self.env['DROP_CONNECTION'] = '1'
         result = self.sync()
         self.assertNotEqual(result.returncode, 0)
-        for name in ('usque-rs', 'usque-rs-upstream-v0.1.0', 'paths.sh', 'lock.sh', 'promote_staged.sh'):
+        for name in ('usque-rs', 'paths.sh', 'lock.sh', 'promote_staged.sh'):
             self.assertTrue((self.router / name).exists(), name)
         self.assertEqual((self.router / 'usque-rs').read_text(), 'binary\n')
         self.assertEqual(self.mode('usque-rs'), 0o755)

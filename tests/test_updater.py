@@ -1,5 +1,6 @@
 """update_from_git.sh: pull deploy branch, gate on CI check-runs, promote and rollback on health failure."""
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -162,6 +163,47 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertFalse((self.box.proj / '.deployed_commit').exists())
         self.assertIn('rolling back', self.box.log('maintenance'))
 
+    def test_failed_commit_is_recorded_and_not_retried(self):
+        # B7: a commit that fails the health gate is rolled back once, not every cron run.
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit 0\n')
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        self.make_tarball(healthy=False)
+        self.assertEqual(self.run_updater().returncode, 1)
+        failed = self.box.proj / '.git_failed_commit'
+        self.assertEqual(failed.read_text().strip(), SHA)
+        # Even a now-healthy tarball for the same commit is skipped.
+        self.make_tarball(healthy=True)
+        res = self.run_updater()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn('previously failed its health check', self.box.log('maintenance'))
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
+        self.assertFalse((self.box.proj / '.deployed_commit').exists())
+
+    def test_failed_commit_skip_ends_when_file_removed_or_flag_given(self):
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / '.git_failed_commit').write_text(SHA + '\n')
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
+        res = self.box.run('update_from_git.sh', '--retry-failed', GITHUB_REPO='owner/router-script',
+                           GITHUB_TOKEN='ghp_testtoken123', AUTO_FETCH_USQUE='0', API_DIR=str(self.api))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
+        self.assertFalse((self.box.proj / '.git_failed_commit').exists())
+        # Removing the file by hand also ends the skip.
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / '.deployed_commit').unlink()
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
+
+    def test_different_commit_is_not_blocked_by_an_old_failure(self):
+        (self.box.proj / '.git_failed_commit').write_text('f' * 40 + '\n')
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+        self.assertFalse((self.box.proj / '.git_failed_commit').exists())
+
 
 class UsqueFetchTests(unittest.TestCase):
     def setUp(self):
@@ -182,6 +224,7 @@ while [ $# -gt 0 ]; do
     *) url=$1; shift ;;
   esac
 done
+echo "$url" >> "$SIM_STATE/usque_urls"
 case "$url" in
   *.sha256) cp "$REL_DIR/asset.sha256" "$out" ;;
   *.tar.gz) cp "$REL_DIR/asset.tar.gz" "$out" ;;
@@ -216,6 +259,26 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertTrue((self.box.proj / 'usque-rs').exists())
         self.assertEqual((self.box.proj / '.usque_release_sha').read_text().strip(), digest)
 
+    def fetched_urls(self):
+        return (self.box.state / 'usque_urls').read_text().split()
+
+    def test_default_tag_is_pinned_not_latest(self):
+        # B1: cron must not follow "latest"; a new release needs a tag bump in a commit.
+        self.make_release('#!/bin/sh\necho ok\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        for url in self.fetched_urls():
+            self.assertIn('/releases/download/v0.2.1/', url)
+            self.assertNotIn('/latest/', url)
+
+    def test_explicit_latest_tag_still_follows_latest(self):
+        self.make_release('#!/bin/sh\necho ok\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel),
+                           USQUE_RELEASE_TAG='latest')
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        for url in self.fetched_urls():
+            self.assertIn('/releases/latest/download/', url)
+
     def test_corrupt_archive_sha_is_rejected(self):
         (self.box.proj / 'usque-rs').write_text('#!/bin/sh\necho old\n')
         self.make_release('#!/bin/sh\necho new\n', corrupt_sha=True)
@@ -234,8 +297,75 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
         self.assertEqual(res.returncode, 1)
         self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
-        self.assertEqual((self.box.proj / 'usque-rs-upstream-v0.1.0').read_text(), old_bin)
+        self.assertEqual((self.box.proj / 'usque-rs.prev').read_text(), old_bin)
         self.assertIn('rolling back to previous binary', self.box.log('maintenance'))
+
+    def test_rollback_falls_back_to_legacy_slot_on_an_older_router(self):
+        # B3: a router that only has usque-rs-upstream-v0.1.0 must still roll back.
+        legacy = '#!/bin/sh\necho "--syslog legacy"\n'
+        self.install_router_case(ensure_ok=False)
+        # No current binary, so install makes no usque-rs.prev and only the legacy file can restore one.
+        (self.box.proj / 'usque-rs').unlink()
+        (self.box.proj / 'usque-rs-upstream-v0.1.0').write_text(legacy)
+        self.make_release('#!/bin/sh\necho "--syslog bad"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), legacy)
+
+    def test_update_from_git_does_not_ship_rollback_slots(self):
+        deploy = re.search(r'^DEPLOY_FILES="([^"]*)"', (ROOT / 'update_from_git.sh').read_text(), re.M).group(1).split()
+        self.assertNotIn('usque-rs.prev', deploy)
+        self.assertNotIn('usque-rs-upstream-v0.1.0', deploy)
+
+    def install_router_case(self, ensure_ok):
+        old_bin = '#!/bin/sh\necho "--congestion-control --ready-file --syslog"\n'
+        (self.box.proj / 'usque-rs').write_text(old_bin)
+        (self.box.proj / 'usque-rs').chmod(0o755)
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit %d\n' % (0 if ensure_ok else 1))
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        for name in ('tunnel.sh', 'stop_tunnel.sh'):
+            (self.box.proj / name).write_text('#!/bin/sh\nexit 0\n')
+        return old_bin
+
+    def tarball_downloads(self):
+        return sum(1 for u in self.fetched_urls() if u.endswith('.tar.gz'))
+
+    def test_failed_archive_is_recorded_and_not_retried(self):
+        # B2: a release that fails the health check is rolled back once, not every cron run.
+        old_bin = self.install_router_case(ensure_ok=False)
+        digest = self.make_release('#!/bin/sh\necho "--syslog bad"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 1)
+        self.assertEqual((self.box.proj / '.usque_failed_sha').read_text().strip(), digest)
+        self.assertEqual(self.tarball_downloads(), 1)
+        res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.tarball_downloads(), 1)
+        self.assertIn('previously failed its health check', self.box.log('maintenance'))
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+
+    def test_failed_archive_skip_ends_on_new_sha_flag_or_file_removal(self):
+        self.install_router_case(ensure_ok=True)
+        failed = self.box.proj / '.usque_failed_sha'
+        digest = self.make_release('#!/bin/sh\necho "--syslog v2"\n')
+        failed.write_text(digest + '\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 0)
+        # --retry-failed installs it, and success clears the record.
+        res = self.box.run('fetch_usque_rs.sh', '--retry-failed', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.tarball_downloads(), 1)
+        self.assertFalse(failed.exists())
+        # A different archive is not blocked by an older failure.
+        failed.write_text('e' * 64 + '\n')
+        self.make_release('#!/bin/sh\necho "--syslog v3"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 2)
+        self.assertFalse(failed.exists())
+        # Removing the file by hand ends the skip too.
+        digest = self.make_release('#!/bin/sh\necho "--syslog v4"\n')
+        failed.write_text(digest + '\n')
+        failed.unlink()
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual(self.tarball_downloads(), 3)
 
 
 if __name__ == '__main__':

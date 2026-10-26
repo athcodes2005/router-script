@@ -72,7 +72,7 @@ only `4.2 Mbps` through the degraded WARP session.
 - The former binary and health script remained on the router as explicit
   rollback copies, including the pre-pacing build, until 2026-10-22. They were
   then archived off the router and removed ([[../log]]). The documented binary
-  rollback is `usque-rs-upstream-v0.1.0`.
+  rollback is `usque-rs.prev` (legacy name `usque-rs-upstream-v0.1.0`).
 
 ## Related pages
 

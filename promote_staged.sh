@@ -51,7 +51,6 @@ cd "$DIR" || exit 1
 rmdir "$STAGE" 2>/dev/null || true
 chmod 755 ./*.sh
 [ ! -f ./usque-rs ] || chmod 755 ./usque-rs
-[ ! -f ./usque-rs-upstream-v0.1.0 ] || chmod 755 ./usque-rs-upstream-v0.1.0
 [ ! -f ./.env ] || chmod 600 ./.env
 [ ! -f ./config.json ] || chmod 600 ./config.json
 # A power cut seconds after a deploy must not leave zero-length files.
