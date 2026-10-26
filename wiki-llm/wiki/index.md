@@ -28,6 +28,7 @@ the active topology. This index lists every maintained wiki page.
 - [[operations/health-recovery]] — staggered health pipeline and direct fallback.
 - [[operations/portal-login]] — campus portal token login and stale-session recovery.
 - [[operations/diagnostics]] — evidence collection, retention, and triage.
+- [[operations/campus-ip-lookup]] — Computer Centre Hostel IP/HOP lookup, live comparison, and manual static-IP fallback.
 - [[operations/warp-rotation]] — safe WARP registration rotation and rollback.
 
 ## Flows
