@@ -184,6 +184,35 @@ class TunnelLaunchTests(unittest.TestCase):
             self.assertIn('[WARNING] Ignoring WARP_UPLOAD_CODEL=%s: not a number of milliseconds '
                           'from 1 to 999.' % value, log)
 
+    # WARP_UDP_RECV_BUFFER is empty by default: the binary's own default applies.
+    def test_udp_recv_buffer_is_not_passed_by_default(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog --udp-recv-buffer')
+        self.assertNotIn('--udp-recv-buffer', args)
+        self.assertNotIn('UDP receive buffer', log)
+
+    def test_udp_recv_buffer_is_passed_when_configured(self):
+        for value in ('0', '8388608', '67108864'):
+            self.box.flag('client_absent_once')
+            args, _ = self.launch('--congestion-control --ready-file --syslog --udp-recv-buffer',
+                                  WARP_UDP_RECV_BUFFER=value)
+            self.assertEqual(args[args.index('--udp-recv-buffer') + 1], value)
+
+    def test_udp_recv_buffer_is_skipped_when_unsupported(self):
+        args, log = self.launch('--congestion-control --ready-file --syslog',
+                                WARP_UDP_RECV_BUFFER='4194304')
+        self.assertNotIn('--udp-recv-buffer', args)
+        self.assertEqual(log.count('[WARNING] This usque-rs binary does not support '
+                                   'the UDP receive buffer setting.'), 1)
+
+    def test_udp_recv_buffer_invalid_value_is_ignored(self):
+        for value in ('lots', '-1', '67108865'):
+            self.box.flag('client_absent_once')
+            args, log = self.launch('--congestion-control --ready-file --syslog --udp-recv-buffer',
+                                    WARP_UDP_RECV_BUFFER=value)
+            self.assertNotIn('--udp-recv-buffer', args)
+            self.assertIn('[WARNING] Ignoring WARP_UDP_RECV_BUFFER=%s: not a number of bytes '
+                          'from 0 to 67108864.' % value, log)
+
 
 if __name__ == '__main__':
     unittest.main()

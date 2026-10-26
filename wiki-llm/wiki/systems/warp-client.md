@@ -42,6 +42,14 @@ so older rollback binaries remain compatible:
 - `--syslog`: logs session lifecycle and disconnect reasons to `logread -e usque-rs`.
 - `--upload-codel <MS>` (from `WARP_UPLOAD_CODEL`, default 20; `0` turns it off).
 - `--tun-backpressure <N>` (from `WARP_TUN_BACKPRESSURE`, off by default).
+- `--udp-recv-buffer <BYTES>` (from `WARP_UDP_RECV_BUFFER`, empty by default so
+  the binary's built-in 4 MiB applies; usque-rs v0.2.2+). `0` means the kernel
+  default; the client uses `SO_RCVBUFFORCE` and falls back to `SO_RCVBUF`.
+  `tunnel.sh` passes values 0-67108864 only when `nativetun --help` lists the
+  flag; a non-number or out-of-range value logs a warning and is ignored, and
+  an older binary logs one warning and still starts. A 2026-10-26 test showed
+  the 4 MiB buffer cut `RcvbufErrors` during downloads from hundreds or
+  thousands to 0 and download loss from 11-23% to 0-8%, at 5-7 MB client RSS.
 
 ## `v0.2.0` WARP audit optimizations (deployed 2026-10-26)
 

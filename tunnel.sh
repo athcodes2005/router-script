@@ -26,6 +26,9 @@ WARP_TUN_BACKPRESSURE="${WARP_TUN_BACKPRESSURE:-0}"
 # The client's CoDel target, in ms, for upload datagrams waiting to be sent;
 # on at 20 ms by default (measured 2026-10-26), 0 turns it off.
 WARP_UPLOAD_CODEL="${WARP_UPLOAD_CODEL:-20}"
+# Bytes for the client's UDP receive buffer, 0 to 67108864 (0 = kernel default);
+# empty leaves it to the binary's built-in default (4 MiB in v0.2.2).
+WARP_UDP_RECV_BUFFER="${WARP_UDP_RECV_BUFFER:-}"
 WARP_STARTUP_TIMEOUT="${WARP_STARTUP_TIMEOUT:-25}"
 
 exec >> "$LOG_FILE" 2>&1
@@ -106,11 +109,13 @@ SUPPORTS_READY=0
 SUPPORTS_SYSLOG=0
 SUPPORTS_BACKPRESSURE=0
 SUPPORTS_UPLOAD_CODEL=0
+SUPPORTS_UDP_RECV_BUFFER=0
 echo "$NATIVETUN_HELP" | grep -q 'congestion-control' && SUPPORTS_CC=1
 echo "$NATIVETUN_HELP" | grep -q 'ready-file' && SUPPORTS_READY=1
 echo "$NATIVETUN_HELP" | grep -q -- '--syslog' && SUPPORTS_SYSLOG=1
 echo "$NATIVETUN_HELP" | grep -q -- '--tun-backpressure' && SUPPORTS_BACKPRESSURE=1
 echo "$NATIVETUN_HELP" | grep -q -- '--upload-codel' && SUPPORTS_UPLOAD_CODEL=1
+echo "$NATIVETUN_HELP" | grep -q -- '--udp-recv-buffer' && SUPPORTS_UDP_RECV_BUFFER=1
 
 # These settings are routing state, not process state; reapply them even when
 # an existing usque-rs process is reused to repair drift.
@@ -169,6 +174,22 @@ else
             ;;
         *) echo "[WARNING] Ignoring WARP_UPLOAD_CODEL=$WARP_UPLOAD_CODEL: not a number of milliseconds from 1 to 999." ;;
     esac
+    # Only 0-67108864 is passed; anything else is a typo and is ignored.
+    # Over eight digits is rejected first so the numeric test cannot overflow.
+    case "$WARP_UDP_RECV_BUFFER" in
+        '') ;;
+        *[!0-9]*|?????????*) UDP_RECV_BUFFER_BAD=1 ;;
+        *) UDP_RECV_BUFFER_BAD=0; [ "$WARP_UDP_RECV_BUFFER" -le 67108864 ] || UDP_RECV_BUFFER_BAD=1 ;;
+    esac
+    if [ -n "$WARP_UDP_RECV_BUFFER" ]; then
+        if [ "$UDP_RECV_BUFFER_BAD" -eq 1 ]; then
+            echo "[WARNING] Ignoring WARP_UDP_RECV_BUFFER=$WARP_UDP_RECV_BUFFER: not a number of bytes from 0 to 67108864."
+        elif [ "$SUPPORTS_UDP_RECV_BUFFER" -eq 1 ]; then
+            set -- "$@" --udp-recv-buffer "$WARP_UDP_RECV_BUFFER"
+        else
+            echo "[WARNING] This usque-rs binary does not support the UDP receive buffer setting."
+        fi
+    fi
     "$@" >/dev/null 2>&1 &
     PID=$!
 fi
