@@ -44,9 +44,10 @@ never shipped) as the rollback binary. See [[systems/warp-client]].
 
 ## Imported reference assets and raw sources
 
-- `../raw/assets/hostel-01-network-config-2026-08-01.png` is the immutable
-  Computer Centre Hostel 01 IP/HOP reference supplied by the user. Its extracted
-  network facts are maintained in [[systems/campus-wan]].
+- `https://www.cc.iitb.ac.in/page/ip_hostel` is the live Computer Centre Hostel
+  IP/HOP page (campus-only). The screenshot of it was removed on 2026-10-26 at the
+  owner's request; its values are kept in [[systems/campus-wan]], and the lookup
+  method in [[operations/campus-ip-lookup]].
 - `../raw/sources/` holds immutable imported audit reports, patches, historical
   plans (`historical-split-routing-plan-2026-07-31.md`), `project-context-2026-10-25.md`,
   and `changes-explained-2026-10-25.md`.

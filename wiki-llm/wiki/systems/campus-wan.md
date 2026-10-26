@@ -74,12 +74,15 @@ follows the room port. See [[../bugs/campus-dns-outage-2026-08-19]].
 
 ## Related pages
 
-See [[../architecture]], [[dns]], and [[../flows/traffic-routing]].
+See [[../architecture]], [[operations/campus-ip-lookup]] (how to re-query the
+Computer Centre page and the static-IP fallback), [[dns]], and [[../flows/traffic-routing]].
 
 ## Sources
 
-- `../../raw/assets/hostel-01-network-config-2026-08-01.png` — user-supplied
-  IITB Computer Centre screenshot captured 2026-08-01.
+- `https://www.cc.iitb.ac.in/page/ip_hostel` — live IITB Computer Centre page
+  (campus-only); the 2026-08-01 screenshot of it was removed on 2026-10-26 at the
+  owner's request and its values are kept on this page. See
+  [[operations/campus-ip-lookup]].
 - `../../../tunnel.sh`
 - `../../../configure_dns.sh`
 - `../../../ensure_network.sh`

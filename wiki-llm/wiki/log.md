@@ -1121,3 +1121,13 @@ Append new entries at the end. Preserve older entries as historical evidence.
   missing from `CAMPUS_DOMAINS`, so dnsmasq returned NXDOMAIN while routing was fine.
 - Added it to the `CAMPUS_DOMAINS` default (not `CAMPUS_DIRECT_DOMAINS`) with
   tests; new page [[bugs/bighome-internal-dns-2026-10-26]]. Verification pending deploy.
+
+## 2026-10-26 — Hostel IP/HOP screenshot replaced by lookup page
+
+- Added [[operations/campus-ip-lookup]]: Computer Centre `ip_hostel` page,
+  endpoint chain (verified live 2026-10-26), JSON fields, DNS constant,
+  read-only router comparison, and owner-approved static-IP fallback.
+- Removed `raw/assets/hostel-01-network-config-2026-08-01.png` at the owner's
+  request (the one exception to raw/ immutability); its values remain in
+  [[systems/campus-wan]]. Updated [[sources]] and campus-wan citations. The
+  2026-10-26 validation REPORT.md still names the PNG (immutable history).
