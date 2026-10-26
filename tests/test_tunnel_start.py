@@ -29,10 +29,12 @@ class TunnelStartTests(unittest.TestCase):
         return result.returncode, self.box.log('tunnel')
 
     def test_reused_client_start_completes(self):
+        (self.box.state / 'tun0_mtu').write_text('1280\n')
         status, log = self.start()
         self.assertEqual(status, 0, log)
         self.assertIn('[SUCCESS] Full tunnel active', log)
         self.assertEqual(self.box.count('ip route add default dev tun0 metric 5'), 1)
+        self.assertEqual((self.box.state / 'tun0_mtu').read_text().strip(), '1320')
 
     # F44: the start inserts the LAN->tun0 ACCEPT at the top of FORWARD, then
     # runs the Google policy, which must put the LAN's Google IPv6 rejects back
@@ -125,6 +127,7 @@ class TunnelLaunchTests(unittest.TestCase):
     def test_connection_events_go_to_syslog_when_supported(self):
         args, log = self.launch('--congestion-control --ready-file --syslog')
         self.assertIn('--syslog', args)
+        self.assertEqual(args[args.index('--mtu') + 1], '1320')
         self.assertNotIn('cannot log connection events', log)
 
     def test_older_client_starts_without_syslog(self):

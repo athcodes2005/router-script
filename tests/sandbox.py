@@ -110,7 +110,12 @@ case "$*" in
     if flag route_bypass; then echo "$4 via 10.1.40.250 dev eth0 src 10.1.39.202 uid 0"
     else echo "$4 dev tun0 src 172.16.0.2 uid 0"; fi ;;
   '-6 route get '*) echo "$4 from :: dev tun0 proto kernel src 2606:4700:110::2 metric 5 pref medium" ;;
-  'link show dev tun0') flag warp_down && exit 1; echo '9: tun0: <POINTOPOINT,UP> mtu 1280' ;;
+  'link show dev tun0')
+    flag warp_down && exit 1
+    mtu="$(@CAT@ "$SIM_STATE/tun0_mtu" 2>/dev/null || echo 1320)"
+    echo "9: tun0: <POINTOPOINT,UP> mtu $mtu" ;;
+  'link set dev tun0 mtu '*)
+    printf '%s\n' "$6" > "$SIM_STATE/tun0_mtu" ;;
   '-6 addr show dev br-lan') flag lan_ipv6_missing || echo '    inet6 fd63:3b28:d1ea::1/64 scope global' ;;
   '-6 addr add '*' dev br-lan')
     if flag lan_ipv6_disabled; then echo 'RTNETLINK answers: Permission denied' >&2; exit 2; fi

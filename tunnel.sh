@@ -130,7 +130,7 @@ else
     # logread -e usque-rs. Liveness checks are ensure_network.sh's job.
     echo "[INFO] Starting usque-rs native TUN in the background..."
     rm -f "$WARP_READY_FILE"
-    set -- "$EXECUTABLE" --config "$CONFIG_FILE" nativetun --interface-name "$TUN_IF"
+    set -- "$EXECUTABLE" --config "$CONFIG_FILE" nativetun --interface-name "$TUN_IF" --mtu "$TUN_MTU"
     if [ "$SUPPORTS_CC" -eq 1 ]; then
         set -- "$@" --congestion-control "$WARP_CC"
     else
@@ -197,6 +197,7 @@ if [ "$SUPPORTS_READY" -eq 1 ] && [ ! -s "$WARP_READY_FILE" ]; then
 fi
 
 echo "[SUCCESS] usque-rs CONNECT-IP is ready with PID $PID after ${WAIT_COUNT}s."
+ip link set dev "$TUN_IF" mtu "$TUN_MTU" 2>/dev/null || true
 
 echo "[INFO] Configuring full-tunnel routing..."
 
@@ -269,6 +270,9 @@ iptables -t nat -C POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null || iptable
 iptables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || iptables -I FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT
 iptables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || iptables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -I FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+while iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null; do
+    iptables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || break
+done
 iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS" 2>/dev/null || iptables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS"
 # fw3 filters input only from br-lan and eth0: drop new connections arriving
 # through the tunnel (replies are not NEW). A safeguard, so it never fails the
@@ -285,6 +289,9 @@ ip6tables -t nat -C POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null || ip6tab
 ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT
 ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || ip6tables -I FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 ip6tables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || ip6tables -t mangle -I FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
+while ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220 2>/dev/null; do
+    ip6tables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220 2>/dev/null || break
+done
 ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null || ip6tables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null
 ip6tables -C INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || ip6tables -I INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || echo "[WARNING] Could not add the ip6tables rule dropping new inbound connections on $TUN_IF."
 

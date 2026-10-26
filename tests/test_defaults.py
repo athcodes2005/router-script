@@ -12,7 +12,7 @@ SOURCES_DEFAULTS = re.compile(r'^\. "\$(SCRIPT_)?DIR/defaults\.sh"$', re.M)
 # Every copy had exactly these values when they moved into defaults.sh.
 EXPECTED = {
     'WAN_IF': 'eth0', 'WAN_UCI_IFACE': 'wan', 'LAN_IF': 'br-lan', 'LAN_SUBNET': '192.168.8.0/24',
-    'TUN_IF': 'tun0', 'TUN_IPV4_MSS': '1240', 'TUN_IPV6_MSS': '1220',
+    'TUN_IF': 'tun0', 'TUN_MTU': '1320', 'TUN_IPV4_MSS': '1280', 'TUN_IPV6_MSS': '1260',
     'LAN_IP6IFACEID': '::1', 'LAN_RA_DEFAULT': '2',
     'CAMPUS_DNS_IP': '10.200.1.11', 'CAMPUS_NETS': '10.0.0.0/8 103.21.124.0/22',
     'CAMPUS_DOMAINS': 'internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in '

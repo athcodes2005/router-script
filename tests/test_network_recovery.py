@@ -197,27 +197,31 @@ class RecoveryTests(unittest.TestCase):
     def test_bidirectional_mss_clamping_checked(self):
         defaults = DEFAULTS
         output = self.run_shell(defaults + function('nat_rules_ok') + r"""
+        ip() { echo '9: tun0: <POINTOPOINT,UP> mtu 1320'; }
         iptables() { printf 'iptables: %s\n' "$*"; return 0; }
         ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
         nat_rules_ok
         """)
-        self.assertIn('iptables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240', output)
-        self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220', output)
+        self.assertIn('iptables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1280', output)
+        self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1260', output)
 
     def test_ensure_nat_and_mss_rules_repaired(self):
         defaults = DEFAULTS
         output = self.run_shell(defaults + function('ensure_nat_and_mss_rules') + r"""
-        iptables() { printf 'iptables: %s\n' "$*"; return 0; }
-        ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
+        ip() { printf 'ip: %s\n' "$*"; return 0; }
+        iptables() { case "$*" in *'--set-mss 1240'*) return 1;; esac; printf 'iptables: %s\n' "$*"; return 0; }
+        ip6tables() { case "$*" in *'--set-mss 1220'*) return 1;; esac; printf 'ip6tables: %s\n' "$*"; return 0; }
         ensure_nat_and_mss_rules
         """)
-        self.assertIn('iptables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240', output)
-        self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220', output)
+        self.assertIn('ip: link set dev tun0 mtu 1320', output)
+        self.assertIn('iptables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1280', output)
+        self.assertIn('ip6tables: -t mangle -C FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1260', output)
 
     def test_forward_accept_rules_checked(self):
         # F03: FORWARD's policy is DROP, so LAN<->tun0 traffic depends on these rules.
         defaults = DEFAULTS
         output = self.run_shell(defaults + function('nat_rules_ok') + r"""
+        ip() { echo '9: tun0: <POINTOPOINT,UP> mtu 1320'; }
         iptables() { printf 'iptables: %s\n' "$*"; return 0; }
         ip6tables() { printf 'ip6tables: %s\n' "$*"; return 0; }
         nat_rules_ok
@@ -229,6 +233,7 @@ class RecoveryTests(unittest.TestCase):
     def test_missing_forward_rules_are_reinserted(self):
         defaults = DEFAULTS
         output = self.run_shell(defaults + function('ensure_nat_and_mss_rules') + r"""
+        ip() { return 0; }
         iptables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'iptables: %s\n' "$*"; }
         ip6tables() { case "$*" in '-C FORWARD'*) return 1;; esac; printf 'ip6tables: %s\n' "$*"; }
         ensure_nat_and_mss_rules
