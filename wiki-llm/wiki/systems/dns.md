@@ -46,10 +46,11 @@ use router-provided DNS for campus-only hosts.
 ## Repair and inspection
 
 `configure_dns.sh` writes and commits UCI state, adjusts dnscrypt-proxy2, and
-restarts affected services. On firmware 4.11.0, GL.iNet's init script starts
-dnscrypt-proxy only under its own encrypted-DNS mode (audit F49), so the DoH
-fallback is inactive unless started; the boot-time platform check warns when it
-is not running (F52). `ensure_network.sh` verifies `strictorder` and
+restarts affected services. On firmware 4.11.0, GL.iNet replaced
+`dnscrypt-proxy` with `dnsproxy` (`/etc/dnsproxy/dnsproxy.yaml`, Quad9 DoH on
+port `5453`); `check_platform_once` accepts either `dnscrypt-proxy` or
+`dnsproxy` and warns only if neither DoH daemon is running (F49, F52).
+`ensure_network.sh` verifies `strictorder` and
 `noresolv`, that the four upstreams come first and in order, forwards for
 exactly the listed campus hosts (a whole-zone `/iitb.ac.in/` forward counts as
 drift), portal/SSO `address=` pins, dnscrypt listen on `127.0.0.1:5453`, and

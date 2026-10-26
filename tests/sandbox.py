@@ -215,6 +215,7 @@ STUBS = {
     @CAT@ "$SIM_STATE/usque_pid" 2>/dev/null || echo 456 ;;
   dnsmasq) flag dnsmasq_down && exit 1; echo 123 ;;
   dnscrypt-proxy) flag dnscrypt_down && exit 1; echo 789 ;;
+  dnsproxy) flag dnsproxy_up || exit 1; echo 790 ;;
   *) exit 1 ;;
 esac''',
     'ubus': '@CAT@ "$SIM_STATE/wireless.json" 2>/dev/null || echo "{}"',

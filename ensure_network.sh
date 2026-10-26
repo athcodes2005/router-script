@@ -552,8 +552,9 @@ check_platform_once() {
         [ "$(uci -q get glipv6.globals.enabled 2>/dev/null || echo 0)" != 1 ]; then
         PROBLEMS="$PROBLEMS; GL.iNet's IPv6 switch is off, so its 99-disable_ipv6 hook turns IPv6 off on every ifup"
     fi
-    pidof dnscrypt-proxy >/dev/null 2>&1 ||
-        PROBLEMS="$PROBLEMS; dnscrypt-proxy is not running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
+    if ! pidof dnscrypt-proxy >/dev/null 2>&1 && ! pidof dnsproxy >/dev/null 2>&1; then
+        PROBLEMS="$PROBLEMS; neither dnscrypt-proxy nor dnsproxy is running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
+    fi
     PID_FOUND=0
     for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq/dnsmasq*.pid "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
         [ -f "$PID_FILE" ] || continue
