@@ -133,6 +133,9 @@ esac
 case "$1 ${2:-}" in '-q get'|'get '*) ;; *) exit 0 ;; esac
 case "$key" in
   'dhcp.@dnsmasq[0].strictorder'|'dhcp.@dnsmasq[0].noresolv') echo 1 ;;
+  'dhcp.@dnsmasq[0].cachesize')
+    flag cachesize_unset && exit 1
+    if flag cachesize_small; then echo 150; else echo 4000; fi ;;
   'dhcp.@dnsmasq[0].filter_aaaa') if flag filter_aaaa_on; then echo 1; else echo 0; fi ;;
   'dhcp.@dnsmasq[0].server')
     if flag dns_order_drift; then printf '10.200.1.11 127.0.0.1#5453 8.8.8.8 8.8.4.4'
@@ -330,7 +333,8 @@ class Sandbox:
         #     "server_names = ['quad9-doh-ip4-port443-nofilter-ecs-pri']\n"
         #     "listen_addresses = ['127.0.0.1:5453']\nblock_ipv6 = false\n")
         (box.sysroot / 'etc/dnsproxy/dnsproxy.yaml').write_text(
-            '---\nupstream:\n  - "tls://1.1.1.1:853"\nlisten-ports:\n  - 5453\n')
+            '---\nupstream:\n  - "tls://1.1.1.1:853"\nfallback:\n  - "tls://9.9.9.9:853"\n'
+            'listen-ports:\n  - 5453\ncache: true\ncache-optimistic: true\n')
         (box.sysroot / 'etc/sysupgrade.conf').write_text('%s/\n/etc/router-script/\n' % box.proj)
         (box.tmp / 'router-script-google/ranges.sha').write_text('simhash\n')
         (box.tmp / 'router-script-warp-ready').write_text('456\n')

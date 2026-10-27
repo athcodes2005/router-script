@@ -11,14 +11,20 @@ by Google IPv4 resolvers (`8.8.8.8`, `8.8.4.4`) and the IITB campus DNS server
 (`10.200.1.11`) as fallbacks. dnsmasq uses strict ordering (`strictorder=1`).
 
 On GL.iNet 4.11.0, `configure_dns.sh` configures `/usr/sbin/dnsproxy`
-(`/etc/dnsproxy/dnsproxy.yaml`) on `127.0.0.1:5453` with dnsproxy's default
-upstream mode (the YAML sets no `upstream-mode`), using this upstream list:
+(`/etc/dnsproxy/dnsproxy.yaml`) on `127.0.0.1:5453`. GL.iNet's init script
+starts it with `--upstream-mode=parallel`, which overrides the YAML, so every
+`upstream:` entry is queried at once. `upstream:` therefore holds only
 Cloudflare DoT/DoH (`tls://1.1.1.1:853`, `tls://1.0.0.1:853`,
-`https://cloudflare-dns.com/dns-query`) and Quad9 DoT/DoH (`tls://9.9.9.9:853`,
-`https://dns.quad9.net/dns-query`). Parallel mode is deliberately not set: the
-router's dnsproxy version is unverified and an unknown key could stop the
-daemon and cut DNS. An earlier note of a ~20 ms warm lookup was measured, not
-configured, and does not imply parallel mode.
+`https://cloudflare-dns.com/dns-query`; WARP already egresses via Cloudflare, so
+no extra party sees the queries). Quad9 (`tls://9.9.9.9:853`,
+`https://dns.quad9.net/dns-query`) sits under `fallback:` and is used only when
+every Cloudflare upstream fails. `timeout: '2s'` lets that fallback answer
+before clients give up and dnsmasq moves on to plain `8.8.8.8`. The YAML also
+enables dnsproxy's cache (`cache: true`, `cache-size: 4194304`,
+`cache-optimistic: true`: an expired answer is served instantly while it
+refreshes), which survives dnsmasq reloads. dnsmasq's own cache is raised from
+the firmware default of 150 entries to `DNS_CACHE_SIZE` (4000) via `cachesize`;
+150 evicted live entries (measured: 12,238 of 69,862).
 
 Selected campus names are explicitly forwarded to campus DNS:
 
@@ -72,8 +78,10 @@ mentioning `5453`; once per tick, logged, a failed restart only warns).
 `noresolv`, that the four upstreams (`127.0.0.1#5453`, `8.8.8.8`, `8.8.4.4`,
 `10.200.1.11`) come first and in order, forwards for
 exactly the listed campus hosts (a whole-zone `/iitb.ac.in/` forward counts as
-drift), portal/SSO `address=` pins, and `/etc/dnsproxy/dnsproxy.yaml` (port
-`5453` and `tls://1.1.1.1:853`). `dns_flow.sh`
+drift), the dnsmasq `cachesize`, portal/SSO `address=` pins, and
+`/etc/dnsproxy/dnsproxy.yaml` (port `5453`, `tls://1.1.1.1:853`, a `fallback:`
+with `tls://9.9.9.9:853`, `cache-optimistic: true`, and no Quad9 under
+`upstream:`). `dns_flow.sh`
 prints policy (including pins and `dnsproxy.yaml`) and executes representative
 lookups.
 

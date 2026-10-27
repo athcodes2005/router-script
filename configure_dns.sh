@@ -2,7 +2,8 @@
 
 # Configure DNS with encrypted DNS (DoT/DoH on 127.0.0.1#5453) first, plain
 # resolvers as fallback:
-#   1. 127.0.0.1#5453 (dnsproxy DoT/DoH primary — Cloudflare 1.1.1.1 + Quad9 9.9.9.9)
+#   1. 127.0.0.1#5453 (dnsproxy: Cloudflare DoT/DoH queried in parallel; Quad9
+#      DoT/DoH only as dnsproxy's own fallback when every Cloudflare upstream fails)
 #   2. 8.8.8.8 (Google fallback)
 #   3. 8.8.4.4 (Google secondary fallback)
 #   4. 10.200.1.11 (campus resolver fallback)
@@ -62,6 +63,7 @@ upstream:
   - "tls://1.1.1.1:853"
   - "tls://1.0.0.1:853"
   - "https://cloudflare-dns.com/dns-query"
+fallback:
   - "tls://9.9.9.9:853"
   - "https://dns.quad9.net/dns-query"
 bootstrap:
@@ -73,14 +75,17 @@ listen-addrs:
   - "::1"
 listen-ports:
   - 5453
-timeout: '5s'
+timeout: '2s'
+cache: true
+cache-size: 4194304
+cache-optimistic: true
 EOF
 chmod 600 "$DNSPROXY_YAML"
 uci set gl-dns-v2.@dns[0].mode='secure' 2>/dev/null || true
 uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
 uci commit gl-dns-v2 2>/dev/null || true
 if [ -x /etc/init.d/dnsproxy ]; then
-    log "Restarting dnsproxy (encrypted DoT/DoH primary on 127.0.0.1:5453)"
+    log "Restarting dnsproxy (Cloudflare DoT/DoH primary, Quad9 fallback, on 127.0.0.1:5453)"
     /etc/init.d/dnsproxy restart || log "dnsproxy restart failed; continuing, dnsmasq falls back to the plain resolvers."
 fi
 
@@ -106,6 +111,9 @@ uci add_list dhcp.@dnsmasq[0].addnhosts="$BLINKIT_HOSTS_DIR"
 
 # strict-order: query servers in the order listed, not all at once
 uci set dhcp.@dnsmasq[0].strictorder='1'
+
+# The firmware default of 150 entries evicts live entries under load.
+uci set dhcp.@dnsmasq[0].cachesize="$DNS_CACHE_SIZE"
 
 # Keep the configured order deterministic. WAN-provided resolv.conf entries
 # would otherwise be appended silently and could bypass this resolver chain.
@@ -145,7 +153,8 @@ log "  Campus domains -> $CAMPUS_DNS_IP:"
 for DOMAIN in $CAMPUS_DOMAINS; do
     log "    $DOMAIN"
 done
-log "  dnsproxy (DoT/DoH): 127.0.0.1:5453 (primary)"
+log "  dnsproxy (DoT/DoH): 127.0.0.1:5453 (Cloudflare primary, Quad9 fallback)"
+log "  dnsmasq cache size: $DNS_CACHE_SIZE entries"
 # Replaced by dnsproxy on firmware 4.11.0+:
 # log "  dnscrypt-proxy (DoH): 127.0.0.1:5453 (last resort)"
 # log "  block_ipv6 = false"

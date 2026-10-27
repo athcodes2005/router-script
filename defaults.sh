@@ -25,6 +25,8 @@ SSO_IP="${SSO_IP:-10.200.1.100}"
 # DNSCRYPT_TOML="${DNSCRYPT_TOML:-/etc/dnscrypt-proxy2/dnscrypt-proxy.toml}"
 DNSPROXY_YAML="${DNSPROXY_YAML:-/etc/dnsproxy/dnsproxy.yaml}"
 DNS_SERVERS="${DNS_SERVERS:-127.0.0.1#5453 8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP}"
+# dnsmasq cache entries; the firmware default of 150 evicts live entries.
+DNS_CACHE_SIZE="${DNS_CACHE_SIZE:-4000}"
 INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
 INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
 

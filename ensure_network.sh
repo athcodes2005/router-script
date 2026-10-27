@@ -107,6 +107,7 @@ dns_config_ok() {
     # Verify dnsmasq has strict-order and the expected servers
     [ "$(uci -q get dhcp.@dnsmasq[0].strictorder 2>/dev/null || echo "")" = "1" ] || return 1
     [ "$(uci -q get dhcp.@dnsmasq[0].noresolv 2>/dev/null || echo "")" = "1" ] || return 1
+    [ "$(uci -q get dhcp.@dnsmasq[0].cachesize 2>/dev/null || echo "")" = "$DNS_CACHE_SIZE" ] || return 1
 
     # Check all DNS servers are present in dnsmasq server list
     CURRENT_SERVERS="$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null || echo "")"
@@ -151,6 +152,14 @@ dns_config_ok() {
     [ -f "$DNSPROXY_YAML" ] || return 1
     grep -Fq "tls://1.1.1.1:853" "$DNSPROXY_YAML" || return 1
     grep -Fq "5453" "$DNSPROXY_YAML" || return 1
+    grep -Fq "fallback:" "$DNSPROXY_YAML" || return 1
+    grep -Fq "tls://9.9.9.9:853" "$DNSPROXY_YAML" || return 1
+    grep -Fq "cache-optimistic: true" "$DNSPROXY_YAML" || return 1
+    # Quad9 belongs under fallback:, never under upstream: (parallel mode would query it every time).
+    awk '
+        /^[^ \t#-]/ { in_up = ($0 ~ /^upstream:/) }
+        in_up && /9\.9\.9\.9|quad9/ { bad = 1 }
+        END { exit bad }' "$DNSPROXY_YAML" || return 1
 
     return 0
 }
