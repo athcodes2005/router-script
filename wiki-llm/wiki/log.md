@@ -1217,3 +1217,27 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../sync_to_router.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
 - [[operations/deployment]], [[systems/warp-client]]
+
+## 2026-11-12 — Remaining review and audit items closed and deployed (`b47ccd2`)
+
+- Health check: a warn-only IPv6 probe through the tunnel; quiet healthy ticks
+  counted in RAM and logged once an hour; dnsproxy restarted once per cooldown.
+- Closed from the 2026-10-26 validation audit: N1, N2, A8, A9, A11, A13.
+- `google_service_ranges.txt` regenerated from Google's feeds of 2026-11-12
+  (395 prefixes); CI's checkout action pinned by commit at v7.
+- 256 tests. Side branches merged: `main` and `deploy` point at the deployed
+  commit again.
+- Deployed 22:51 IST with `sync_to_router.sh` (17 files, WARP back after 14 s
+  through the gate). Verified on the router: trace `warp=on`, the IPv6 probe
+  answers 204, `rotate_logs.sh` exits 0, and after the first logged pair the
+  healthy ticks are only counted (`/tmp/router-script-healthy-checks`).
+- The Mac's `usque-rs` was refreshed to the pinned v0.2.3.
+- usque-rs-openwrt `main` holds 0.2.4 (dependency refresh, send-error fix,
+  reworked release workflow) without a tag: nothing is released, and the pin
+  here stays at v0.2.3 until a v0.2.4 release exists and its hash is known.
+
+## Sources
+
+- `../../ensure_network.sh`, `../../defaults.sh`, `../../diagnose.sh`, `../../tunnel.sh`, `../../stop_tunnel.sh`
+- `../../tests/`, `../../.github/workflows/ci.yml`
+- [[operations/health-recovery]], [[bugs/known-issues]]
