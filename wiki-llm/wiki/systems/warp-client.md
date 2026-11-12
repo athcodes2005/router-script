@@ -9,7 +9,7 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 ## Binary delivery (`fetch_usque_rs.sh`)
 
 - `defaults.sh` sets `USQUE_REPO=athcodes2005/usque-rs-openwrt`,
-  `USQUE_RELEASE_TAG=v0.2.4` (pinned: a new release reaches the router only
+  `USQUE_RELEASE_TAG=v0.2.5` (pinned: a new release reaches the router only
   after the tag is bumped in a commit; `latest` still works when set in `.env`), and
   `USQUE_ASSET_NAME=usque-rs-aarch64-linux-musl.tar.gz`.
 - The pinned tag is held to `USQUE_PINNED_SHA256`, the sha256 of its archive: a
@@ -64,6 +64,12 @@ starved `on_timeout()` while the tunnel was busy), and the handshake and
 CONNECT-wait loops are floored and end at their deadline. One interleaved load
 test against v0.2.2 showed no regression. Details are in usque-rs-openwrt's
 `wiki-llm/wiki/bugs/quic-timer-floor.md`.
+
+## `v0.2.5` syslog tag (deployed 2026-11-12)
+
+Syslog lines carry an RFC 3164 timestamp, so `logd` no longer drops the
+`usque-rs[PID]:` tag of a client with a four-digit PID and
+`logread -e usque-rs` shows every client's events ([[../bugs/known-issues]]).
 
 ## `v0.2.4` dependency refresh (deployed 2026-11-12)
 

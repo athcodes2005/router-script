@@ -126,9 +126,10 @@ Up to usque-rs v0.2.4, a client whose PID has exactly four digits logs its
 events without the `usque-rs[PID]:` tag, so `logread -e usque-rs` shows nothing
 for it: `logd` drops the first 15 characters and a space of each message as a
 timestamp, and `usque-rs[4845]: ` is exactly that long. PIDs are that short for
-a good while after a reboot. Until a release with the fix (0.2.5) is pinned,
-read the events with `logread | grep -e MASQUE -e '\[connecting\]' -e
-'\[error\]' -e '\[retry\]' -e '\[fatal\]'`.
+a good while after a reboot. v0.2.5, pinned since 2026-11-12, sends a
+timestamp and keeps its tag. The rollback binary (`usque-rs.prev`, v0.2.4)
+still has the fault; for it, read the events with `logread | grep -e MASQUE -e
+'\[connecting\]' -e '\[error\]' -e '\[retry\]' -e '\[fatal\]'`.
 
 ## Diagnostic sensitivity
 
