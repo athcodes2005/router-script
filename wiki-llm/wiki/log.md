@@ -1241,3 +1241,28 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../ensure_network.sh`, `../../defaults.sh`, `../../diagnose.sh`, `../../tunnel.sh`, `../../stop_tunnel.sh`
 - `../../tests/`, `../../.github/workflows/ci.yml`
 - [[operations/health-recovery]], [[bugs/known-issues]]
+
+## 2026-11-12 — usque-rs v0.2.4 deployed (`2341048`)
+
+- The owner tagged v0.2.4; the reworked release workflow built all six targets
+  on its first run. Pinned by tag and archive hash (`52f98ac2…`, checked on the
+  Mac first; binary `c8397105…`).
+- 23:13 IST: `sync_to_router.sh` promoted `defaults.sh` and `README.md`. 23:14:
+  the router's `fetch_usque_rs.sh` installed v0.2.4 against the pinned hash,
+  kept v0.2.3 as `usque-rs.prev`, and passed its gate in 8 s. Trace `warp=on` on
+  IPv4 and IPv6.
+- `measure_load_latency.sh`, interleaved, medians per run. v0.2.2 against
+  v0.2.3 (23:04–23:07): upload 22 and 21 ms against 24 and 29 ms, download 29
+  and 27 against 28 and 29 ms. v0.2.3 against v0.2.4 (23:16–23:19): upload 28
+  and 21 ms against 23 and 23 ms, download 26 and 25 against 20 and 27 ms.
+  Throughput varied between 39 and 178 Mbit/s with the uplink in both
+  directions. No regression in either step.
+- Found: `logd` drops the first 15 characters and a space of a syslog message
+  as a timestamp, and the client sent none, so a client with a four-digit PID
+  logs its events without the `usque-rs[PID]:` tag ([[bugs/known-issues]]).
+  Fixed in usque-rs-openwrt `main` (0.2.5), not yet released.
+
+## Sources
+
+- `../../defaults.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
+- [[systems/warp-client]]
