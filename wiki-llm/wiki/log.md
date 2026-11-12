@@ -1266,3 +1266,21 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../defaults.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
 - [[systems/warp-client]]
+
+## 2026-11-12 — usque-rs v0.2.5 deployed (`f24035d`)
+
+- The owner tagged v0.2.5 (the syslog timestamp); all six targets built. Pinned
+  by tag and archive hash (`42f10f86…`, checked on the Mac first; binary
+  `41bfedf9…`).
+- 23:36 IST: `sync_to_router.sh` promoted `defaults.sh` and `README.md`; 23:37:
+  `fetch_usque_rs.sh` installed v0.2.5, kept v0.2.4 as `usque-rs.prev`, and
+  passed its gate. Trace `warp=on` on IPv4 and IPv6.
+- `logread -e usque-rs` shows the new client's events with their tag. Its PID
+  has five digits, so the four-digit case was not seen live; raw test messages
+  sent to `logd` earlier showed that a timestamped line keeps its tag at that
+  length, and the client's unit tests pin the format.
+
+## Sources
+
+- `../../defaults.sh`, `../../fetch_usque_rs.sh`
+- [[systems/warp-client]], [[bugs/known-issues]]
