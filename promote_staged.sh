@@ -4,7 +4,10 @@
 # moves the files into place under the maintenance lock, which this process
 # owns for the whole step. Nothing moves unless every file checks out, and a
 # dropped SSH connection cannot stop the moves halfway: hangups and broken pipes
-# are ignored, and nothing here stops on a failed write.
+# are ignored, and nothing here stops on a failed write. A staged file that
+# already matches the installed one is dropped, and if none differs the tunnel
+# is not stopped: a wiki-only commit or a repeated sync used to interrupt WARP
+# for nothing.
 # Usage: sh promote_staged.sh PROJECT_DIR [LOCK_WAIT_SECONDS]
 
 trap '' HUP PIPE
@@ -31,11 +34,21 @@ if ! acquire_maintenance_lock "$LOCK_WAIT"; then
     exit 75
 fi
 trap 'release_maintenance_lock' EXIT
-log "Every staged file checks out; promoting them."
 
-if pidof usque-rs >/dev/null 2>&1; then
-    log "Tunnel is running. Stopping before promotion."
-    sh "$DIR/stop_tunnel.sh"
+CHANGED=0
+while read -r HASH FILE; do
+    [ -n "$HASH" ] || continue
+    cmp -s "$STAGE/$FILE" "$DIR/$FILE" 2>/dev/null || CHANGED=$((CHANGED + 1))
+done < .manifest
+
+if [ "$CHANGED" -eq 0 ]; then
+    log "Every staged file already matches the installed one; the tunnel keeps running."
+else
+    log "Every staged file checks out; promoting the $CHANGED that differ."
+    if pidof usque-rs >/dev/null 2>&1; then
+        log "Tunnel is running. Stopping before promotion."
+        sh "$DIR/stop_tunnel.sh"
+    fi
 fi
 
 # The manifest lists the sourced helpers first, so a script that starts
@@ -44,7 +57,11 @@ fi
 FAILED=
 while read -r HASH FILE; do
     [ -n "$HASH" ] || continue
-    mv "$STAGE/$FILE" "$DIR/$FILE" || FAILED="$FAILED $FILE"
+    if cmp -s "$STAGE/$FILE" "$DIR/$FILE" 2>/dev/null; then
+        rm -f "$STAGE/$FILE"
+    else
+        mv "$STAGE/$FILE" "$DIR/$FILE" || FAILED="$FAILED $FILE"
+    fi
 done < .manifest
 rm -f .manifest
 cd "$DIR" || exit 1
@@ -60,4 +77,4 @@ if [ -n "$FAILED" ]; then
     log "ERROR: these files could not be promoted:$FAILED"
     exit 1
 fi
-log "Promoted the staged files."
+[ "$CHANGED" -eq 0 ] || log "Promoted the staged files."

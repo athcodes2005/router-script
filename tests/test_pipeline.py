@@ -2,6 +2,7 @@
 from email.utils import formatdate
 import os
 import re
+import subprocess
 import time
 import unittest
 
@@ -23,6 +24,54 @@ class PipelineTests(unittest.TestCase):
 
     def tick(self, **env):
         return self.box.run('ensure_network.sh', **env)
+
+    # The updaters keep a change only if a gate run (ROUTER_SCRIPT_TRIGGER=gate)
+    # exits 0, so 0 must mean WARP was tested and works. A tick's other exits
+    # with 0 (lock busy, game mode, pending login, cooldown) once counted too.
+    def gate(self, **env):
+        return self.tick(ROUTER_SCRIPT_TRIGGER='gate', **env)
+
+    def test_gate_passes_once_the_tunnel_is_tested(self):
+        result = self.gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log = self.box.log('ensure')
+        self.assertIn('Starting health check: verifying a change.', log)
+        self.assertIn('Health check passed.', log)
+
+    def test_gate_reports_a_lock_that_stays_busy_as_untested(self):
+        holder = subprocess.Popen(['sleep', '300'])
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        lock = self.box.proj / '.ensure_network.lock'
+        lock.mkdir()
+        (lock / 'owner').write_text('%d 0 0 game_mode.sh\n' % holder.pid)
+        self.assertEqual(self.tick().returncode, 0)  # a tick skips and leaves it to the next one
+        result = self.gate(GATE_LOCK_WAIT='2')
+        self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+        self.assertIn('Not verified: game_mode.sh (PID %d) still holds the maintenance lock after 2s.' % holder.pid,
+                      self.box.log('ensure'))
+        self.assertTrue((lock / 'owner').exists())
+
+    def test_gate_reports_game_mode_as_untested(self):
+        (self.box.tmp / 'router-script-game-mode').write_text('on\n')
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.gate().returncode, 75)
+
+    def test_gate_reports_a_pending_interactive_login_as_untested(self):
+        self.box.flag('direct_down')
+        (self.box.tmp / 'router-script-interactive-login-required').write_text('pending\n')
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.gate().returncode, 75)
+        self.assertEqual(self.box.log('ensure').count('Interactive IITB login is pending'), 2)
+
+    def test_gate_restarts_warp_even_during_the_retry_cooldown(self):
+        self.box.flag('warp_down')
+        (self.box.tmp / 'router-script-tunnel-retry-after').write_text('%d\n' % (time.time() + 300))
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertIn('Tunnel retry is cooling down', self.box.log('ensure'))
+        self.assertNotIn('Restarting tunnel', self.box.log('ensure'))
+        self.assertEqual(self.gate().returncode, 1)
+        self.assertIn('Restarting tunnel.', self.box.log('ensure'))
 
     # F02: a stuck Wi-Fi or DNS stage must not block WAN, portal and WARP recovery.
     def test_wifi_config_failure_does_not_block_tunnel_recovery(self):
@@ -109,6 +158,39 @@ class PipelineTests(unittest.TestCase):
     def test_unrepairable_campus_route_still_cycles_the_wan(self):
         self.box.flag('campus_route_tun')
         self.tick()
+        self.assertEqual(self.box.count('ifdown wan'), 1)
+
+    # Every other stage had a cooldown; this one cycled the WAN on every tick,
+    # which restarts DHCP and can keep a slow server's lease from arriving.
+    def test_a_missing_lease_cycles_the_wan_once_per_cooldown(self):
+        self.box.flag('wan_down')
+        for _ in range(3):
+            self.assertEqual(self.tick().returncode, 1)
+        self.assertEqual(self.box.count('ifdown wan'), 1)
+        self.assertIn('waiting for it instead of cycling again', self.box.log('ensure'))
+        (self.box.tmp / 'router-script-wan-recovery-retry-after').write_text('%d\n' % (time.time() - 1))
+        self.tick()
+        self.assertEqual(self.box.count('ifdown wan'), 2)
+
+    def test_the_wan_cooldown_ends_once_the_wan_is_back(self):
+        self.box.flag('wan_down')
+        self.tick()
+        self.box.flag('wan_down', False)
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertFalse((self.box.tmp / 'router-script-wan-recovery-retry-after').exists())
+
+    def test_an_unplugged_cable_is_not_answered_by_cycling_the_wan(self):
+        (self.box.sysroot / 'sys/class/net/eth0/carrier').write_text('0\n')
+        self.assertEqual(self.tick().returncode, 1)
+        self.assertEqual(self.box.count('ifdown'), 0)
+        self.assertEqual(self.box.count('killall'), 0)
+        self.assertIn('Ethernet carrier is missing on eth0', self.box.log('ensure'))
+
+    def test_a_wan_interface_that_is_down_is_still_cycled(self):
+        # A down interface has no readable carrier at all.
+        (self.box.sysroot / 'sys/class/net/eth0/carrier').unlink()
+        self.box.flag('wan_down')
+        self.assertEqual(self.tick().returncode, 1)
         self.assertEqual(self.box.count('ifdown wan'), 1)
 
     # F06: retention keeps 24 snapshots; one per tick evicts the incident's onset.

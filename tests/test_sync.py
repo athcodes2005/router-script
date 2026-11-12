@@ -18,7 +18,7 @@ from sandbox import SHELL
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'root@sync-test.invalid'
-TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cp', 'date', 'df', 'dirname', 'grep', 'ls', 'mkdir', 'mktemp', 'mv',
+TOOLS = ['awk', 'basename', 'cat', 'chmod', 'cmp', 'cp', 'date', 'df', 'dirname', 'grep', 'ls', 'mkdir', 'mktemp', 'mv',
          'rm', 'rmdir', 'sleep', 'stat', 'tail']
 LOCAL_CONFIG = '{"dummy": "local-registration"}\n'
 
@@ -67,6 +67,7 @@ class SyncTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         base = Path(tmp.name)
         self.local, self.router, bin_dir, rbin = (base / n for n in ('local', 'router', 'bin', 'rbin'))
+        self.bin_dir, self.rbin = bin_dir, rbin
         for path in (self.local, self.router, bin_dir, rbin):
             path.mkdir()
         self.calls = base / 'calls'
@@ -225,6 +226,100 @@ class SyncTests(unittest.TestCase):
         result = self.sync('--force')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.router / 'config.json').read_text(), LOCAL_CONFIG)
+
+    # The Mac's usque-rs is fetched once and goes stale, while the router keeps
+    # the pinned release itself. Shipping the Mac's copy downgraded the router,
+    # and its fetcher, reading .usque_release_sha, never noticed.
+    def test_a_router_binary_that_differs_from_the_local_one_is_kept(self):
+        (self.router / 'usque-rs').write_text('router pinned release\n')
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'router pinned release\n')
+        self.assertIn("the router's usque-rs differs from the local copy and is left as it is", result.stdout)
+        self.assertNotIn('scp usque-rs', self.calls.read_text().splitlines())
+        self.assertTrue((self.router / 'paths.sh').exists())  # the rest is still deployed
+
+    def test_force_alone_does_not_replace_the_router_binary(self):
+        (self.router / 'usque-rs').write_text('router pinned release\n')
+        self.assertEqual(self.sync('--force').returncode, 0)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'router pinned release\n')
+
+    def test_push_binary_replaces_the_router_binary(self):
+        (self.router / 'usque-rs').write_text('router pinned release\n')
+        result = self.sync('--push-binary')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.router / 'usque-rs').read_text(), 'binary\n')
+        self.assertEqual(self.mode('usque-rs'), 0o755)
+
+    def test_a_binary_the_router_already_has_is_not_sent_again(self):
+        (self.router / 'usque-rs').write_text('binary\n')
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('scp usque-rs', self.calls.read_text().splitlines())
+        self.assertNotIn('usque-rs differs', result.stdout)
+
+    # A bare tunnel.sh after the promotion ran outside the maintenance lock and
+    # could collide with a cron tick starting the tunnel too.
+    def test_a_stopped_tunnel_is_restarted_through_the_health_check(self):
+        self.running_tunnel()
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls.read_text()
+        self.assertIn('health check trigger=gate', calls.splitlines())
+        self.assertNotIn('./tunnel.sh', calls)
+
+    def running_tunnel(self):
+        """A router whose tunnel runs until stop_tunnel.sh, and which records health checks."""
+        (self.router / '.client-running').write_text('')
+        write_exec(self.rbin / 'pidof', '[ -f "$ROUTER_SCRIPT_DIR/.client-running" ]\n')
+        write_exec(self.router / 'stop_tunnel.sh', 'rm -f "$ROUTER_SCRIPT_DIR/.client-running"\n')
+        write_exec(self.router / 'ensure_network.sh',
+                   ': > "$ROUTER_SCRIPT_DIR/.client-running"\n'
+                   'printf \'health check trigger=%s\\n\' "${ROUTER_SCRIPT_TRIGGER:-}" >> "$CALLS"\n')
+
+    # Every sync used to stop WARP, even one that changed nothing.
+    def test_a_sync_that_changes_nothing_leaves_the_tunnel_running(self):
+        self.running_tunnel()
+        self.assertEqual(self.sync().returncode, 0)
+        self.assertEqual(self.calls.read_text().count('health check'), 1)  # the first sync did stop it
+        (self.router / 'stop_tunnel.sh').write_text('exit 1\n')  # must not run again
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('already matches the installed one; the tunnel keeps running', result.stdout)
+        self.assertEqual(self.calls.read_text().count('health check'), 1)
+        self.assertTrue((self.router / '.client-running').exists())
+        self.assertFalse([p.name for p in self.router.iterdir() if p.name.startswith('.sync-stage')])
+
+    # The router's .env can hold keys the Mac's lacks (the Git updater's), and
+    # was overwritten without a check.
+    def test_a_router_env_that_differs_is_not_overwritten(self):
+        (self.router / '.env').write_text('DUMMY=1\nGITHUB_REPO=dummy/router-script\n')
+        result = self.sync()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('.env differs', result.stderr)
+        self.assertIn('GITHUB_REPO', (self.router / '.env').read_text())
+        self.assertNotIn('scp', self.calls.read_text())
+        self.assertNotIn('DUMMY', result.stdout + result.stderr)
+        self.assertEqual(self.sync('--force').returncode, 0)
+        self.assertEqual((self.router / '.env').read_text(), 'DUMMY=1\n')
+
+    # B5: without .deployed_commit the Git updater promotes the deploy branch
+    # over a manual sync on its next run.
+    def fake_git(self, dirty=''):
+        write_exec(self.bin_dir / 'git', 'case "$*" in\n  *rev-parse*) echo %s ;;\n  *status*) printf \'%%s\' "%s" ;;\nesac\n'
+                   % ('c0ffee' * 6 + 'c0ff', dirty))
+
+    def test_a_sync_from_a_clean_checkout_records_the_deployed_commit(self):
+        self.fake_git()
+        result = self.sync()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.router / '.deployed_commit').read_text(), 'c0ffee' * 6 + 'c0ff\n')
+
+    def test_a_sync_of_uncommitted_changes_names_no_commit(self):
+        (self.router / '.deployed_commit').write_text('earlier\n')
+        self.fake_git(dirty=' M tunnel.sh')
+        self.assertEqual(self.sync().returncode, 0)
+        self.assertEqual((self.router / '.deployed_commit').read_text(), 'earlier\n')
 
     def test_first_deploy_without_a_router_registration_proceeds(self):
         (self.router / 'config.json').unlink()

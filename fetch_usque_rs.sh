@@ -13,7 +13,9 @@
 #
 # An archive that failed the health check is recorded in .usque_failed_sha and
 # skipped on later runs. The skip ends when the release's sha changes, when
-# that file is removed, or with --retry-failed.
+# that file is removed, or with --retry-failed. An archive the health check
+# could not test (it exits 75; see ensure_network.sh) is rolled back too, but
+# not recorded: the next run tries it again.
 
 set -eu
 
@@ -81,19 +83,28 @@ fetch_url() {
     fi
 }
 
-if ! fetch_url "$SHA_URL" -o "$WORK/asset.sha256" 2>/dev/null; then
-    if [ "$DOWNLOAD_ONLY" -eq 1 ] && [ -f "$DIR/usque-rs" ]; then
+# A hash pinned in defaults.sh (or .env) is the one the archive must have. The
+# checksum published beside the archive only shows that the download is whole:
+# it is replaced together with the archive, so it cannot show that the release
+# still holds what was pinned. Without a pin that checksum is all there is.
+if [ -n "$USQUE_RELEASE_SHA256" ]; then
+    EXPECTED_ARCHIVE_SHA="$USQUE_RELEASE_SHA256"
+    SHA_SOURCE="the pinned USQUE_RELEASE_SHA256"
+else
+    if ! fetch_url "$SHA_URL" -o "$WORK/asset.sha256" 2>/dev/null; then
+        if [ "$DOWNLOAD_ONLY" -eq 1 ] && [ -f "$DIR/usque-rs" ]; then
+            exit 0
+        fi
+        log "WARNING: could not fetch $SHA_URL (release may still be building)."
         exit 0
     fi
-    log "WARNING: could not fetch $SHA_URL (release may still be building)."
-    exit 0
+    EXPECTED_ARCHIVE_SHA="$(awk '{print $1}' "$WORK/asset.sha256" | head -n 1)"
+    SHA_SOURCE="$SHA_URL"
 fi
-
-EXPECTED_ARCHIVE_SHA="$(awk '{print $1}' "$WORK/asset.sha256" | head -n 1)"
 case "$EXPECTED_ARCHIVE_SHA" in
     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
     *)
-        log "WARNING: invalid SHA-256 in $SHA_URL."
+        log "WARNING: invalid SHA-256 from $SHA_SOURCE."
         exit 0 ;;
 esac
 
@@ -108,6 +119,13 @@ if [ "$RETRY_FAILED" -eq 0 ] && [ -n "$FAILED_ARCHIVE_SHA" ] && [ "$EXPECTED_ARC
     exit 0
 fi
 
+# The health gate cannot test WARP in game mode or while the portal waits for an
+# interactive login, so a binary installed now could not be verified. Wait.
+if [ "$DOWNLOAD_ONLY" -eq 0 ] && { [ -f "$GAME_MODE_MARKER" ] || [ -f "$INTERACTIVE_LOGIN_MARKER" ]; }; then
+    log "Deferring usque-rs release $EXPECTED_ARCHIVE_SHA: the health gate cannot test WARP in game mode or while an interactive login is pending."
+    exit 0
+fi
+
 if ! fetch_url "$ARCHIVE_URL" -o "$WORK/$USQUE_ASSET_NAME" 2>/dev/null; then
     log "WARNING: failed to download $ARCHIVE_URL."
     exit 1
@@ -115,7 +133,7 @@ fi
 
 ACTUAL_ARCHIVE_SHA="$(file_sha256 "$WORK/$USQUE_ASSET_NAME")"
 if [ "$ACTUAL_ARCHIVE_SHA" != "$EXPECTED_ARCHIVE_SHA" ]; then
-    log "ERROR: SHA-256 mismatch for $USQUE_ASSET_NAME (expected $EXPECTED_ARCHIVE_SHA, got $ACTUAL_ARCHIVE_SHA)."
+    log "ERROR: SHA-256 mismatch for $USQUE_ASSET_NAME (expected $EXPECTED_ARCHIVE_SHA from $SHA_SOURCE, got $ACTUAL_ARCHIVE_SHA)."
     exit 1
 fi
 
@@ -195,7 +213,14 @@ if install_and_verify; then
 fi
 release_maintenance_lock
 
-if [ "$INSTALLED_OK" -eq 1 ] && sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1; then
+# Health gate: 0 means WARP was tested and works, 75 that it could not be
+# tested, anything else that the check failed. Only 0 keeps the binary.
+GATE_STATUS=1
+if [ "$INSTALLED_OK" -eq 1 ]; then
+    GATE_STATUS=0
+    ROUTER_SCRIPT_TRIGGER=gate sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1 || GATE_STATUS=$?
+fi
+if [ "$GATE_STATUS" -eq 0 ]; then
     printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$DIR/.usque_release_sha"
     rm -f "$FAILED_SHA_FILE"
     sync
@@ -203,8 +228,12 @@ if [ "$INSTALLED_OK" -eq 1 ] && sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1;
     exit 0
 fi
 
-printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$FAILED_SHA_FILE"
-log "ERROR: usque-rs ($NEW_BIN_SHA) failed startup or health check; rolling back to previous binary."
+if [ "$GATE_STATUS" -eq 75 ]; then
+    log "WARNING: the health check could not test WARP with usque-rs ($NEW_BIN_SHA); rolling back to previous binary to try again on a later run."
+else
+    printf '%s\n' "$EXPECTED_ARCHIVE_SHA" > "$FAILED_SHA_FILE"
+    log "ERROR: usque-rs ($NEW_BIN_SHA) failed startup or health check; rolling back to previous binary."
+fi
 ROLLBACK_BIN="$PREV_BIN"
 [ -f "$ROLLBACK_BIN" ] || ROLLBACK_BIN="$LEGACY_PREV_BIN"
 if [ -f "$ROLLBACK_BIN" ] && acquire_maintenance_lock "$LOCK_WAIT"; then

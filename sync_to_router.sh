@@ -37,9 +37,13 @@ cleanup() {
 
     run_ssh "$REMOTE" "rm -rf '$REMOTE_STAGE'" >/dev/null 2>&1 || true
 
+    # Through the health check, which starts the tunnel under the maintenance
+    # lock and then tests it: a bare tunnel.sh could collide with a cron tick
+    # starting the tunnel at the same moment.
     if [ "$WAS_RUNNING" -eq 1 ] && ! run_ssh "$REMOTE" "pidof '$EXECUTABLE_BASENAME' >/dev/null 2>&1"; then
         echo "Restarting tunnel."
-        run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ./tunnel.sh >/dev/null 2>&1" || true
+        run_ssh "$REMOTE" "cd '$REMOTE_DIR' && ROUTER_SCRIPT_TRIGGER=gate ./ensure_network.sh >/dev/null 2>&1" ||
+            echo "WARNING: the router's health check did not confirm a working tunnel; see logs/ensure.log there." >&2
     fi
 
     exit "$STATUS"
@@ -55,11 +59,17 @@ if [ ! -f "$DIR/usque-rs" ] && [ -f "$DIR/fetch_usque_rs.sh" ]; then
     sh "$DIR/fetch_usque_rs.sh" --download-only || true
 fi
 
-# Use --force to push a blocklist or config.json that diverges from the router's copy.
+# Use --force to push a blocklist, .env or config.json that diverges from the
+# router's copy, and --push-binary to replace the router's usque-rs with a
+# different one.
 FORCE=0
-case "${1:-}" in
-    --force|-f) FORCE=1 ;;
-esac
+PUSH_BINARY=0
+for ARG in "$@"; do
+    case "$ARG" in
+        --force|-f) FORCE=1 ;;
+        --push-binary) PUSH_BINARY=1 ;;
+    esac
+done
 
 echo "Preparing remote directory on $REMOTE:$REMOTE_DIR"
 run_ssh "$REMOTE" "mkdir -p '$REMOTE_DIR/logs' '$REMOTE_DIR/diagnostics'"
@@ -81,6 +91,23 @@ fi
 # rotate_tunnel_ip.sh registers a new WARP identity on the router, so the local
 # config.json can be stale; pushing it would undo the rotation. Only hashes are
 # compared: the file holds the private key and is never printed.
+# The router's .env can hold settings the local copy lacks (the Git updater's
+# GITHUB_* keys are set only there), and pushing the local file would drop them
+# without a word. It holds credentials, so it is compared by hash and never
+# pulled or printed.
+if [ -f "$DIR/.env" ]; then
+    REMOTE_ENV_SHA="$(run_ssh "$REMOTE" "sha256sum '$REMOTE_DIR/.env' 2>/dev/null | awk '{print \$1}'" || true)"
+    if [ -n "$REMOTE_ENV_SHA" ] && [ "$REMOTE_ENV_SHA" != "$(local_sha256 "$DIR/.env")" ]; then
+        if [ "$FORCE" -eq 0 ]; then
+            echo "ERROR: .env differs between local and the router." >&2
+            echo "Bring the two in line by hand (it is never pulled)," >&2
+            echo "or re-run with --force to overwrite the router's copy." >&2
+            exit 1
+        fi
+        echo "WARNING: overwriting the router's .env (--force)."
+    fi
+fi
+
 if [ -f "$DIR/config.json" ]; then
     REMOTE_CONFIG_SHA="$(run_ssh "$REMOTE" "sha256sum '$REMOTE_DIR/config.json' 2>/dev/null | awk '{print \$1}'" || true)"
     if [ -n "$REMOTE_CONFIG_SHA" ] && [ "$REMOTE_CONFIG_SHA" != "$(local_sha256 "$DIR/config.json")" ]; then
@@ -91,6 +118,27 @@ if [ -f "$DIR/config.json" ]; then
             exit 1
         fi
         echo "WARNING: overwriting the router's config.json (--force)."
+    fi
+fi
+
+# The router's fetch_usque_rs.sh keeps usque-rs at the release pinned in
+# defaults.sh, while the local copy is fetched once and then goes stale. Pushing
+# it would downgrade the router for good: .usque_release_sha is not shipped, so
+# the fetcher would still read the pinned release as installed. A router that
+# has a binary therefore keeps it, unless --push-binary asks otherwise.
+SHIP_BINARY=1
+if [ -f "$DIR/usque-rs" ]; then
+    REMOTE_BINARY_SHA="$(run_ssh "$REMOTE" "sha256sum '$REMOTE_DIR/usque-rs' 2>/dev/null | awk '{print \$1}'" || true)"
+    if [ -z "$REMOTE_BINARY_SHA" ]; then
+        :
+    elif [ "$REMOTE_BINARY_SHA" = "$(local_sha256 "$DIR/usque-rs")" ]; then
+        SHIP_BINARY=0
+    elif [ "$PUSH_BINARY" -eq 1 ]; then
+        echo "WARNING: replacing the router's usque-rs with the local copy (--push-binary)."
+    else
+        SHIP_BINARY=0
+        echo "NOTE: the router's usque-rs differs from the local copy and is left as it is."
+        echo "      The router fetches the pinned release itself; --push-binary sends the local one."
     fi
 fi
 
@@ -108,6 +156,7 @@ run_ssh "$REMOTE" "rm -rf '$REMOTE_STAGE' && mkdir -m 700 '$REMOTE_STAGE'"
 MANIFEST=
 for FILE in $FILES; do
     [ -f "$DIR/$FILE" ] || continue
+    [ "$FILE" != usque-rs ] || [ "$SHIP_BINARY" -eq 1 ] || continue
     MANIFEST="$MANIFEST$(local_sha256 "$DIR/$FILE")  $FILE
 "
     run_scp -q "$DIR/$FILE" "$REMOTE:$REMOTE_STAGE/$FILE"
@@ -118,5 +167,14 @@ printf '%s' "$MANIFEST" | run_ssh "$REMOTE" "cat > '$REMOTE_STAGE/.manifest'"
 # it while it owns the maintenance lock; see promote_staged.sh.
 echo "Promoting staged files."
 run_ssh "$REMOTE" "sh '$REMOTE_STAGE/promote_staged.sh' '$REMOTE_DIR' '$SYNC_LOCK_WAIT'"
+
+# Tell update_from_git.sh which commit the router now runs; without that it
+# promotes the deploy branch over this sync on its next run. Only a checkout
+# with no uncommitted change to a tracked file has a commit to name.
+if DEPLOYED_COMMIT="$(git -C "$DIR" rev-parse HEAD 2>/dev/null)" &&
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    run_ssh "$REMOTE" "printf '%s\n' '$DEPLOYED_COMMIT' > '$REMOTE_DIR/.deployed_commit'"
+    echo "Recorded $DEPLOYED_COMMIT as the deployed commit."
+fi
 
 echo "Router sync complete."

@@ -110,8 +110,14 @@ case "$CMD" in
 
         # Pause aggressive tunnel restarts while gaming: ensure_network still
         # repairs WAN/DNS/portal, but must not yank the default back to tun0.
-        printf 'on\n' > "$MARKER"
+        # With the uptime, so that ensure_network.sh can turn a forgotten game
+        # mode off after GAME_MODE_MAX_SECONDS.
+        printf 'on %s\n' "$(lock_uptime)" > "$MARKER"
         log "game_mode ON: public IPv4 prefers $WAN_IF (WARP demoted, IPv6 isolated)."
+        case "$GAME_MODE_MAX_SECONDS" in
+            ''|0|*[!0-9]*) ;;
+            *) log "game_mode turns itself off after $((GAME_MODE_MAX_SECONDS / 60)) minutes." ;;
+        esac
         sh "$DIR/game_mode.sh" status
         ;;
     off)

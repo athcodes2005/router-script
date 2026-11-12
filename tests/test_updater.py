@@ -99,7 +99,7 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
             ],
         }))
 
-    def make_tarball(self, healthy=True):
+    def make_tarball(self, healthy=True, ensure=None):
         with tempfile.TemporaryDirectory() as tmp:
             pkg = Path(tmp) / ('router-script-' + SHA[:7])
             pkg.mkdir()
@@ -107,7 +107,9 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
                 if f.is_file():
                     shutil.copy(f, pkg / f.name)
             (pkg / 'README.md').write_text('# Updated README\n')
-            if healthy:
+            if ensure is not None:
+                (pkg / 'ensure_network.sh').write_text(ensure)
+            elif healthy:
                 (pkg / 'ensure_network.sh').write_text('#!/bin/sh\necho "updated ensure ok"\nexit 0\n')
             else:
                 (pkg / 'ensure_network.sh').write_text('#!/bin/sh\necho "updated ensure failed"\nexit 1\n')
@@ -204,10 +206,86 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
         self.assertFalse((self.box.proj / '.git_failed_commit').exists())
 
+    # The gate once passed whenever ensure_network.sh exited 0, which it also
+    # did without testing WARP: lock busy, game mode, pending login, cooldown.
+    def test_the_health_check_runs_as_a_gate(self):
+        self.make_tarball(ensure='#!/bin/sh\nprintf \'%s\\n\' "${ROUTER_SCRIPT_TRIGGER:-}" >> "$SIM_STATE/triggers"\n')
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.state / 'triggers').read_text().split(), ['gate'])
+
+    def test_an_update_the_gate_could_not_test_is_rolled_back_but_not_recorded(self):
+        (self.box.proj / 'README.md').write_text('# Working README\n')
+        (self.box.proj / 'ensure_network.sh').write_text('#!/bin/sh\nexit 0\n')
+        (self.box.proj / 'ensure_network.sh').chmod(0o755)
+        self.make_tarball(ensure='#!/bin/sh\nexit 75\n')
+        self.assertEqual(self.run_updater().returncode, 1)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
+        self.assertFalse((self.box.proj / '.deployed_commit').exists())
+        self.assertFalse((self.box.proj / '.git_failed_commit').exists())
+        self.assertIn('could not test WARP after promoting %s; rolling back' % SHA, self.box.log('maintenance'))
+        # Not recorded as failed, so the next run tries the commit again.
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+
+    def test_updates_wait_while_the_gate_could_not_test_warp(self):
+        (self.box.proj / 'README.md').write_text('# Old README\n')
+        self.make_tarball(healthy=True)
+        for marker in ('router-script-game-mode', 'router-script-interactive-login-required'):
+            (self.box.tmp / marker).write_text('on\n')
+            self.assertEqual(self.run_updater().returncode, 0)
+            self.assertEqual((self.box.proj / 'README.md').read_text(), '# Old README\n')
+            self.assertFalse((self.box.proj / '.deployed_commit').exists())
+            (self.box.tmp / marker).unlink()
+        self.assertEqual(self.box.log('maintenance').count('Deferring %s' % SHA), 2)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
+
+    # Every promotion used to stop WARP, wiki-only commits included.
+    def test_a_commit_that_changes_no_deployed_file_leaves_the_tunnel_running(self):
+        stub = '#!/bin/sh\nexit 0\n'
+        (self.box.proj / 'ensure_network.sh').write_text(stub)
+        (self.box.proj / 'README.md').write_text('# Updated README\n')
+        self.make_tarball(ensure=stub)
+        res = self.run_updater()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.box.count('killall'), 0)
+        self.assertIn('already matches the installed one; the tunnel keeps running', self.box.log('maintenance'))
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+        self.assertFalse([p.name for p in self.box.proj.iterdir() if p.name.startswith('.git-')])
+
+    def test_a_commit_that_changes_a_deployed_file_still_stops_the_tunnel(self):
+        (self.box.proj / 'README.md').write_text('# Old README\n')
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertGreater(self.box.count('killall'), 0)
+
+    # Started outside the lock, the tunnel could be stopped by a health tick
+    # that found it half started, and each start then killed the other's client.
+    def test_the_tunnel_the_promotion_stopped_restarts_under_the_lock(self):
+        running = self.box.state / 'client_running'
+        running.write_text('')
+        (self.box.bin / 'pidof').write_text(
+            '#!/bin/sh\n[ "$1" = usque-rs ] && [ -f "$SIM_STATE/client_running" ] && echo 456\n')
+        (self.box.proj / 'stop_tunnel.sh').write_text('#!/bin/sh\nrm -f "$SIM_STATE/client_running"\n')
+        (self.box.proj / 'tunnel.sh').write_text(
+            '#!/bin/sh\ncat "$(dirname "$0")/.ensure_network.lock/owner" > "$SIM_STATE/tunnel_started_by"\n'
+            ': > "$SIM_STATE/client_running"\n')
+        self.make_tarball(healthy=True)
+        res = self.run_updater()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual((self.box.state / 'tunnel_started_by').read_text().split()[3], 'update_from_git.sh')
+        self.assertTrue(running.exists())
+        self.assertFalse((self.box.proj / '.ensure_network.lock').exists())
+
 
 class UsqueFetchTests(unittest.TestCase):
     def setUp(self):
         self.box = Sandbox.fresh(self)
+        # These releases are made up, so the hash pinned in defaults.sh cannot
+        # match them: no pin, unless a test sets its own.
+        sandbox_env = self.box.env
+        self.box.env = lambda **extra: sandbox_env(**{'USQUE_RELEASE_SHA256': '', **extra})
         for tool in ('tar', 'gzip', 'python3'):
             if not (self.box.bin / tool).exists():
                 (self.box.bin / tool).symlink_to(shutil.which(tool))
@@ -268,7 +346,7 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         for url in self.fetched_urls():
-            self.assertIn('/releases/download/v0.2.2/', url)
+            self.assertIn('/releases/download/v0.2.3/', url)
             self.assertNotIn('/latest/', url)
 
     def test_explicit_latest_tag_still_follows_latest(self):
@@ -278,6 +356,33 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         for url in self.fetched_urls():
             self.assertIn('/releases/latest/download/', url)
+
+    # The checksum beside the archive is replaced together with it, so only a
+    # hash kept on our side shows that the release still holds what was pinned.
+    def test_a_pinned_hash_decides_without_the_published_checksum(self):
+        digest = self.make_release('#!/bin/sh\necho "--syslog pinned"\n')
+        (self.rel / 'asset.sha256').write_text('%s  replaced-with-the-archive\n' % ('f' * 64))
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel), USQUE_RELEASE_SHA256=digest)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual((self.box.proj / '.usque_release_sha').read_text().strip(), digest)
+        self.assertFalse([url for url in self.fetched_urls() if url.endswith('.sha256')])
+
+    def test_an_archive_that_differs_from_the_pinned_hash_is_refused(self):
+        (self.box.proj / 'usque-rs').write_text('#!/bin/sh\necho old\n')
+        self.make_release('#!/bin/sh\necho "replaced under the same tag"\n')
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel),
+                           USQUE_RELEASE_SHA256='a' * 64)
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), '#!/bin/sh\necho old\n')
+        self.assertIn('from the pinned USQUE_RELEASE_SHA256', self.box.log('maintenance'))
+
+    def test_an_installed_pinned_release_needs_no_network(self):
+        digest = self.make_release('#!/bin/sh\necho "--syslog pinned"\n')
+        (self.box.proj / 'usque-rs').write_text('installed\n')
+        (self.box.proj / '.usque_release_sha').write_text(digest + '\n')
+        res = self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel), USQUE_RELEASE_SHA256=digest)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertFalse((self.box.state / 'usque_urls').exists())
 
     def test_corrupt_archive_sha_is_rejected(self):
         (self.box.proj / 'usque-rs').write_text('#!/bin/sh\necho old\n')
@@ -341,6 +446,33 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual(self.tarball_downloads(), 1)
         self.assertIn('previously failed its health check', self.box.log('maintenance'))
         self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+
+    def test_a_binary_the_gate_could_not_test_is_rolled_back_but_not_recorded(self):
+        old_bin = self.install_router_case(ensure_ok=True)
+        (self.box.proj / 'ensure_network.sh').write_text(
+            '#!/bin/sh\n[ "${ROUTER_SCRIPT_TRIGGER:-}" = gate ] || exit 0\nexit 75\n')
+        self.make_release('#!/bin/sh\necho "--syslog new"\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 1)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+        self.assertFalse((self.box.proj / '.usque_failed_sha').exists())
+        self.assertFalse((self.box.proj / '.usque_release_sha').exists())
+        self.assertIn('could not test WARP', self.box.log('maintenance'))
+        # Not recorded as failed, so the next run downloads and tries it again.
+        self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel))
+        self.assertEqual(self.tarball_downloads(), 2)
+
+    def test_binary_updates_wait_while_the_gate_could_not_test_warp(self):
+        old_bin = self.install_router_case(ensure_ok=True)
+        self.make_release('#!/bin/sh\necho "--syslog new"\n')
+        (self.box.tmp / 'router-script-game-mode').write_text('on\n')
+        self.assertEqual(self.box.run('fetch_usque_rs.sh', REL_DIR=str(self.rel)).returncode, 0)
+        self.assertEqual((self.box.proj / 'usque-rs').read_text(), old_bin)
+        self.assertEqual(self.tarball_downloads(), 0)
+        self.assertIn('Deferring usque-rs release', self.box.log('maintenance'))
+        # The Mac's --download-only has no gate and is not held back.
+        res = self.box.run('fetch_usque_rs.sh', '--download-only', REL_DIR=str(self.rel))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self.tarball_downloads(), 1)
 
     def test_failed_archive_skip_ends_on_new_sha_flag_or_file_removal(self):
         self.install_router_case(ensure_ok=True)

@@ -38,7 +38,7 @@ EXPECTED = {
     'GAME_MODE_MARKER': '/tmp/router-script-game-mode',
     'WARP_ENDPOINTS': '162.159.198.1 162.159.192.1', 'WARP_READY_FILE': '/tmp/router-script-warp-ready',
     'WARP_CLIENT_TABLE': '100',
-    'USQUE_REPO': 'athcodes2005/usque-rs-openwrt', 'USQUE_RELEASE_TAG': 'v0.2.2',
+    'USQUE_REPO': 'athcodes2005/usque-rs-openwrt', 'USQUE_RELEASE_TAG': 'v0.2.3',
     'USQUE_ASSET_NAME': 'usque-rs-aarch64-linux-musl.tar.gz',
     'INTERNET_PROBE_URLS': 'https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204',
     'INTERACTIVE_LOGIN_MARKER': '/tmp/router-script-interactive-login-required',
@@ -76,6 +76,21 @@ class DefaultsTests(unittest.TestCase):
     def test_env_values_still_win(self):
         self.assertEqual(resolve(['WAN_IF', 'DIRECT_PUBLIC_DOMAINS'], WAN_IF='eth9', DIRECT_PUBLIC_DOMAINS='a.test'),
                          {'WAN_IF': 'eth9', 'DIRECT_PUBLIC_DOMAINS': 'a.test'})
+
+    # A tag does not fix a release's content, so the pinned tag carries a hash.
+    def test_the_pinned_release_is_held_to_a_hash(self):
+        pinned = resolve(['USQUE_RELEASE_TAG', 'USQUE_RELEASE_SHA256'])
+        self.assertRegex(pinned['USQUE_RELEASE_SHA256'], r'^[0-9a-f]{64}$')
+
+    def test_another_tag_is_not_held_to_the_pinned_hash(self):
+        for tag in ('latest', 'v0.2.2'):
+            self.assertEqual(resolve(['USQUE_RELEASE_SHA256'], USQUE_RELEASE_TAG=tag), {'USQUE_RELEASE_SHA256': ''})
+        own = 'ab' * 32
+        self.assertEqual(resolve(['USQUE_RELEASE_SHA256'], USQUE_RELEASE_TAG='v0.2.2', USQUE_RELEASE_SHA256=own),
+                         {'USQUE_RELEASE_SHA256': own})
+
+    def test_an_empty_hash_in_the_environment_turns_the_pin_off(self):
+        self.assertEqual(resolve(['USQUE_RELEASE_SHA256'], USQUE_RELEASE_SHA256=''), {'USQUE_RELEASE_SHA256': ''})
 
     def test_every_script_using_a_shared_default_sources_defaults_sh(self):
         for script in deployed_scripts():

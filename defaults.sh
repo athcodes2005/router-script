@@ -52,6 +52,9 @@ GAME_POLICY_PRIORITY="${GAME_POLICY_PRIORITY:-700}"
 GAME_POLICY_MARK="${GAME_POLICY_MARK:-0x40000}"
 GAME_POLICY_MASK="${GAME_POLICY_MASK:-0xf0000}"
 GAME_MODE_MARKER="${GAME_MODE_MARKER:-/tmp/router-script-game-mode}"
+# Game mode turns itself off after this long (0 = never): it sends all public
+# traffic around WARP and is easy to leave on.
+GAME_MODE_MAX_SECONDS="${GAME_MODE_MAX_SECONDS:-28800}"
 
 # WARP
 WARP_ENDPOINTS="${WARP_ENDPOINTS:-162.159.198.1 162.159.192.1}"
@@ -60,7 +63,18 @@ WARP_CLIENT_TABLE="${WARP_CLIENT_TABLE:-100}"
 USQUE_REPO="${USQUE_REPO:-athcodes2005/usque-rs-openwrt}"
 # Pinned: a new release reaches the router only after this tag is bumped in a
 # commit. USQUE_RELEASE_TAG=latest in .env still follows the newest release.
-USQUE_RELEASE_TAG="${USQUE_RELEASE_TAG:-v0.2.2}"
+# The tag alone does not fix the content: a release's assets can be replaced,
+# and the checksum published beside them changes with them. So the pinned tag
+# is held to the sha256 of its $USQUE_ASSET_NAME; bump the two together. Another
+# tag set in .env is not held to it: give USQUE_RELEASE_SHA256 there too, or
+# leave it out to trust the release's own checksum.
+USQUE_PINNED_TAG=v0.2.3
+USQUE_PINNED_SHA256=9189d21ec6e32834062642bbfec7204a549c804230529b81b316f179b346c59b
+USQUE_RELEASE_TAG="${USQUE_RELEASE_TAG:-$USQUE_PINNED_TAG}"
+if [ "${USQUE_RELEASE_SHA256+set}" != set ]; then
+    USQUE_RELEASE_SHA256=
+    [ "$USQUE_RELEASE_TAG" != "$USQUE_PINNED_TAG" ] || USQUE_RELEASE_SHA256="$USQUE_PINNED_SHA256"
+fi
 USQUE_ASSET_NAME="${USQUE_ASSET_NAME:-usque-rs-aarch64-linux-musl.tar.gz}"
 
 # Wi-Fi

@@ -13,6 +13,8 @@
 # in .git_failed_commit; later runs skip it. The skip ends when the deploy
 # branch moves to another commit, when that file is removed, or with
 # ./update_from_git.sh --retry-failed (which is also passed to fetch_usque_rs.sh).
+# A commit the health check could not test (it exits 75; see ensure_network.sh)
+# is rolled back too, but not recorded: the next run tries it again.
 
 set -eu
 
@@ -56,11 +58,14 @@ log() {
     printf '%s - [updater] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
 }
 
+. "$DIR/lock.sh"
+
 WORK="$(mktemp -d /tmp/router-git-update.XXXXXX)"
 STAGE="$DIR/.git-stage-$$"
 BACKUP="$DIR/.git-backup-$$"
 
 cleanup() {
+    release_maintenance_lock
     rm -rf "$WORK" "$STAGE" "$BACKUP" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -102,6 +107,13 @@ fi
 FAILED_SHA="$(cat "$GIT_FAILED_FILE" 2>/dev/null || true)"
 if [ "$RETRY_FAILED" -eq 0 ] && [ -n "$FAILED_SHA" ] && [ "$TARGET_SHA" = "$FAILED_SHA" ]; then
     log "Skipping $TARGET_SHA: it previously failed its health check (remove $GIT_FAILED_FILE or use --retry-failed to try again)."
+    exit 0
+fi
+
+# The health gate cannot test WARP in game mode or while the portal waits for an
+# interactive login, so an update promoted now could not be verified. Wait.
+if [ -f "$GAME_MODE_MARKER" ] || [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
+    log "Deferring $TARGET_SHA: the health gate cannot test WARP in game mode or while an interactive login is pending."
     exit 0
 fi
 
@@ -185,18 +197,36 @@ if pidof usque-rs >/dev/null 2>&1; then
     WAS_RUNNING=1
 fi
 
+# Restart the tunnel a promotion stopped, under the maintenance lock. Started
+# outside it, a health tick could find the client half started, stop it and
+# start its own, and each start's cleanup then killed the other's client. A
+# lock that stays busy means its holder is repairing the tunnel already; the
+# gate waits for it.
+restart_stopped_tunnel() {
+    [ "$WAS_RUNNING" -eq 1 ] || return 0
+    if ! acquire_maintenance_lock "$UPDATE_LOCK_WAIT"; then
+        log "Leaving the tunnel restart to $MAINTENANCE_LOCK_BUSY, which holds the maintenance lock."
+        return 0
+    fi
+    if ! pidof usque-rs >/dev/null 2>&1; then
+        sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+    fi
+    release_maintenance_lock
+}
+
 log "Promoting commit $TARGET_SHA from $GITHUB_REPO@$DEPLOY_BRANCH."
 if ! sh "$STAGE/promote_staged.sh" "$DIR" "$UPDATE_LOCK_WAIT" >> "$LOG_FILE" 2>&1; then
     log "ERROR: promotion of $TARGET_SHA failed."
     exit 1
 fi
 
-if [ "$WAS_RUNNING" -eq 1 ] && ! pidof usque-rs >/dev/null 2>&1; then
-    sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-fi
+restart_stopped_tunnel
 
-# Health gate: run ensure_network.sh; if it fails, roll back immediately.
-if sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1; then
+# Health gate: 0 means WARP was tested and works, 75 that it could not be
+# tested, anything else that the check failed. Only 0 keeps the update.
+GATE_STATUS=0
+ROUTER_SCRIPT_TRIGGER=gate sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1 || GATE_STATUS=$?
+if [ "$GATE_STATUS" -eq 0 ]; then
     printf '%s\n' "$TARGET_SHA" > "$DEPLOY_COMMIT_FILE"
     rm -f "$GIT_FAILED_FILE"
     sync
@@ -204,8 +234,12 @@ if sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1; then
     exit 0
 fi
 
-printf '%s\n' "$TARGET_SHA" > "$GIT_FAILED_FILE"
-log "ERROR: health check failed after promoting $TARGET_SHA; rolling back."
+if [ "$GATE_STATUS" -eq 75 ]; then
+    log "WARNING: the health check could not test WARP after promoting $TARGET_SHA; rolling back to try again on a later run."
+else
+    printf '%s\n' "$TARGET_SHA" > "$GIT_FAILED_FILE"
+    log "ERROR: health check failed after promoting $TARGET_SHA; rolling back."
+fi
 ROLLBACK_STAGE="$DIR/.git-rollback-$$"
 rm -rf "$ROLLBACK_STAGE"
 mkdir -m 700 "$ROLLBACK_STAGE"
@@ -220,9 +254,7 @@ done
 printf '%s' "$RMANIFEST" > "$ROLLBACK_STAGE/.manifest"
 sh "$ROLLBACK_STAGE/promote_staged.sh" "$DIR" "$UPDATE_LOCK_WAIT" >> "$LOG_FILE" 2>&1 || true
 rm -rf "$ROLLBACK_STAGE"
-if [ "$WAS_RUNNING" -eq 1 ] && ! pidof usque-rs >/dev/null 2>&1; then
-    sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-fi
+restart_stopped_tunnel
 sh "$DIR/ensure_network.sh" >> "$LOG_FILE" 2>&1 || true
 log "Rolled back from $TARGET_SHA to ${CURRENT_SHA:-previous state}."
 exit 1

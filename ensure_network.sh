@@ -41,6 +41,9 @@ PLATFORM_CHECK_FILE="${PLATFORM_CHECK_FILE:-/tmp/router-script-platform-checked}
 CLOCK_CHECK_FILE="${CLOCK_CHECK_FILE:-/tmp/router-script-clock-checked-at}"
 CLOCK_CHECK_INTERVAL="${CLOCK_CHECK_INTERVAL:-600}"
 CLOCK_SKEW_WARN_SECONDS="${CLOCK_SKEW_WARN_SECONDS:-120}"
+GATE_LOCK_WAIT="${GATE_LOCK_WAIT:-60}"
+WAN_RECOVERY_RETRY_FILE="${WAN_RECOVERY_RETRY_FILE:-/tmp/router-script-wan-recovery-retry-after}"
+WAN_RECOVERY_COOLDOWN="${WAN_RECOVERY_COOLDOWN:-120}"
 
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
@@ -50,9 +53,49 @@ cleanup() {
     release_maintenance_lock
 }
 
-# Never wait: the next tick is at most 30 s away.
+# update_from_git.sh, fetch_usque_rs.sh and sync_to_router.sh run this with
+# ROUTER_SCRIPT_TRIGGER=gate to learn whether WARP works after a change. A run
+# that ends without testing the tunnel then exits 75, not 0: a 0 there once
+# recorded an update as verified while WARP was down.
+GATE=0
+[ "${ROUTER_SCRIPT_TRIGGER:-}" != gate ] || GATE=1
+GATE_UNTESTED=75
+
+# Ends a run that leaves WARP untested on purpose.
+exit_untested() {
+    [ "$GATE" -eq 0 ] || exit "$GATE_UNTESTED"
+    exit 0
+}
+
 . "$DIR/lock.sh"
-if ! acquire_maintenance_lock 0; then
+
+# Game mode sends all public traffic around WARP and is easy to leave on. Its
+# marker records the uptime at which it was turned on (uptime never jumps, and
+# a reboot clears the marker). A marker without one, from an older game_mode.sh,
+# is left alone.
+game_mode_expired() {
+    [ -f "$GAME_MODE_MARKER" ] || return 1
+    [ "$GAME_MODE_MAX_SECONDS" -gt 0 ] 2>/dev/null || return 1
+    GAME_MODE_SINCE=
+    read -r _ GAME_MODE_SINCE 2>/dev/null < "$GAME_MODE_MARKER" || true
+    lock_count "$GAME_MODE_SINCE" || return 1
+    [ "$(($(lock_uptime) - GAME_MODE_SINCE))" -ge "$GAME_MODE_MAX_SECONDS" ]
+}
+
+# Before this run takes the lock, which game_mode.sh needs.
+if game_mode_expired; then
+    log "Game mode has been on for over $((GAME_MODE_MAX_SECONDS / 3600))h; turning it off so that traffic returns to WARP."
+    sh "$DIR/game_mode.sh" off >/dev/null 2>&1 || log "WARNING: could not turn game mode off; trying again on the next run."
+fi
+
+# A tick never waits: the next one is at most 30 s away. A gate has no next
+# run, so it waits for the tick or toggle that holds the lock.
+if [ "$GATE" -eq 1 ]; then
+    if ! acquire_maintenance_lock "$GATE_LOCK_WAIT"; then
+        log "Not verified: $MAINTENANCE_LOCK_BUSY still holds the maintenance lock after ${GATE_LOCK_WAIT}s."
+        exit "$GATE_UNTESTED"
+    fi
+elif ! acquire_maintenance_lock 0; then
     log "Skipped: $MAINTENANCE_LOCK_BUSY holds the maintenance lock."
     exit 0
 fi
@@ -94,12 +137,29 @@ wan_link_ok() {
     [ "$(cat "/sys/class/net/$WAN_IF/carrier" 2>/dev/null || echo 0)" = "1" ]
 }
 
+# The interface is up and reports no carrier: the cable is out or the far end
+# is off. An interface that is down reports nothing, and that a cycle does fix.
+wan_cable_unplugged() {
+    [ "$(cat "/sys/class/net/$WAN_IF/carrier" 2>/dev/null || true)" = "0" ]
+}
+
 recover_wan() {
     log "Stopping tunnel and cycling $WAN_UCI_IFACE to recover the WAN lease."
     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
     ifdown "$WAN_UCI_IFACE" >> "$LOG_FILE" 2>&1 || true
     ifup "$WAN_UCI_IFACE" >> "$LOG_FILE" 2>&1 || true
     sleep 10
+}
+
+# A cycle starts DHCP again from nothing, so one on every tick can keep a slow
+# server's lease from ever arriving. Between cycles netifd keeps asking.
+recover_wan_unless_recent() {
+    if retry_deferred "$WAN_RECOVERY_RETRY_FILE"; then
+        log "The WAN was cycled within the last ${WAN_RECOVERY_COOLDOWN}s; waiting for it instead of cycling again."
+        return 0
+    fi
+    recover_wan
+    defer_retry "$WAN_RECOVERY_RETRY_FILE" "$WAN_RECOVERY_COOLDOWN"
 }
 
 dns_config_ok() {
@@ -734,6 +794,8 @@ sh "$DIR/google_wan_policy.sh" >> "$LOG_FILE" 2>&1 ||
 
 if [ "${ROUTER_SCRIPT_TRIGGER:-}" = firewall ]; then
     log "Starting health check: the firewall was rebuilt."
+elif [ "$GATE" -eq 1 ]; then
+    log "Starting health check: verifying a change."
 else
     log "Starting health check."
 fi
@@ -830,9 +892,15 @@ else
     fi
 fi
 
+if wan_cable_unplugged; then
+    log "Ethernet carrier is missing on $WAN_IF: the cable is out or the far end is off, which cycling the WAN cannot repair."
+    collect_diagnostics_once wan-lease
+    exit 1
+fi
+
 if ! wan_ipv4_ok || ! wan_link_ok; then
     log "WAN IPv4 lease or Ethernet carrier is missing."
-    recover_wan
+    recover_wan_unless_recent
 fi
 
 if ! wan_ipv4_ok || ! wan_link_ok; then
@@ -846,7 +914,7 @@ if ! campus_core_route_ok; then
     if repair_campus_routes && campus_core_route_ok; then
         log "Reinstalled campus routes on $WAN_IF without cycling the WAN."
     else
-        recover_wan
+        recover_wan_unless_recent
     fi
 fi
 
@@ -855,6 +923,7 @@ if ! campus_core_route_ok; then
     collect_diagnostics_once campus-route
     exit 1
 fi
+clear_retry "$WAN_RECOVERY_RETRY_FILE"
 
 check_platform_once
 
@@ -866,7 +935,7 @@ if ! internet_v4_ok && [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
         if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
             sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
         fi
-        exit 0
+        exit_untested
     fi
     log "Interactive-login retry interval elapsed; retrying the access token."
     rm -f "$INTERACTIVE_LOGIN_MARKER"
@@ -886,7 +955,7 @@ if ! internet_v4_ok; then
         if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
             sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
         fi
-        exit 0
+        exit_untested
     fi
     [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && sleep 5
 fi
@@ -934,13 +1003,13 @@ if [ -f "$GAME_MODE_MARKER" ]; then
     # WARP or restart the tunnel just because tun0 is not the default.
     if internet_v4_ok; then
         log "Health check passed (game_mode: direct WAN preferred)."
-        exit 0
+        exit_untested
     fi
     log "game_mode active but direct IPv4 failed; attempting portal recovery only."
     sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
     if internet_v4_ok; then
         log "Health check passed (game_mode after login)."
-        exit 0
+        exit_untested
     fi
     log "game_mode: direct IPv4 still down."
     exit 1
@@ -955,7 +1024,8 @@ if tunnel_healthy_confirmed; then
     exit 0
 fi
 
-if tunnel_retry_deferred; then
+# A gate needs a verdict now, so it restarts WARP even during the cooldown.
+if [ "$GATE" -eq 0 ] && tunnel_retry_deferred; then
     log "Tunnel retry is cooling down; keeping direct WAN fallback active."
     if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
         sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
