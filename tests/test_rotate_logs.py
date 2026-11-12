@@ -13,7 +13,8 @@ class RotateLogsTests(unittest.TestCase):
         alt = self.box.tmp / 'alt-logs'
         (self.box.proj / '.env').write_text('LOG_DIR=%s\n' % alt)  # sandbox .env, not the real one
         result = self.box.run('rotate_logs.sh')
-        self.assertIn('Log maintenance completed', result.stdout)  # exit status is not asserted: the EXIT trap leaks 1
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)  # N1: the EXIT trap leaked 1
+        self.assertIn('Log maintenance completed', result.stdout)
         self.assertIn('Log maintenance completed', (alt / 'maintenance.log').read_text())
         self.assertEqual(self.box.log('maintenance'), '')
 
@@ -24,7 +25,8 @@ class RotateLogsTests(unittest.TestCase):
             (alt / ('diagnostic_%d.log' % i)).write_text('x\n')
         (self.box.proj / '.env').write_text('DIAGNOSTICS_DIR=%s\nMAX_DIAGNOSTICS=2\n' % alt)
         result = self.box.run('rotate_logs.sh')
-        self.assertIn('Log maintenance completed', result.stdout)  # exit status is not asserted: the EXIT trap leaks 1
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Log maintenance completed', result.stdout)
         self.assertEqual(len(list(alt.glob('diagnostic_*.log'))), 2)
 
     # A7: measure_load_latency.sh writes latency.log, which was never rotated.

@@ -21,12 +21,13 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 
-. "$DIR/paths.sh"
-LOG_FILE="$(prepare_log_file maintenance)"
-
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
 if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
+. "$DIR/paths.sh"
+LOG_FILE="$(prepare_log_file maintenance)"
+
 . "$DIR/defaults.sh"
 
 RETRY_FAILED=0

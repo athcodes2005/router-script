@@ -53,7 +53,7 @@ failures are fixed and documented in
 [[bgmi-portal-stale-session-2026-08-11]],
 [[ipv6-repair-loop-2026-08-13]], [[campus-site-routing-2026-08-14]], and
 [[campus-dns-outage-2026-08-19]], and [[mulyankan-internal-dns-2026-08-20]].
-The 2026-10-26 BigHome split-DNS omission is fixed in code and pending deploy:
+The 2026-10-26 BigHome split-DNS omission is fixed and deployed:
 [[bighome-internal-dns-2026-10-26]].
 The corresponding health, cooldown, DNS, portal-pin, and route controls are
 active.
@@ -94,21 +94,31 @@ can bypass the router's domain-specific policy.
 
 ## 2026-10-26 validation follow-ups
 
-Open low-severity items from the 2026-10-26 validation audit: `rotate_logs.sh`
-exits 1 on success (N1); several scripts source `.env` after `paths.sh`, so a
-`LOG_DIR` override there is ignored (N2); `dnsproxy_alive_repair` restarts a
-crash-looping dnsproxy every tick without backoff; a release that fails its
-health check during an unrelated outage stays skipped until `--retry-failed`.
-Also open: A3, A8, A9, A11, A13 and usque-rs-openwrt C2-C6, C12 (see report).
+Closed on 2026-11-12: N1 (`rotate_logs.sh` exit status), N2 (`.env` is loaded
+before `paths.sh` everywhere), the dnsproxy restart on every tick (now once per
+cooldown), A8, A9, A11, A13, and in usque-rs-openwrt C2-C6 and C12. Still open:
+a release or commit that fails its health check during an unrelated outage
+stays skipped until `--retry-failed`; `configure_dns.sh` writes GL.iNet's
+`gl-dns-v2` settings for a reason that is recorded nowhere (A3).
 
 ## 2026-11-12 review follow-ups
 
 Fixed: the update gate that passed without testing WARP, the unlocked tunnel
 restart after a promotion, the sync that downgraded `usque-rs` or overwrote
-`.env`, the WAN cycle on every tick, game mode without an end, and the release
-pinned by tag only (see [[../log]]). Open: the Git updater does nothing until
-`GITHUB_REPO` is set in the router's `.env`; the tunnel check has no IPv6
-probe; healthy ticks still write two log lines and the lock directory to flash.
+`.env`, the WAN cycle on every tick, game mode without an end, the release
+pinned by tag only, the missing IPv6 probe (it warns; it does not restart), and
+the two log lines every healthy tick wrote to flash (see [[../log]]).
+
+Open, and why:
+
+- The Git updater does nothing until `GITHUB_REPO` is set in the router's
+  `.env`, with a token to avoid GitHub's anonymous rate limit. Turning it on
+  makes a push to the deploy branch a deployment, which is the owner's call.
+- The maintenance lock directory stays on flash (four small metadata writes a
+  tick). In `/tmp` it would fail together with a full `/tmp`, the state in which
+  the health check is needed most ([[tmp-exhaustion-2026-08-01]]).
+- usque-rs still builds on quiche 0.22 and several other crates one or more
+  major versions behind; see usque-rs-openwrt's log.
 
 ## Diagnostic sensitivity
 

@@ -5,6 +5,10 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$SCRIPT_DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file login)"
@@ -13,9 +17,7 @@ log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"
 }
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-else
+if [ ! -f "$ENV_FILE" ]; then
     log "Error: .env file not found in $SCRIPT_DIR"
     exit 1
 fi

@@ -36,6 +36,20 @@ class DnsproxyRestartTests(unittest.TestCase):
         self.assertEqual(self.box.count('dnsproxy restart'), 1)
         self.assertEqual(log.count('dnsproxy is not running; restarting it.'), 1)
 
+    # A dnsproxy that died again at once was restarted on every tick.
+    def test_a_dnsproxy_that_keeps_dying_is_restarted_once_per_cooldown(self):
+        self.box.flag('dnsproxy_down')
+        for _ in range(3):
+            self.tick()
+        self.assertEqual(self.box.count('dnsproxy restart'), 1)
+        marker = self.box.tmp / 'router-script-dnsproxy-retry-after'
+        marker.write_text('1\n')  # the cooldown is over
+        self.tick()
+        self.assertEqual(self.box.count('dnsproxy restart'), 2)
+        self.box.flag('dnsproxy_down', False)
+        self.tick()
+        self.assertFalse(marker.exists())
+
     def test_failed_liveness_restart_warns_and_the_tick_continues(self):
         self.box.flag('dnsproxy_down')
         _write_exec(self.init, FAILING_INIT)

@@ -17,6 +17,24 @@ class DiagnosticsTests(unittest.TestCase):
     def setUp(self):
         self.box = Sandbox.fresh(self)
 
+    # A13: snapshots showed neither the MSS clamps nor the marks nor the tun0 drop.
+    def test_snapshots_record_the_mangle_table_the_input_chain_and_the_sets(self):
+        result = self.box.run('diagnose.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for tool in ('iptables', 'ip6tables'):
+            self.assertEqual(self.box.count(tool + ' -t mangle -S'), 1, tool)
+            self.assertEqual(self.box.count(tool + ' -S INPUT'), 1, tool)
+        self.assertEqual(self.box.count('ipset list -t'), 1)
+        self.assertIn('-A INPUT -i tun0 -m conntrack --ctstate NEW -j DROP', result.stdout)
+
+    # N2: a DIAGNOSTICS_DIR set in .env was ignored here.
+    def test_snapshots_honour_diagnostics_dir_from_env_file(self):
+        alt = self.box.tmp / 'alt-diag'
+        (self.box.proj / '.env').write_text('DIAGNOSTICS_DIR=%s\n' % alt)  # sandbox .env, not the real one
+        result = self.box.run('collect_diagnostics.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(list(alt.glob('diagnostic_*.log'))), 1)
+
     def test_wireless_secrets_are_redacted(self):
         # F01: netifd's wireless status embeds each interface's WPA passphrase.
         (self.box.state / 'wireless.json').write_text(json.dumps(WIRELESS, indent=1))

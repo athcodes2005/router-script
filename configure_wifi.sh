@@ -9,13 +9,14 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file wifi)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 WIFI_APPLY="${WIFI_APPLY:-1}"

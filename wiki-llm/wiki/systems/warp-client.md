@@ -57,6 +57,14 @@ so older rollback binaries remain compatible:
   the 4 MiB buffer cut `RcvbufErrors` during downloads from hundreds or
   thousands to 0 and download loss from 11-23% to 0-8%, at 5-7 MB client RSS.
 
+## `v0.2.3` timer fixes (deployed 2026-11-12)
+
+The session loop runs quiche's expired timers under load (the 5 ms floor had
+starved `on_timeout()` while the tunnel was busy), and the handshake and
+CONNECT-wait loops are floored and end at their deadline. One interleaved load
+test against v0.2.2 showed no regression. Details are in usque-rs-openwrt's
+`wiki-llm/wiki/bugs/quic-timer-floor.md`.
+
 ## `v0.2.0` WARP audit optimizations (deployed 2026-10-26)
 
 1. **`[I1]` Asymmetric QUIC datagram queues:** `DGRAM_RECV_QUEUE_LEN = 8192`

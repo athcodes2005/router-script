@@ -49,9 +49,12 @@ echo "=== LIVE TESTS: direct (8.8.8.8) ==="
 timeout 3 nslookup google.com 8.8.8.8 || true
 
 echo ""
-echo "=== LIVE TESTS: LAN entrypoint (192.168.8.1) ==="
-timeout 3 nslookup google.com 192.168.8.1 || true
-echo "---"
-for DOMAIN in $CAMPUS_DOMAINS; do
-    timeout 3 nslookup "$DOMAIN" 192.168.8.1 || true
-done
+LAN_IP="$(ip -4 addr show dev "$LAN_IF" 2>/dev/null | awk '/inet / { sub(/\/.*/, "", $2); print $2; exit }')"
+echo "=== LIVE TESTS: LAN entrypoint (${LAN_IP:-no IPv4 address on $LAN_IF}) ==="
+if [ -n "$LAN_IP" ]; then
+    timeout 3 nslookup google.com "$LAN_IP" || true
+    echo "---"
+    for DOMAIN in $CAMPUS_DOMAINS; do
+        timeout 3 nslookup "$DOMAIN" "$LAN_IP" || true
+    done
+fi

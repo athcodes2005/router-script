@@ -6,13 +6,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 EXECUTABLE="$DIR/usque-rs"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file ensure)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 LAN_IPV6_RETRY_FILE="${LAN_IPV6_RETRY_FILE:-/tmp/router-script-lan-ipv6-retry-after}"
@@ -44,12 +45,58 @@ CLOCK_SKEW_WARN_SECONDS="${CLOCK_SKEW_WARN_SECONDS:-120}"
 GATE_LOCK_WAIT="${GATE_LOCK_WAIT:-60}"
 WAN_RECOVERY_RETRY_FILE="${WAN_RECOVERY_RETRY_FILE:-/tmp/router-script-wan-recovery-retry-after}"
 WAN_RECOVERY_COOLDOWN="${WAN_RECOVERY_COOLDOWN:-120}"
+DNSPROXY_RETRY_FILE="${DNSPROXY_RETRY_FILE:-/tmp/router-script-dnsproxy-retry-after}"
+TUNNEL_IPV6_CHECKS="${TUNNEL_IPV6_CHECKS:-3}"
+TUNNEL_IPV6_FILE="${TUNNEL_IPV6_FILE:-/tmp/router-script-tunnel-ipv6-fail-count}"
+HEALTHY_LOG_INTERVAL="${HEALTHY_LOG_INTERVAL:-3600}"
+
+# A plain tick holds its "Starting health check." line back until something
+# else is logged; see log_healthy.
+PENDING_START=
 
 log() {
+    if [ -n "$PENDING_START" ]; then
+        printf '%s\n' "$PENDING_START" | tee -a "$LOG_FILE"
+        PENDING_START=
+    fi
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
 }
 
+# A tick that found nothing to do says nothing new, and its two lines every
+# 30 s were 5,760 appends a day to the router's flash. Such a tick is counted
+# in RAM and shown on the terminal only; the log gets the pair once per
+# HEALTHY_LOG_INTERVAL seconds of uptime, with the count. A tick that logged
+# anything else is written in full. 0 logs every tick, as before.
+log_healthy() {
+    if [ -z "$PENDING_START" ]; then
+        log "Health check passed."
+        return 0
+    fi
+    HEALTHY_SINCE=
+    HEALTHY_QUIET=
+    read -r HEALTHY_SINCE HEALTHY_QUIET 2>/dev/null < "$HEALTHY_LOG_FILE" || true
+    HEALTHY_NOW="$(lock_uptime)"
+    if lock_count "$HEALTHY_SINCE" && lock_count "$HEALTHY_QUIET" &&
+        [ "$HEALTHY_NOW" -ge "$HEALTHY_SINCE" ] &&
+        [ "$((HEALTHY_NOW - HEALTHY_SINCE))" -lt "$HEALTHY_LOG_INTERVAL" ]; then
+        printf '%s\n%s - Health check passed.\n' "$PENDING_START" "$(date '+%Y-%m-%d %H:%M:%S')"
+        PENDING_START=
+        printf '%s %s\n' "$HEALTHY_SINCE" "$((HEALTHY_QUIET + 1))" 2>/dev/null > "$HEALTHY_LOG_FILE" || true
+        return 0
+    fi
+    if lock_count "$HEALTHY_QUIET" && [ "$HEALTHY_QUIET" -gt 0 ]; then
+        log "Health check passed, as did $HEALTHY_QUIET checks since the last entry that were not logged."
+    else
+        log "Health check passed."
+    fi
+    printf '%s 0\n' "$HEALTHY_NOW" 2>/dev/null > "$HEALTHY_LOG_FILE" || true
+}
+
 cleanup() {
+    STATUS=$?
+    # Every way out logs something first; one that did not is a script error,
+    # and the held-back start line would otherwise hide that the run began.
+    [ -z "$PENDING_START" ] || log "Health check ended without a result (exit status $STATUS)."
     release_maintenance_lock
 }
 
@@ -248,9 +295,15 @@ dns_runtime_ok() {
 dnsproxy_alive_repair() {
     [ -x /etc/init.d/dnsproxy ] && [ -f "$DNSPROXY_YAML" ] || return 0
     grep -Fq "5453" "$DNSPROXY_YAML" || return 0
-    pidof dnsproxy >/dev/null 2>&1 && return 0
+    if pidof dnsproxy >/dev/null 2>&1; then
+        clear_retry "$DNSPROXY_RETRY_FILE"
+        return 0
+    fi
+    # One that dies again at once is restarted once per cooldown, not per tick.
+    retry_deferred "$DNSPROXY_RETRY_FILE" && return 0
     log "dnsproxy is not running; restarting it."
     /etc/init.d/dnsproxy restart >> "$LOG_FILE" 2>&1 || log "WARNING: dnsproxy restart failed."
+    defer_retry "$DNSPROXY_RETRY_FILE" "$STAGE_REPAIR_COOLDOWN"
     return 0
 }
 
@@ -467,7 +520,7 @@ ensure_game_session_policy() {
     # The jump stays the first mangle PREROUTING rule, as before.
     if [ "$(iptables -t mangle -S PREROUTING 2>/dev/null | sed -n '2p')" != "-A PREROUTING -j GAME_SESSION_POLICY" ]; then
         while iptables -t mangle -C PREROUTING -j GAME_SESSION_POLICY 2>/dev/null; do
-            iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY
+            iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY || break
         done
         iptables -t mangle -I PREROUTING 1 -j GAME_SESSION_POLICY
     fi
@@ -772,6 +825,32 @@ warn_if_tunnel_slow() {
     collect_diagnostics_once tunnel-slow
 }
 
+# The check above proves IPv4 through WARP, and for IPv6 only that a default
+# route exists. IPv6 that stops working behind that route leaves dual-stack
+# clients waiting on dead connections. Restarting WARP for IPv6 alone is not the
+# design (IPv4 is what the fallback protects), so this only reports it: when
+# TUNNEL_IPV6_CHECKS checks in a row fail, and then every twentieth.
+warn_if_tunnel_ipv6_down() {
+    for URL in $INTERNET_PROBE_URLS; do
+        CODE="$(curl -6 -sS --interface "$TUN_IF" --connect-timeout 3 --max-time 5 \
+            -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || true)"
+        if [ "$CODE" = "204" ]; then
+            clear_retry "$TUNNEL_IPV6_FILE"
+            return 0
+        fi
+    done
+    IPV6_FAILS="$(cat "$TUNNEL_IPV6_FILE" 2>/dev/null || echo 0)"
+    case "$IPV6_FAILS" in
+        ''|*[!0-9]*) IPV6_FAILS=0 ;;
+    esac
+    IPV6_FAILS=$((IPV6_FAILS + 1))
+    printf '%s\n' "$IPV6_FAILS" 2>/dev/null > "$TUNNEL_IPV6_FILE" || true
+    [ "$IPV6_FAILS" -ge "$TUNNEL_IPV6_CHECKS" ] || return 0
+    [ "$IPV6_FAILS" -eq "$TUNNEL_IPV6_CHECKS" ] || [ "$((IPV6_FAILS % 20))" -eq 0 ] || return 0
+    log "WARNING: IPv6 through $TUN_IF failed on $IPV6_FAILS consecutive checks while IPv4 works; not restarting."
+    collect_diagnostics_once tunnel-ipv6
+}
+
 tunnel_healthy_confirmed() {
     tunnel_healthy && return 0
     # A missing process/interface cannot recover on its own. A live client's
@@ -797,7 +876,7 @@ if [ "${ROUTER_SCRIPT_TRIGGER:-}" = firewall ]; then
 elif [ "$GATE" -eq 1 ]; then
     log "Starting health check: verifying a change."
 else
-    log "Starting health check."
+    PENDING_START="$(date '+%Y-%m-%d %H:%M:%S') - Starting health check."
 fi
 
 # After a reboot the clock can be months behind until NTP syncs (86 days was
@@ -1019,8 +1098,9 @@ if tunnel_healthy_confirmed; then
     refresh_optional_routes
     warn_if_tunnel_not_preferred
     warn_if_tunnel_slow
+    warn_if_tunnel_ipv6_down
     rm -f "$TUNNEL_RETRY_FILE"
-    log "Health check passed."
+    log_healthy
     exit 0
 fi
 
@@ -1050,4 +1130,5 @@ rm -f "$TUNNEL_RETRY_FILE"
 refresh_optional_routes
 warn_if_tunnel_not_preferred
 warn_if_tunnel_slow
+warn_if_tunnel_ipv6_down
 log "Health check passed."

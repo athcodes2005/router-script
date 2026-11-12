@@ -9,13 +9,14 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file ensure)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 MARKER="$GAME_MODE_MARKER"
@@ -75,7 +76,7 @@ case "$CMD" in
             [ -n "$GW" ] || GW="$(ip -4 route show default 2>/dev/null | awk '/via/ {print $3; exit}')"
             if [ -z "$GW" ]; then
                 # Last resort: WAN interface gateway from main table eth0 routes.
-                GW="$(ip -4 route get 10.200.1.11 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}')"
+                GW="$(ip -4 route get "$CAMPUS_DNS_IP" 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}')"
             fi
             if [ -n "$GW" ]; then
                 ip route replace default via "$GW" dev "$WAN_IF" metric 1

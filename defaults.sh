@@ -77,6 +77,10 @@ if [ "${USQUE_RELEASE_SHA256+set}" != set ]; then
 fi
 USQUE_ASSET_NAME="${USQUE_ASSET_NAME:-usque-rs-aarch64-linux-musl.tar.gz}"
 
+# Health check: "UPTIME COUNT", the uptime at its last healthy log entry and
+# the quiet healthy ticks since, which are not logged (see log_healthy).
+HEALTHY_LOG_FILE="${HEALTHY_LOG_FILE:-/tmp/router-script-healthy-checks}"
+
 # Wi-Fi
 WIFI_COUNTRY="${WIFI_COUNTRY:-IN}"
 WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"

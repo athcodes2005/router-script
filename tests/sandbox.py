@@ -186,6 +186,7 @@ code=204; t=0.050
 case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = eth0 ] && flag direct_down && code=000
 [ "$iface" = tun0 ] && flag warp_down && code=000
+[ "$iface" = tun0 ] && [ "$v6" = 1 ] && flag tunnel_v6_down && code=000
 case "$url" in http://1.1.1.1/*) flag rtt_fail && code=000 ;; esac
 tc=0.021; [ "$code" != 000 ] || tc=0.000  # curl reports no connect time for a failed connection
 size=0
@@ -368,6 +369,8 @@ class Sandbox:
             'SYSROOT': str(self.sysroot), 'SIMTMP': str(self.tmp),
             'BLINKIT_HOSTS_DIR': str(self.sysroot / 'etc/router-script/blinkit-hosts'),
             'PERSISTENT_STORAGE_FALLBACK_PERCENT': '101', 'TMP_MAX_USED_PERCENT': '101',
+            # Every healthy tick in the log, as tests expect; the hourly summary has its own tests.
+            'HEALTHY_LOG_INTERVAL': '0',
         }
         env.update(extra)
         return env

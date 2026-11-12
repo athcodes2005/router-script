@@ -40,7 +40,6 @@ never shipped) as the rollback binary. See [[systems/warp-client]].
   health runs in a stubbed sandbox (`tests/sandbox.py`), `sync_to_router.sh`,
   `update_from_git.sh`, `fetch_usque_rs.sh`, SIGHUP handling, login, diagnostics,
   rotation, Google policy and ranges, LAN IPv6, and Blinkit DNS.
-- `.claude/settings.local.json` contains local assistant permissions.
 
 ## Imported reference assets and raw sources
 

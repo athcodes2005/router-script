@@ -6,6 +6,8 @@ umask 077
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+[ ! -f "$DIR/.env" ] || . "$DIR/.env"
 . "$DIR/paths.sh"
 . "$DIR/defaults.sh"
 

@@ -11,13 +11,14 @@ EXECUTABLE="$DIR/usque-rs"
 CONFIG_FILE="$DIR/config.json"
 ENV_FILE="$DIR/.env"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file tunnel)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 WARP_CC="${WARP_CC:-cubic}"
@@ -251,7 +252,7 @@ for PORT in $GAME_SESSION_PORTS; do
     iptables -t mangle -A GAME_SESSION_POLICY -i "$LAN_IF" -p udp -m udp --dport "$PORT" -m conntrack --ctstate NEW -j CONNMARK --save-mark --nfmask "$GAME_POLICY_MASK" --ctmask "$GAME_POLICY_MASK"
 done
 while iptables -t mangle -C PREROUTING -j GAME_SESSION_POLICY 2>/dev/null; do
-    iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY
+    iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY || break
 done
 iptables -t mangle -I PREROUTING 1 -j GAME_SESSION_POLICY
 
@@ -295,6 +296,19 @@ while iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN 
     iptables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || break
 done
 iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS" 2>/dev/null || iptables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV4_MSS"
+# A clamp left by an earlier TUN_IPV4_MSS / TUN_IPV6_MSS value has to go: TCPMSS
+# only ever lowers the MSS, so an older, lower clamp would keep winning.
+remove_other_mss_clamps() {
+    "$1" -t mangle -S FORWARD 2>/dev/null |
+        awk -v dev="$TUN_IF" -v keep="$2" '
+            $1 == "-A" && index($0, " -i " dev " ") && / -j TCPMSS --set-mss / && $NF != keep { $1 = "-D"; print }' |
+        while IFS= read -r RULE; do
+            # shellcheck disable=SC2086 # the rule is a list of arguments.
+            "$1" -t mangle $RULE 2>/dev/null || true
+        done
+}
+remove_other_mss_clamps iptables "$TUN_IPV4_MSS"
+
 # fw3 filters input only from br-lan and eth0: drop new connections arriving
 # through the tunnel (replies are not NEW). A safeguard, so it never fails the
 # start. stop_tunnel.sh keeps it: it matches nothing without tun0, and the next
@@ -314,6 +328,7 @@ while ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN
     ip6tables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1220 2>/dev/null || break
 done
 ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null || ip6tables -t mangle -I FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$TUN_IPV6_MSS" 2>/dev/null
+remove_other_mss_clamps ip6tables "$TUN_IPV6_MSS"
 ip6tables -C INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || ip6tables -I INPUT -i "$TUN_IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null || echo "[WARNING] Could not add the ip6tables rule dropping new inbound connections on $TUN_IF."
 
 ip -6 route add default dev "$TUN_IF" metric 5 2>/dev/null || ip -6 route replace default dev "$TUN_IF" metric 5

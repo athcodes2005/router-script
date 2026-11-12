@@ -92,6 +92,26 @@ class DefaultsTests(unittest.TestCase):
     def test_an_empty_hash_in_the_environment_turns_the_pin_off(self):
         self.assertEqual(resolve(['USQUE_RELEASE_SHA256'], USQUE_RELEASE_SHA256=''), {'USQUE_RELEASE_SHA256': ''})
 
+    # N2: paths.sh reads LOG_DIR and DIAGNOSTICS_DIR, so .env has to come first.
+    def test_every_script_loads_env_before_paths_sh(self):
+        for script in deployed_scripts():
+            text = script.read_text()
+            paths = re.search(r'^\. "\$(SCRIPT_)?DIR/paths\.sh"$', text, re.M)
+            env = re.search(r'^\s*(\[ ! -f "\$DIR/\.env" \] \|\| )?\. "\$(ENV_FILE|DIR/\.env)"$', text, re.M)
+            if paths and script.name != 'paths.sh':
+                self.assertIsNotNone(env, '%s sources paths.sh but never .env' % script.name)
+                self.assertLess(env.start(), paths.start(), script.name)
+
+    # A8: values that defaults.sh owns must not be spelled out again.
+    def test_no_script_repeats_a_shared_address_or_interface(self):
+        for script in deployed_scripts():
+            if script.name == 'defaults.sh':
+                continue
+            code = '\n'.join(line for line in script.read_text().splitlines() if not line.lstrip().startswith('#'))
+            code = code.replace('root@192.168.8.1', '')  # the Mac-side scripts' default SSH target
+            for literal in ('10.200.1.11', '192.168.8.1', 'br-lan'):
+                self.assertNotIn(literal, code, '%s repeats %s' % (script.name, literal))
+
     def test_every_script_using_a_shared_default_sources_defaults_sh(self):
         for script in deployed_scripts():
             if script.name == 'defaults.sh':

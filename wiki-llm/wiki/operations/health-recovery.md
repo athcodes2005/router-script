@@ -21,7 +21,8 @@ in the future after a clock reset).
    portal/SSO address pins, and the `dnsproxy` configuration that replaced
    `dnscrypt-proxy2`) and the dnsmasq runtime. Then, when `/etc/init.d/dnsproxy`
    exists and `dnsproxy.yaml` names port 5453, restart `dnsproxy` if its process
-   is gone (at most once per tick, logged; a failed restart only warns). Routers
+   is gone (logged; a failed restart only warns; one that keeps dying is
+   restarted once per five-minute cooldown, not on every tick). Routers
    without `dnsproxy` are untouched. `dns_runtime_ok` cannot see this failure,
    because its probe name is a local `address=` pin.
 5. Repair LAN IPv6 configuration drift.
@@ -62,6 +63,17 @@ in the future after a clock reset).
 17. Warn the same way when the tunnel probe took over 1.5 s on three
     consecutive checks (`TUNNEL_SLOW_SECONDS`, `TUNNEL_SLOW_CHECKS`). One fast
     check resets the count.
+
+18. Probe IPv6 through the tunnel. Three failed checks in a row while IPv4 works
+    log a warning and take one snapshot (then every twentieth check). It never
+    restarts WARP: IPv4 is what the fallback protects.
+
+A tick that found nothing to do is not written to the log, only counted in RAM
+and shown on the terminal: its two lines every 30 s were 5,760 flash appends a
+day. The log gets "Health check passed, as did N checks ..." once per
+`HEALTHY_LOG_INTERVAL` (one hour of uptime; 0 logs every tick). A tick that
+logged anything else is written in full, and one that ends without a result
+says so.
 
 Every Wi-Fi, DNS, and LAN IPv6 repair is followed by a postcondition check.
 A repair that still fails captures diagnostics once and enters a five-minute

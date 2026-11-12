@@ -7,13 +7,14 @@ ENV_FILE="$DIR/.env"
 BLOCKLIST="$DIR/blocked_sites.txt"
 WARP_CLIENTS_FILE="$DIR/warp_clients.txt"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file tunnel)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 if [ -f "$CONFIG_FILE" ]; then
@@ -105,43 +106,53 @@ done
 
 # Clean up MASQUERADE rules
 while iptables -t nat -C POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null; do
-    iptables -t nat -D POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null
+    iptables -t nat -D POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null || break
 done
 while ip6tables -t nat -C POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null; do
-    ip6tables -t nat -D POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null
+    ip6tables -t nat -D POSTROUTING -o "$TUN_IF" -j MASQUERADE 2>/dev/null || break
 done
 
 # Clean up FORWARD rules
 while iptables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null; do
-    iptables -D FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null
+    iptables -D FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || break
 done
 while iptables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do
-    iptables -D FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+    iptables -D FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || break
 done
 while ip6tables -C FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null; do
-    ip6tables -D FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null
+    ip6tables -D FORWARD -i "$LAN_IF" -o "$TUN_IF" -j ACCEPT 2>/dev/null || break
 done
 while ip6tables -C FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do
-    ip6tables -D FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+    ip6tables -D FORWARD -i "$TUN_IF" -o "$LAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || break
 done
 while iptables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do
-    iptables -t mangle -D FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
+    iptables -t mangle -D FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || break
 done
 for MSS in "$TUN_IPV4_MSS" 1240; do
     while iptables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS" 2>/dev/null; do
-        iptables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS" 2>/dev/null
+        iptables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS" 2>/dev/null || break
     done
 done
 while ip6tables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do
-    ip6tables -t mangle -D FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
+    ip6tables -t mangle -D FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || break
 done
 for MSS6 in "$TUN_IPV6_MSS" 1220; do
     while ip6tables -t mangle -C FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS6" 2>/dev/null; do
-        ip6tables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS6" 2>/dev/null
+        ip6tables -t mangle -D FORWARD -i "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss "$MSS6" 2>/dev/null || break
     done
 done
+# And any clamp an earlier TUN_IPV4_MSS / TUN_IPV6_MSS value left behind.
+for TOOL in iptables ip6tables; do
+    "$TOOL" -t mangle -S FORWARD 2>/dev/null |
+        awk -v dev="$TUN_IF" '
+            $1 == "-A" && index($0, " -i " dev " ") && / -j TCPMSS --set-mss / { $1 = "-D"; print }' |
+        while IFS= read -r RULE; do
+            # shellcheck disable=SC2086 # the rule is a list of arguments.
+            "$TOOL" -t mangle $RULE 2>/dev/null || true
+        done
+done
 while iptables -t mangle -C PREROUTING -j GAME_SESSION_POLICY 2>/dev/null; do
-    iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY 2>/dev/null
+    iptables -t mangle -D PREROUTING -j GAME_SESSION_POLICY 2>/dev/null || break
 done
 if iptables -t mangle -L GAME_SESSION_POLICY >/dev/null 2>&1; then
     iptables -t mangle -F GAME_SESSION_POLICY 2>/dev/null || true

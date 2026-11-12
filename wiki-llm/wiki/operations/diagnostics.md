@@ -7,7 +7,9 @@ RAM-backed filesystem shared with active services.
 ## Snapshot content
 
 `diagnose.sh` reports interfaces, Ethernet carrier, live radio state, IPv4/IPv6
-routes, dynamic campus host routes, firewall/NAT, process and CONNECT-IP-ready
+routes, dynamic campus host routes, firewall/NAT (FORWARD, INPUT with the `tun0`
+drop, the mangle table with the MSS clamps and the game and Google marks, and
+the ipsets), process and CONNECT-IP-ready
 state, DNS configuration, recent logs, memory, filesystem usage, and the largest
 immediate `/tmp` entries. Exact probes distinguish direct IPv4 and WARP IPv4
 (`204` from Google) and WARP IPv6 (`200` from Cloudflare's trace by IP literal,

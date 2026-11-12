@@ -5,13 +5,14 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 
+# .env first, so LOG_DIR / DIAGNOSTICS_DIR overrides reach paths.sh.
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
 . "$DIR/paths.sh"
 
 LOG_FILE="$(prepare_log_file ipv6)"
 
-if [ -f "$ENV_FILE" ]; then
-    . "$ENV_FILE"
-fi
 . "$DIR/defaults.sh"
 
 LAN_IP6ASSIGN="${LAN_IP6ASSIGN:-60}"
@@ -90,10 +91,10 @@ sleep 2
 
 log "Current LAN IPv6 status"
 ifstatus lan >> "$LOG_FILE" 2>&1
-ip -6 addr show dev br-lan >> "$LOG_FILE" 2>&1
+ip -6 addr show dev "$LAN_IF" >> "$LOG_FILE" 2>&1
 
 log "Verification summary"
 log "Configured LAN address $LAN_IP6ADDR and dhcp.lan.ra_default=$LAN_RA_DEFAULT for the ULA+NAT66 setup."
 ifstatus lan | sed -n '1,40p'
 echo "---"
-ip -6 addr show dev br-lan | sed -n '1,20p'
+ip -6 addr show dev "$LAN_IF" | sed -n '1,20p'

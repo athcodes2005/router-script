@@ -18,8 +18,10 @@ fi
 
 LOG_FILE="$(prepare_log_file maintenance)"
 
+# Its last command decides the exit status in BusyBox ash, so it must not end
+# on a false test: a successful run used to exit 1.
 cleanup() {
-    [ -n "$ROTATION_TMP" ] && rm -f "$ROTATION_TMP"
+    [ -z "$ROTATION_TMP" ] || rm -f "$ROTATION_TMP"
 }
 
 trap cleanup EXIT

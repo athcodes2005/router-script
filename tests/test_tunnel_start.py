@@ -36,6 +36,21 @@ class TunnelStartTests(unittest.TestCase):
         self.assertEqual(self.box.count('ip route add default dev tun0 metric 5'), 1)
         self.assertEqual((self.box.state / 'tun0_mtu').read_text().strip(), '1320')
 
+    # A9: TCPMSS only lowers the MSS, so a clamp left by an earlier
+    # TUN_IPV4_MSS / TUN_IPV6_MSS value kept winning over the new one.
+    def test_start_removes_clamps_left_by_an_earlier_mss_value(self):
+        clamp = 'mangle FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss %s'
+        for tool, old in (('iptables', '1200'), ('ip6tables', '1180')):
+            with (self.box.state / (tool + '.rules')).open('a') as rules:
+                rules.write(clamp % old + '\n')
+        status, log = self.start()
+        self.assertEqual(status, 0, log)
+        for tool, old, current in (('iptables', '1200', '1280'), ('ip6tables', '1180', '1260')):
+            rules = (self.box.state / (tool + '.rules')).read_text().splitlines()
+            self.assertNotIn(clamp % old, rules, tool)
+            self.assertIn(clamp % current, rules, tool)
+            self.assertIn('mangle FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu', rules)
+
     # F44: the start inserts the LAN->tun0 ACCEPT at the top of FORWARD, then
     # runs the Google policy, which must put the LAN's Google IPv6 rejects back
     # above it.

@@ -193,6 +193,79 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.tick().returncode, 1)
         self.assertEqual(self.box.count('ifdown wan'), 1)
 
+    # A healthy tick says nothing new, and its two lines every 30 s were
+    # 5,760 appends a day to the router's flash.
+    def uptime(self, seconds):
+        path = self.box.sysroot / 'proc/uptime'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('%d.42 9000.00\n' % seconds)
+
+    def test_quiet_healthy_ticks_reach_the_log_once_per_interval(self):
+        self.uptime(1000)
+        self.tick(HEALTHY_LOG_INTERVAL='3600')
+        self.assertEqual(self.box.log('ensure').count('Health check passed.'), 1)
+        for seconds in (1030, 1060):
+            self.uptime(seconds)
+            result = self.tick(HEALTHY_LOG_INTERVAL='3600')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('Health check passed.', result.stdout)  # still shown on a terminal
+        log = self.box.log('ensure')
+        self.assertEqual(log.count('Starting health check.'), 1)
+        self.assertEqual(log.count('Health check passed'), 1)
+        self.uptime(1000 + 3600)
+        self.tick(HEALTHY_LOG_INTERVAL='3600')
+        log = self.box.log('ensure')
+        self.assertEqual(log.count('Starting health check.'), 2)
+        self.assertIn('Health check passed, as did 2 checks since the last entry that were not logged.', log)
+
+    def test_a_tick_that_did_anything_is_logged_in_full(self):
+        self.uptime(1000)
+        self.tick(HEALTHY_LOG_INTERVAL='3600')
+        self.uptime(1030)
+        self.box.flag('dnsproxy_down')
+        self.tick(HEALTHY_LOG_INTERVAL='3600')
+        log = self.box.log('ensure')
+        self.assertEqual(log.count('Starting health check.'), 2)
+        self.assertIn('dnsproxy is not running; restarting it.', log)
+        self.assertEqual(log.count('Health check passed.'), 2)
+        # The start line comes before what the tick did.
+        self.assertLess(log.rindex('Starting health check.'), log.index('dnsproxy is not running'))
+
+    def test_a_tick_that_dies_without_a_result_still_shows_in_the_log(self):
+        self.uptime(1000)
+        self.tick(HEALTHY_LOG_INTERVAL='3600')
+        (self.box.bin / 'ifstatus').write_text('#!/bin/sh\nkill -TERM "$PPID"\n')
+        self.uptime(1030)
+        result = self.tick(HEALTHY_LOG_INTERVAL='3600')
+        self.assertNotEqual(result.returncode, 0)
+        log = self.box.log('ensure')
+        self.assertEqual(log.count('Starting health check.'), 2)
+        self.assertIn('Health check ended without a result (exit status 143).', log)
+        self.assertFalse((self.box.proj / '.ensure_network.lock').exists())
+
+    # IPv4 through WARP was tested, IPv6 only for a default route.
+    def test_ipv6_that_fails_through_the_tunnel_is_reported_without_restart(self):
+        self.box.flag('tunnel_v6_down')
+        for _ in range(2):
+            self.assertEqual(self.tick().returncode, 0)
+        self.assertNotIn('IPv6 through tun0 failed', self.box.log('ensure'))
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn('WARNING: IPv6 through tun0 failed on 3 consecutive checks while IPv4 works; not restarting.', log)
+        self.assertNotIn('Restarting tunnel', log)
+        self.assertEqual(self.box.count('killall'), 0)
+        self.assertEqual(self.tick().returncode, 0)  # the fourth says nothing again
+        self.assertEqual(self.box.log('ensure').count('IPv6 through tun0 failed'), 1)
+        self.box.flag('tunnel_v6_down', False)
+        self.tick()
+        self.assertFalse((self.box.tmp / 'router-script-tunnel-ipv6-fail-count').exists())
+
+    def test_one_ipv6_probe_address_failing_is_not_reported(self):
+        self.box.flag('google_v6_rejected')  # the first probe URL only
+        for _ in range(4):
+            self.tick()
+        self.assertNotIn('IPv6 through tun0 failed', self.box.log('ensure'))
+
     # F06: retention keeps 24 snapshots; one per tick evicts the incident's onset.
     def test_persistent_failure_is_snapshotted_once(self):
         self.box.flag('wan_down')

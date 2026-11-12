@@ -21,6 +21,7 @@
 - `ensure_network.sh`: serialized health checks, drift repair (including DNS
   pin and `dnsproxy` config checks), recovery, fallback. Honors game-mode marker.
 - `game_mode.sh`: prefer direct WAN for low-latency gaming; demote WARP default.
+  Turned off again by the health check after `GAME_MODE_MAX_SECONDS` (8 h).
 - `bootstrap_router.sh`: one-shot boot pipeline for config, login, and WARP.
 
 ## Operations scripts
@@ -73,8 +74,8 @@
 
 - `README.md`: short entry point linking to `wiki-llm/wiki/index.md`.
 - `wiki-llm/`: all architecture, system, operations, and historical audit docs.
-- `.github/workflows/ci.yml`: GitHub Actions CI for shell, sandbox, and Rust tests.
-- `.claude/settings.local.json`: local tool permission configuration.
+- `.github/workflows/ci.yml`: GitHub Actions CI: shell syntax, ShellCheck and the
+  sandbox test suite. The Rust client has its own CI in usque-rs-openwrt.
 - `logs/.gitkeep`: preserves the local logs directory in version control systems.
 
 ## Blinkit DNS maintenance

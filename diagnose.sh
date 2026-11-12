@@ -175,10 +175,21 @@ section "FIREWALL: FORWARD"
 run iptables -L FORWARD -v -n
 run ip6tables -L FORWARD -v -n
 
+section "FIREWALL: INPUT (tun0 drop), MANGLE (MSS clamps, game and Google marks) AND SETS"
+run iptables -S INPUT
+run ip6tables -S INPUT
+run iptables -t mangle -S
+run ip6tables -t mangle -S
+run ipset list -t
+
 show_log_tail "LOGIN LOG" "$(prepare_log_file login)"
 show_log_tail "TUNNEL LOG" "$(prepare_log_file tunnel)"
 show_log_tail "DNS LOG" "$(prepare_log_file dns)"
 show_log_tail "ENSURE LOG" "$(prepare_log_file ensure)"
+# Healthy ticks that found nothing to do are counted here instead of logged.
+printf 'Quiet healthy checks (uptime at the last log entry, count since): %s\n' \
+    "$(cat "$HEALTHY_LOG_FILE" 2>/dev/null || echo none)"
+printf 'Uptime now: %s\n' "$(cut -d. -f1 "/proc/uptime" 2>/dev/null || echo unknown)"
 show_log_tail "WI-FI LOG" "$(prepare_log_file wifi)"
 
 section "RECENT SYSTEM LOGS"
