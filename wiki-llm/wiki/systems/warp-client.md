@@ -9,7 +9,7 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 ## Binary delivery (`fetch_usque_rs.sh`)
 
 - `defaults.sh` sets `USQUE_REPO=athcodes2005/usque-rs-openwrt`,
-  `USQUE_RELEASE_TAG=v0.2.3` (pinned: a new release reaches the router only
+  `USQUE_RELEASE_TAG=v0.2.4` (pinned: a new release reaches the router only
   after the tag is bumped in a commit; `latest` still works when set in `.env`), and
   `USQUE_ASSET_NAME=usque-rs-aarch64-linux-musl.tar.gz`.
 - The pinned tag is held to `USQUE_PINNED_SHA256`, the sha256 of its archive: a
@@ -64,6 +64,13 @@ starved `on_timeout()` while the tunnel was busy), and the handshake and
 CONNECT-wait loops are floored and end at their deadline. One interleaved load
 test against v0.2.2 showed no regression. Details are in usque-rs-openwrt's
 `wiki-llm/wiki/bugs/quic-timer-floor.md`.
+
+## `v0.2.4` dependency refresh (deployed 2026-11-12)
+
+137 semver-compatible dependency updates, and a UDP send error now costs one
+packet instead of the rest of the batch. quiche stays at 0.22. It is the first
+release built by the reworked workflow (one publish job, actions pinned by
+commit).
 
 ## `v0.2.0` WARP audit optimizations (deployed 2026-10-26)
 

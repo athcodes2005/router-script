@@ -68,8 +68,8 @@ USQUE_REPO="${USQUE_REPO:-athcodes2005/usque-rs-openwrt}"
 # is held to the sha256 of its $USQUE_ASSET_NAME; bump the two together. Another
 # tag set in .env is not held to it: give USQUE_RELEASE_SHA256 there too, or
 # leave it out to trust the release's own checksum.
-USQUE_PINNED_TAG=v0.2.3
-USQUE_PINNED_SHA256=9189d21ec6e32834062642bbfec7204a549c804230529b81b316f179b346c59b
+USQUE_PINNED_TAG=v0.2.4
+USQUE_PINNED_SHA256=52f98ac274f12d59862194724fcf16998bbc858e9c3c1ef630b6cffe055070f2
 USQUE_RELEASE_TAG="${USQUE_RELEASE_TAG:-$USQUE_PINNED_TAG}"
 if [ "${USQUE_RELEASE_SHA256+set}" != set ]; then
     USQUE_RELEASE_SHA256=

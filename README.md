@@ -8,4 +8,4 @@ All architecture, system specifications, operational procedures, incident histor
 - **Deployment & Git CD:** [`wiki-llm/wiki/operations/deployment.md`](wiki-llm/wiki/operations/deployment.md) · [`wiki-llm/wiki/operations/health-recovery.md`](wiki-llm/wiki/operations/health-recovery.md)
 - **Wiki Maintenance Contract:** [`wiki-llm/AGENTS.md`](wiki-llm/AGENTS.md)
 
-The Rust WARP client (`usque-rs`) is built in the separate repository [`athcodes2005/usque-rs-openwrt`](https://github.com/athcodes2005/usque-rs-openwrt). `fetch_usque_rs.sh` delivers it by downloading a GitHub release pinned by tag and sha256 in `defaults.sh` (currently `v0.2.3`; set `USQUE_RELEASE_TAG=latest` to track new releases instead).
+The Rust WARP client (`usque-rs`) is built in the separate repository [`athcodes2005/usque-rs-openwrt`](https://github.com/athcodes2005/usque-rs-openwrt). `fetch_usque_rs.sh` delivers it by downloading a GitHub release pinned by tag and sha256 in `defaults.sh` (currently `v0.2.4`; set `USQUE_RELEASE_TAG=latest` to track new releases instead).
