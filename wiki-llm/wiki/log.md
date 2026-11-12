@@ -1193,3 +1193,27 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../sync_to_router.sh`, `../../promote_staged.sh`, `../../game_mode.sh`, `../../defaults.sh`
 - `../../tests/`
 - [[operations/deployment]], [[operations/health-recovery]], [[systems/warp-client]]
+
+## 2026-11-12 — Deployed the review fixes and usque-rs v0.2.3
+
+- Read-only pre-check: the router ran `d6d3a1b` with usque-rs v0.2.2
+  (`b70bae6d…`); `.env`, `config.json` and `blocked_sites.txt` matched the Mac by
+  hash; `.env` holds no `GITHUB_*` key, so the script updater is inert.
+- 22:14 IST: `sync_to_router.sh` from branch `fix/review-2026-11-12` promoted
+  the 7 files that differed, kept the router's binary, wrote `.deployed_commit`
+  and restarted WARP through a gate run (13 s; trace `warp=on` on IPv4 and IPv6).
+- 22:15: the router's own `fetch_usque_rs.sh` installed v0.2.3 (archive
+  `9189d21e…`, binary `6cd7951e…`, both checked on the Mac first) against the
+  pinned hash, kept v0.2.2 as `usque-rs.prev`, and passed its gate in 10 s.
+- `measure_load_latency.sh`, one interleaved round at 22:16–22:22: v0.2.3
+  upload median 153 ms at 45 Mbit/s, then v0.2.2 31 ms at 105 Mbit/s, then
+  v0.2.3 18 ms at 115 Mbit/s; download medians 39, 34 and 25 ms. The uplink
+  varied more than the clients differ, so this shows no regression and no gain.
+  Client CPU peaked at 48% under load and idled at 0%.
+- `main` and `deploy` were left at `d6d3a1b`; in usque-rs-openwrt the `v0.2.3`
+  tag is on branch `fix/quic-timers-v0.2.3`.
+
+## Sources
+
+- `../../sync_to_router.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
+- [[operations/deployment]], [[systems/warp-client]]
