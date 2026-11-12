@@ -23,8 +23,30 @@ keeps running, with a SHA-256 manifest of every file. Staging needs no lock.
 - it ignores SIGHUP and SIGPIPE and does not stop on a failed write, so a
   dropped SSH connection cannot end it halfway.
 
-On the Mac, a trap removes staging state and restarts a previously running
-tunnel after failures. The deployment that introduced `lock.sh` (2026-10-23)
+On the Mac, a trap removes staging state and, if the tunnel was running and is
+now stopped, runs the router's `ensure_network.sh` as a gate
+([[health-recovery]]). That starts the tunnel under the maintenance lock and
+tests it; a bare `tunnel.sh` there could collide with a cron tick starting the
+tunnel at the same moment. A gate that does not confirm a working tunnel prints
+a warning.
+
+A staged file that already matches the installed one is dropped, and when none
+differs the tunnel is not stopped: a repeated sync, or a wiki-only commit through
+the Git updater, used to interrupt WARP for nothing. After the promotion a sync
+from a checkout without uncommitted changes writes its commit to
+`.deployed_commit`, so the Git updater does not promote the deploy branch over
+it.
+
+`.env` gets the same protection as `config.json`: the router's copy can hold
+keys the Mac's lacks (the Git updater's `GITHUB_*`), so a differing one stops the
+sync unless `--force` is given. It is compared by hash and never pulled.
+
+`usque-rs` is sent only to a router that has none. A router binary that differs
+from the local one is kept and a note is printed, because the router's
+`fetch_usque_rs.sh` keeps the pinned release while the Mac's copy, fetched once,
+goes stale. Pushing it downgraded the router for good: `.usque_release_sha` is
+not shipped, so the fetcher still read the pinned release as installed.
+`--push-binary` sends the local binary anyway (`--force` alone does not). The deployment that introduced `lock.sh` (2026-10-23)
 held the lock the old way, with an ownerless `mkdir`, because the old health
 check treated `lock.sh`'s owner file as stale (report section 19.6).
 
@@ -55,8 +77,17 @@ When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
 - verifies all GitHub Actions check-runs on the commit completed and succeeded;
 - downloads the commit tarball, checks `sh -n` syntax on every script, and
   promotes the deployable files via `promote_staged.sh` under `lock.sh`;
-- runs `ensure_network.sh` as a health gate and records `.deployed_commit`, or
-  immediately rolls back to the pre-update backup if the health check fails.
+- restarts the tunnel the promotion stopped while holding the maintenance lock,
+  so a health tick cannot stop a half-started client;
+- runs `ensure_network.sh` as a gate (`ROUTER_SCRIPT_TRIGGER=gate`,
+  [[health-recovery]]) and records `.deployed_commit` only when it exits 0, which
+  means WARP was tested and works; otherwise it rolls back to the pre-update
+  backup at once.
+- a gate that could not test WARP (exit 75) is rolled back too, but not recorded
+  as failed: the next run tries the commit again. Updates are not started at all
+  in game mode or while an interactive portal login is pending, when the gate
+  could not test WARP. `fetch_usque_rs.sh` applies the same three rules to a new
+  binary.
 - a commit that failed the health gate is recorded in `.git_failed_commit` and
   skipped on later runs (no 15-minute retry loop). The skip ends when the deploy
   branch moves to another commit, when the file is removed, or with

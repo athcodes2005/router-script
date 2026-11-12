@@ -101,6 +101,15 @@ crash-looping dnsproxy every tick without backoff; a release that fails its
 health check during an unrelated outage stays skipped until `--retry-failed`.
 Also open: A3, A8, A9, A11, A13 and usque-rs-openwrt C2-C6, C12 (see report).
 
+## 2026-11-12 review follow-ups
+
+Fixed: the update gate that passed without testing WARP, the unlocked tunnel
+restart after a promotion, the sync that downgraded `usque-rs` or overwrote
+`.env`, the WAN cycle on every tick, game mode without an end, and the release
+pinned by tag only (see [[../log]]). Open: the Git updater does nothing until
+`GITHUB_REPO` is set in the router's `.env`; the tunnel check has no IPv6
+probe; healthy ticks still write two log lines and the lock directory to flash.
+
 ## Diagnostic sensitivity
 
 Snapshots and packet captures may expose client destinations or topology. Keep

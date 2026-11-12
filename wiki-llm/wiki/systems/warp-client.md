@@ -9,10 +9,16 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 ## Binary delivery (`fetch_usque_rs.sh`)
 
 - `defaults.sh` sets `USQUE_REPO=athcodes2005/usque-rs-openwrt`,
-  `USQUE_RELEASE_TAG=v0.2.1` (pinned: a new release reaches the router only
+  `USQUE_RELEASE_TAG=v0.2.3` (pinned: a new release reaches the router only
   after the tag is bumped in a commit; `latest` still works when set in `.env`), and
   `USQUE_ASSET_NAME=usque-rs-aarch64-linux-musl.tar.gz`.
-- `fetch_usque_rs.sh` downloads `.sha256` from the GitHub Release, compares it
+- The pinned tag is held to `USQUE_PINNED_SHA256`, the sha256 of its archive: a
+  release's assets can be replaced under the same tag, and the `.sha256`
+  published beside them changes with them. With a pin `fetch_usque_rs.sh` does
+  not fetch that file at all, and an installed pinned release needs no network.
+  A tag set in `.env` is not held to the pinned hash (`USQUE_RELEASE_SHA256`
+  gives it its own); only then is the release's own `.sha256` trusted.
+- `fetch_usque_rs.sh` compares the expected hash
   with `.usque_release_sha`, downloads and verifies the archive when updated,
   checks `./usque-rs nativetun --help`, backs up the previous binary to
   `usque-rs.prev` (router-local, never shipped by sync or git), promotes under

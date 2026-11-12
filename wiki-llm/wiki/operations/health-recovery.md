@@ -25,7 +25,12 @@ in the future after a clock reset).
    without `dnsproxy` are untouched. `dns_runtime_ok` cannot see this failure,
    because its probe name is a local `address=` pin.
 5. Repair LAN IPv6 configuration drift.
-6. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN.
+6. Verify Ethernet carrier and the WAN IPv4 lease before cycling the WAN. An
+   interface that is up without carrier (cable out) is logged and never cycled.
+   A missing lease cycles the WAN at most once per `WAN_RECOVERY_COOLDOWN`
+   (120 s): a cycle restarts DHCP from nothing, and one on every tick could keep
+   a slow server's lease from arriving. The campus-route cycle in step 7 shares
+   the cooldown.
 7. Verify the core campus route separately from optional resolved site routes.
    With a healthy lease, a wrong route is fixed by reinstalling `CAMPUS_NETS`
    via the WAN gateway; the WAN is cycled only if that fails, because a cycle
@@ -86,10 +91,25 @@ a missing process/interface triggers immediate recovery. IPv6 HTTP and latency
 are diagnostic measurements, not restart triggers (sustained latency only logs a
 warning). IPv6 default-route presence remains a structural requirement.
 
+Game mode ends by itself: its marker records the uptime at which it was turned
+on, and the first health check after `GAME_MODE_MAX_SECONDS` (8 h; 0 = never)
+runs `game_mode.sh off` before taking the lock. Left on, it sent all public
+traffic around WARP until the next reboot while every check "passed".
+
 `game_mode.sh on` prefers direct campus WAN. Policy toggles share the maintenance
 lock, and disabling game mode preserves the WAN gateway before removing its
 preferred route. Game mode hides IPv6 by rejecting LAN→`tun0` IPv6, not through
 DNS: `filter_aaaa` stays 0 in every mode ([[../bugs/known-issues]]).
+
+## Verification runs (gate)
+
+`update_from_git.sh`, `fetch_usque_rs.sh` and `sync_to_router.sh` run the check
+with `ROUTER_SCRIPT_TRIGGER=gate` to decide whether a change is kept. In a gate
+run exit 0 means WARP was tested and works. It waits up to `GATE_LOCK_WAIT`
+(60 s) for the lock instead of skipping, and restarts WARP even during the retry
+cooldown. A run that cannot test WARP exits 75: the lock stayed busy, game mode
+is on, or an interactive login is pending. A cron tick still exits 0 in all of
+those cases, which the updaters once read as "verified".
 
 ## Operational result
 

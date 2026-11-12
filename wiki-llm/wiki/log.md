@@ -1157,3 +1157,39 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../tunnel.sh`, `../../defaults.sh`, `../../fetch_usque_rs.sh`
 - [[systems/warp-client]], [[bugs/known-issues]]
+
+## 2026-11-12 — Review fixes: update verification, sync, WAN and game mode
+
+- A code review of this repository and usque-rs-openwrt found the defects below;
+  each fix has tests (244 in all).
+- Gate: `ensure_network.sh` run with `ROUTER_SCRIPT_TRIGGER=gate` exits 0 only
+  after WARP was tested and 75 when it could not be. The updaters took any exit
+  0 as a pass, including "lock busy", game mode, a pending login and the retry
+  cooldown. `update_from_git.sh` and `fetch_usque_rs.sh` use it, wait in game
+  mode or during a pending login, and roll back an untested change without
+  recording it as failed.
+- Tunnel restarts after a promotion happen under the maintenance lock
+  (`update_from_git.sh`) or through a gate run (`sync_to_router.sh`).
+- `promote_staged.sh` drops staged files that match the installed ones and
+  leaves the tunnel running when nothing differs.
+- `sync_to_router.sh`: a router `usque-rs` that differs from the local one is
+  kept (`--push-binary` overrides); a differing `.env` stops the sync like
+  `config.json`; a sync from a clean checkout writes `.deployed_commit`. The Mac
+  held v0.2.1 while the router ran v0.2.2, and the 2026-10-26 validation
+  report's claim that the router would re-fetch within 15 minutes was wrong.
+- usque-rs is pinned by tag and archive sha256 (`USQUE_PINNED_TAG`,
+  `USQUE_PINNED_SHA256`), now v0.2.3 (`9189d21e…`): it runs expired QUIC timers
+  under load and floors the handshake loops.
+- WAN recovery cycles the WAN at most once per 120 s and not at all while the
+  cable is out. Game mode turns itself off after 8 h.
+- Still open: the script updater is inert while `GITHUB_REPO` is unset in the
+  router's `.env`; no IPv6 probe in the tunnel check (by design); routine health
+  lines and the lock directory are written to flash; third-party actions in
+  usque-rs-openwrt's workflows are not pinned by commit.
+
+## Sources
+
+- `../../ensure_network.sh`, `../../update_from_git.sh`, `../../fetch_usque_rs.sh`
+- `../../sync_to_router.sh`, `../../promote_staged.sh`, `../../game_mode.sh`, `../../defaults.sh`
+- `../../tests/`
+- [[operations/deployment]], [[operations/health-recovery]], [[systems/warp-client]]
