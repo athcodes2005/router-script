@@ -138,6 +138,7 @@ case "$key" in
     if flag cachesize_small; then echo 150; else echo 4000; fi ;;
   'dhcp.@dnsmasq[0].filter_aaaa') if flag filter_aaaa_on; then echo 1; else echo 0; fi ;;
   'dhcp.@dnsmasq[0].server')
+    if flag dns_firmware_reset; then echo '127.0.0.1#5453'; exit 0; fi
     if flag dns_order_drift; then printf '10.200.1.11 127.0.0.1#5453 8.8.8.8 8.8.4.4'
     else printf '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11'; fi
     printf ' /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'

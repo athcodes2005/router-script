@@ -82,6 +82,12 @@ cache-size: 4194304
 cache-optimistic: true
 EOF
 chmod 600 "$DNSPROXY_YAML"
+# GL.iNet's /etc/init.d/dnsproxy starts the daemon only when its own DNS
+# settings say mode 'secure' with a proto other than 'odoh'; without these two
+# keys the restart below starts nothing. Any mode but 'auto' also makes the
+# firmware apply those settings again at every boot (/etc/init.d/gl_dns), which
+# replaces the upstreams above and the dnsmasq server list below.
+# ensure_network.sh reads that as drift and runs this script again.
 uci set gl-dns-v2.@dns[0].mode='secure' 2>/dev/null || true
 uci set gl-dns-v2.@dns[0].proto='doh' 2>/dev/null || true
 uci commit gl-dns-v2 2>/dev/null || true

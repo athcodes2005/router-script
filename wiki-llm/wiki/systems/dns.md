@@ -63,6 +63,34 @@ DNS exposure to the LAN is through the router, not direct client policy.
 Clients that manually select a public resolver bypass split-horizon IITB names;
 use router-provided DNS for campus-only hosts.
 
+## GL.iNet's own DNS settings (`gl-dns-v2`)
+
+`configure_dns.sh` sets `gl-dns-v2.@dns[0].mode='secure'` and `proto='doh'`.
+`gl-dns-v2` is the store behind the DNS page of the admin panel, and the two
+keys are needed: `/etc/init.d/dnsproxy` returns without starting the daemon
+unless `mode` is `secure` and `proto` is not `odoh` (read on firmware 4.11.0).
+
+They have a cost. With any `mode` but `auto`, `/etc/init.d/gl_dns` reads the
+firmware's DNS settings at every boot and applies them again. Replayed on the
+router on 2026-11-13 (`get_config` passed back to `set_config`, as that script
+does), this:
+- replaced the `upstream:` entries of `dnsproxy.yaml` with the servers saved in
+  the admin panel (two Quad9 DoH stamps from `secure_manual_list`), leaving the
+  rest of the file;
+- cut the dnsmasq `server` list down to `127.0.0.1#5453`, which drops the plain
+  fallbacks, the campus forwards and the Blinkit zones, and removed `cachesize`;
+- restarted dnsproxy and rebuilt the firewall.
+
+The firewall rebuild runs `firewall_hook.sh`, so a health check started 3 s
+later, found the drift and had `configure_dns.sh` put everything back within
+8 s. The boot of 2026-11-05 shows the same repair in `ensure.log`. Saving the
+DNS page in the admin panel has the same effect. In between, names resolve
+through dnsproxy alone and campus-only hosts do not resolve.
+
+Running dnsproxy outside the firmware's init script with `mode='auto'` would
+end this, at the price of a service of our own to keep alive; a repair of a few
+seconds once per boot does not justify it.
+
 ## Repair and inspection
 
 `configure_dns.sh` writes and commits UCI state, configures `/etc/dnsproxy/dnsproxy.yaml`
@@ -106,6 +134,7 @@ toggles it.
 ## Sources
 
 - `../../../configure_dns.sh`
+- `/etc/init.d/dnsproxy`, `/etc/init.d/gl_dns` on the router (firmware 4.11.0)
 - `../../../ensure_network.sh`
 - `../../../dns_flow.sh`
 - [[flows/traffic-routing]]

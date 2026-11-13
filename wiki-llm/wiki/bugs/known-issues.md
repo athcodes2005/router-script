@@ -98,8 +98,12 @@ Closed on 2026-11-12: N1 (`rotate_logs.sh` exit status), N2 (`.env` is loaded
 before `paths.sh` everywhere), the dnsproxy restart on every tick (now once per
 cooldown), A8, A9, A11, A13, and in usque-rs-openwrt C2-C6 and C12. Still open:
 a release or commit that fails its health check during an unrelated outage
-stays skipped until `--retry-failed`; `configure_dns.sh` writes GL.iNet's
-`gl-dns-v2` settings for a reason that is recorded nowhere (A3).
+stays skipped until `--retry-failed`.
+
+Closed on 2026-11-13: A3. `configure_dns.sh` writes GL.iNet's `gl-dns-v2`
+settings because the firmware's init script starts dnsproxy only with them; the
+firmware then applies its own DNS settings again at every boot, and the health
+check undoes that within seconds ([[../systems/dns]]).
 
 ## 2026-11-12 review follow-ups
 

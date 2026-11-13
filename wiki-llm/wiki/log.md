@@ -1311,3 +1311,22 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../update_from_git.sh`, `../../sync_to_router.sh`, `../../.github/workflows/ci.yml`
 - [[operations/deployment]], [[bugs/known-issues]]
+
+## 2026-11-13 — Why `configure_dns.sh` writes `gl-dns-v2` (A3)
+
+- Read on the router: `/etc/init.d/dnsproxy` starts the daemon only when
+  `gl-dns-v2` says `mode='secure'` and `proto` is not `odoh`, so the two keys
+  are needed.
+- Measured at 21:05 IST by replaying what `/etc/init.d/gl_dns` does at boot:
+  the firmware replaced the dnsproxy upstreams with the admin panel's Quad9
+  servers, cut the dnsmasq `server` list to dnsproxy alone, removed `cachesize`
+  and rebuilt the firewall. The health check the firewall hook started repaired
+  all of it within 8 s. Cost of the test: DNS without its fallbacks and campus
+  forwards for those seconds; WARP stayed up.
+- No behaviour changed. The reason is now a comment in the script and a section
+  in [[systems/dns]], and three tests cover the keys and the repair.
+
+## Sources
+
+- `../../configure_dns.sh`, `../../tests/test_dns_robustness.py`
+- [[systems/dns]], [[bugs/known-issues]]
