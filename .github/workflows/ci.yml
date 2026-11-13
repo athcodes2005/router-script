@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["**"]
 
+permissions:
+  contents: read
+
 jobs:
   shell-and-tests:
     name: Shell & Sandbox Tests
@@ -35,3 +38,35 @@ jobs:
       - name: Run Python test suite
         run: |
           python3 -m unittest discover -s tests -v
+
+  # The router's updater installs whatever the deploy branch points at and
+  # cannot ask GitHub for a commit's CI result (see update_from_git.sh). The
+  # branch therefore moves only here, to a commit of main whose checks passed.
+  promote:
+    name: Advance deploy
+    needs: shell-and-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: promote-deploy
+    steps:
+      - name: Fast-forward deploy to this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/deploy" \
+              -f sha="$GITHUB_SHA" -F force=false; then
+            echo "deploy now points at $GITHUB_SHA."
+            exit 0
+          fi
+          # A later commit's run can finish first; deploy is then past this one.
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...deploy" --jq .status)"
+          case "$status" in
+            ahead|identical)
+              echo "deploy already contains $GITHUB_SHA." ;;
+            *)
+              echo "::error::deploy could not be fast-forwarded to $GITHUB_SHA (deploy is $status)."
+              exit 1 ;;
+          esac

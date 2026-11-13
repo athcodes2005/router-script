@@ -33,12 +33,14 @@ a warning.
 A staged file that already matches the installed one is dropped, and when none
 differs the tunnel is not stopped: a repeated sync, or a wiki-only commit through
 the Git updater, used to interrupt WARP for nothing. After the promotion a sync
-from a checkout without uncommitted changes writes its commit to
-`.deployed_commit`, so the Git updater does not promote the deploy branch over
-it.
+from a checkout without uncommitted changes that sits at `origin/deploy` writes
+its commit to `.deployed_commit`, so the Git updater does not fetch the same
+files again. Any other sync leaves the record alone and says so: CI moves
+`deploy` minutes after a push, and a record naming a commit the branch had not
+reached would make the updater put the branch's older commit back.
 
 `.env` gets the same protection as `config.json`: the router's copy can hold
-keys the Mac's lacks (the Git updater's `GITHUB_*`), so a differing one stops the
+keys the Mac's lacks, so a differing one stops the
 sync unless `--force` is given. It is compared by hash and never pulled.
 
 `usque-rs` is sent only to a router that has none. A router binary that differs
@@ -72,9 +74,24 @@ diagnostic snapshot tasks.
 
 ## Git CD updater (`update_from_git.sh`)
 
-When `GITHUB_REPO` is set in `.env` (with `GITHUB_TOKEN` for a private repo),
-`update_from_git.sh` checks `DEPLOY_BRANCH` (default `deploy`) every 15 minutes:
-- verifies all GitHub Actions check-runs on the commit completed and succeeded;
+When `GITHUB_REPO` is set in `.env`, `update_from_git.sh` checks `DEPLOY_BRANCH`
+(default `deploy`) of that public repository every 15 minutes. It uses neither
+the GitHub API nor a token: anonymous API calls are limited to 60 an hour per
+address, and the router shares its WARP or campus address with many others, so
+they were refused (HTTP 403) most of the time. It reads two things from
+`github.com` instead, which that limit does not cover:
+- the branch head, from the ref listing a Git client reads before a fetch
+  (`<repo>.git/info/refs?service=git-upload-pack`);
+- the files, from the commit's archive (`<repo>/archive/<commit>.tar.gz`).
+
+A commit's CI result can only be read through the API, so CI decides before the
+router looks. The `promote` job in `.github/workflows/ci.yml` runs after the
+tests of a push to `main` and fast-forwards `deploy` to that commit; the router
+installs whatever `deploy` points at. Nothing else should push to `deploy`: a
+hand-pushed commit reaches the router untested by CI, held back only by the
+syntax check and the health gate below.
+
+For a new deploy-branch head the updater then:
 - downloads the commit tarball, checks `sh -n` syntax on every script, and
   promotes the deployable files via `promote_staged.sh` under `lock.sh`;
 - restarts the tunnel the promotion stopped while holding the maintenance lock,

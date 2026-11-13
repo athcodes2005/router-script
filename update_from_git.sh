@@ -1,13 +1,24 @@
 #!/bin/sh
-# Pull the deploy branch from GitHub, verify its CI passed, promote the new
-# files under the maintenance lock, verify health, and roll back if the
-# post-update health check fails.
+# Pull the deploy branch from GitHub, promote the new files under the
+# maintenance lock, verify health, and roll back if the post-update health
+# check fails.
 #
 # Configuration in .env (all optional; if GITHUB_REPO is unset, this exits 0):
 #   GITHUB_REPO=owner/router-script
-#   GITHUB_TOKEN=<fine-grained read-only token>
 #   DEPLOY_BRANCH=deploy
-#   GITHUB_API_URL=https://api.github.com
+#   GITHUB_URL=https://github.com
+#
+# Nothing here uses the GitHub API or a token. Anonymous API calls are limited
+# to 60 an hour per address, and the router shares its WARP or campus address
+# with many others, so they are refused most of the time. The branch head comes
+# from the ref listing a Git client reads before a fetch and the files from the
+# commit's archive; neither counts against that limit. The repository must be
+# public.
+#
+# A commit's CI result can only be read through the API, so CI decides before
+# the router looks: the promote job in .github/workflows/ci.yml moves the deploy
+# branch to a commit of main once that commit's checks have passed. Nothing else
+# should push to the branch, because the router installs whatever it points at.
 #
 # A commit that fails the post-update health check is rolled back and recorded
 # in .git_failed_commit; later runs skip it. The skip ends when the deploy
@@ -36,9 +47,8 @@ for ARG in "$@"; do
 done
 
 GITHUB_REPO="${GITHUB_REPO:-}"
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-deploy}"
-GITHUB_API_URL="${GITHUB_API_URL:-https://api.github.com}"
+GITHUB_URL="${GITHUB_URL:-https://github.com}"
 DEPLOY_COMMIT_FILE="${DEPLOY_COMMIT_FILE:-$DIR/.deployed_commit}"
 GIT_FAILED_FILE="${GIT_FAILED_FILE:-$DIR/.git_failed_commit}"
 UPDATE_LOCK_WAIT="${UPDATE_LOCK_WAIT:-30}"
@@ -74,31 +84,29 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap '' HUP PIPE
 
-# Pass the bearer token on stdin (-K -) so it never appears in /proc/<pid>/cmdline.
 github_curl() {
-    if [ -n "$GITHUB_TOKEN" ]; then
-        printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" |
-            curl -fsSL --connect-timeout 5 --max-time 30 -K - \
-                -H "Accept: application/vnd.github+json" "$@"
-    else
-        curl -fsSL --connect-timeout 5 --max-time 30 \
-            -H "Accept: application/vnd.github+json" "$@"
-    fi
+    curl -fsSL --connect-timeout 5 --max-time 30 "$@"
 }
 
-COMMIT_JSON="$WORK/commit.json"
-if ! github_curl "$GITHUB_API_URL/repos/$GITHUB_REPO/commits/$DEPLOY_BRANCH" -o "$COMMIT_JSON" 2>/dev/null; then
-    log "WARNING: could not fetch $GITHUB_REPO@$DEPLOY_BRANCH from GitHub."
+# The ref listing is a run of pkt-lines, "<4 hex length><40 hex commit> <ref>";
+# the first ref also carries a NUL and the server's capabilities, and follows a
+# "0000" flush packet without a line break. The commit is therefore the last 40
+# characters of the first field.
+REFS="$WORK/refs"
+if ! github_curl "$GITHUB_URL/$GITHUB_REPO.git/info/refs?service=git-upload-pack" -o "$REFS" 2>/dev/null; then
+    log "WARNING: could not fetch the branches of $GITHUB_REPO from GitHub."
     exit 0
 fi
 
-TARGET_SHA="$(jsonfilter -i "$COMMIT_JSON" -e '@.sha' 2>/dev/null || true)"
+TARGET_SHA="$(tr '\000' '\n' < "$REFS" |
+    awk -v ref="refs/heads/$DEPLOY_BRANCH" '$2 == ref { print substr($1, length($1) - 39); exit }')"
 case "$TARGET_SHA" in
-    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
-    *)
-        log "WARNING: invalid commit SHA from GitHub for $DEPLOY_BRANCH."
-        exit 0 ;;
+    *[!0-9a-f]*) TARGET_SHA= ;;
 esac
+if [ "${#TARGET_SHA}" -ne 40 ]; then
+    log "WARNING: GitHub lists no commit for branch $DEPLOY_BRANCH of $GITHUB_REPO."
+    exit 0
+fi
 
 CURRENT_SHA="$(cat "$DEPLOY_COMMIT_FILE" 2>/dev/null || true)"
 if [ "$TARGET_SHA" = "$CURRENT_SHA" ]; then
@@ -118,41 +126,9 @@ if [ -f "$GAME_MODE_MARKER" ] || [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
     exit 0
 fi
 
-# Require every completed check-run on the commit to have succeeded, and at
-# least one check-run to exist (CI must have passed on this commit).
-CHECKS_JSON="$WORK/checks.json"
-if ! github_curl "$GITHUB_API_URL/repos/$GITHUB_REPO/commits/$TARGET_SHA/check-runs" -o "$CHECKS_JSON" 2>/dev/null; then
-    log "WARNING: could not fetch CI check-runs for $TARGET_SHA; skipping update."
-    exit 0
-fi
-
-TOTAL_CHECKS="$(jsonfilter -i "$CHECKS_JSON" -e '@.total_count' 2>/dev/null || echo 0)"
-case "$TOTAL_CHECKS" in ''|*[!0-9]*) TOTAL_CHECKS=0 ;; esac
-if [ "$TOTAL_CHECKS" -lt 1 ]; then
-    log "Skipping $TARGET_SHA: no CI check-runs recorded yet."
-    exit 0
-fi
-
-CONCLUSIONS="$(jsonfilter -i "$CHECKS_JSON" -e '@.check_runs[*].conclusion' 2>/dev/null || true)"
-STATUSES="$(jsonfilter -i "$CHECKS_JSON" -e '@.check_runs[*].status' 2>/dev/null || true)"
-for ST in $STATUSES; do
-    if [ "$ST" != "completed" ]; then
-        log "Skipping $TARGET_SHA: CI check-run is still $ST."
-        exit 0
-    fi
-done
-for CONC in $CONCLUSIONS; do
-    case "$CONC" in
-        success|neutral|skipped) ;;
-        *)
-            log "Skipping $TARGET_SHA: CI check-run concluded '$CONC'."
-            exit 0 ;;
-    esac
-done
-
 TARBALL="$WORK/repo.tar.gz"
-if ! github_curl "$GITHUB_API_URL/repos/$GITHUB_REPO/tarball/$TARGET_SHA" -o "$TARBALL" 2>/dev/null; then
-    log "WARNING: failed to download tarball for $TARGET_SHA."
+if ! github_curl "$GITHUB_URL/$GITHUB_REPO/archive/$TARGET_SHA.tar.gz" -o "$TARBALL" 2>/dev/null; then
+    log "WARNING: failed to download the archive of $TARGET_SHA."
     exit 1
 fi
 

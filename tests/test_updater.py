@@ -1,5 +1,4 @@
-"""update_from_git.sh: pull deploy branch, gate on CI check-runs, promote and rollback on health failure."""
-import json
+"""update_from_git.sh: pull the deploy branch without the GitHub API, promote and roll back on health failure."""
 import re
 from pathlib import Path
 import shutil
@@ -12,6 +11,7 @@ from sandbox import Sandbox, SHELL
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
+OTHER_SHA = '0f' * 20
 
 
 class UpdaterTests(unittest.TestCase):
@@ -23,55 +23,28 @@ class UpdaterTests(unittest.TestCase):
                 (self.box.bin / tool).symlink_to(shutil.which(tool))
         self.api = self.box.base / 'api'
         self.api.mkdir()
-        # Stub curl for GitHub API requests.
-        curl_body = r'''#!/bin/sh
+        # Stub curl for the two github.com requests.
+        curl_body = r"""#!/bin/sh
 out=; url=
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out=$2; shift 2 ;;
     -K) cat > "$SIM_STATE/auth_stdin"; shift 2 ;;
-    -H|--connect-timeout|--max-time) shift 2 ;;
+    -H) echo "$2" >> "$SIM_STATE/headers"; shift 2 ;;
+    --connect-timeout|--max-time) shift 2 ;;
     -*) shift ;;
     *) url=$1; shift ;;
   esac
 done
+echo "$url" >> "$SIM_STATE/urls"
 case "$url" in
-  */commits/deploy) cp "$API_DIR/commit.json" "$out" ;;
-  */check-runs) cp "$API_DIR/checks.json" "$out" ;;
-  */tarball/*) cp "$API_DIR/repo.tar.gz" "$out" ;;
+  */info/refs\?service=git-upload-pack) [ -f "$API_DIR/refs" ] && cp "$API_DIR/refs" "$out" ;;
+  */archive/*.tar.gz) cp "$API_DIR/repo.tar.gz" "$out" ;;
   *) exit 22 ;;
 esac
-'''
+"""
         (self.box.bin / 'curl').write_text(curl_body)
         (self.box.bin / 'curl').chmod(0o755)
-        # Real jsonfilter isn't on macOS; stub the three expressions update_from_git.sh uses.
-        jf_body = r'''#!/bin/sh
-file=; expr=
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -i) file=$2; shift 2 ;;
-    -e) expr=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-python3 - "$file" "$expr" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-expr = sys.argv[2]
-if expr == '@.sha':
-    print(data.get('sha', ''))
-elif expr == '@.total_count':
-    print(data.get('total_count', 0))
-elif expr == '@.check_runs[*].conclusion':
-    for r in data.get('check_runs', []):
-        print(r.get('conclusion') or '')
-elif expr == '@.check_runs[*].status':
-    for r in data.get('check_runs', []):
-        print(r.get('status') or '')
-PY
-'''
-        (self.box.bin / 'jsonfilter').write_text(jf_body)
-        (self.box.bin / 'jsonfilter').chmod(0o755)
         if not (self.box.bin / 'python3').exists():
             (self.box.bin / 'python3').symlink_to(shutil.which('python3'))
         # Real sha256sum or shasum wrapper so sha256sum -c .manifest works in promote_staged.sh.
@@ -90,18 +63,24 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         (self.box.bin / 'sha256sum').write_text(sha_body)
         (self.box.bin / 'sha256sum').chmod(0o755)
 
-        (self.api / 'commit.json').write_text(json.dumps({'sha': SHA}))
-        (self.api / 'checks.json').write_text(json.dumps({
-            'total_count': 2,
-            'check_runs': [
-                {'status': 'completed', 'conclusion': 'success'},
-                {'status': 'completed', 'conclusion': 'success'},
-            ],
-        }))
+        self.advertise([('HEAD', OTHER_SHA), ('refs/heads/deploy', SHA), ('refs/heads/main', OTHER_SHA)])
+
+    def advertise(self, refs):
+        """Write the ref listing GitHub answers a Git client with (pkt-lines, protocol v0)."""
+        def pkt(payload):
+            return b'%04x' % (len(payload) + 4) + payload
+        body = pkt(b'# service=git-upload-pack\n') + b'0000'
+        for index, (name, sha) in enumerate(refs):
+            capabilities = b'\0multi_ack side-band-64k symref=HEAD:refs/heads/main agent=git/github' if index == 0 else b''
+            body += pkt(('%s %s' % (sha, name)).encode() + capabilities + b'\n')
+        (self.api / 'refs').write_bytes(body + b'0000')
+
+    def urls(self):
+        return (self.box.state / 'urls').read_text().split()
 
     def make_tarball(self, healthy=True, ensure=None):
         with tempfile.TemporaryDirectory() as tmp:
-            pkg = Path(tmp) / ('router-script-' + SHA[:7])
+            pkg = Path(tmp) / ('router-script-' + SHA)
             pkg.mkdir()
             for f in self.box.proj.iterdir():
                 if f.is_file():
@@ -118,40 +97,95 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
                 tar.add(pkg, arcname=pkg.name)
 
     def run_updater(self, **env):
-        return self.box.run('update_from_git.sh', GITHUB_REPO='owner/router-script',
-                            GITHUB_TOKEN='ghp_testtoken123', AUTO_FETCH_USQUE='0',
-                            API_DIR=str(self.api), **env)
+        # A token left in .env from the API days must not be sent anywhere.
+        return self.box.run('update_from_git.sh', **{
+            'GITHUB_REPO': 'owner/router-script', 'GITHUB_TOKEN': 'ghp_testtoken123',
+            'AUTO_FETCH_USQUE': '0', 'API_DIR': str(self.api), **env})
 
     def test_unconfigured_repo_is_a_clean_noop(self):
         res = self.box.run('update_from_git.sh', AUTO_FETCH_USQUE='0')
         self.assertEqual(res.returncode, 0)
         self.assertEqual(self.box.log('maintenance'), '')
 
-    def test_passing_ci_promotes_and_records_commit_without_exposing_token(self):
+    def test_the_deploy_head_is_promoted_and_recorded(self):
         self.make_tarball(healthy=True)
         (self.box.proj / 'README.md').write_text('# Old README\n')
         res = self.run_updater()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
         self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
-        self.assertIn('Authorization: Bearer ghp_testtoken123', (self.box.state / 'auth_stdin').read_text())
         self.assertIn('Update to %s succeeded and passed the health check.' % SHA, self.box.log('maintenance'))
 
-    def test_failed_ci_check_run_skips_update(self):
+    # Anonymous API calls are refused once the address the router shares with
+    # others has used its 60 an hour, which is most of the time.
+    def test_neither_the_api_nor_a_token_is_used(self):
         self.make_tarball(healthy=True)
         (self.box.proj / 'README.md').write_text('# Old README\n')
-        (self.api / 'checks.json').write_text(json.dumps({
-            'total_count': 2,
-            'check_runs': [
-                {'status': 'completed', 'conclusion': 'success'},
-                {'status': 'completed', 'conclusion': 'failure'},
-            ],
-        }))
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual(self.urls(), [
+            'https://github.com/owner/router-script.git/info/refs?service=git-upload-pack',
+            'https://github.com/owner/router-script/archive/%s.tar.gz' % SHA,
+        ])
+        self.assertFalse((self.box.state / 'auth_stdin').exists())
+        self.assertFalse((self.box.state / 'headers').exists())
+
+    def test_an_installed_deploy_head_costs_one_small_request(self):
+        (self.box.proj / '.deployed_commit').write_text(SHA + '\n')
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual(len(self.urls()), 1)
+        self.assertEqual(self.box.log('maintenance'), '')
+
+    def test_only_the_configured_branch_is_followed(self):
+        self.advertise([('HEAD', OTHER_SHA), ('refs/heads/deploy-old', OTHER_SHA), ('refs/heads/deploy', SHA),
+                        ('refs/heads/staging', OTHER_SHA), ('refs/heads/x/deploy', OTHER_SHA),
+                        ('refs/tags/deploy', OTHER_SHA)])
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+        self.assertEqual(self.run_updater(DEPLOY_BRANCH='staging').returncode, 0)
+        self.assertIn('/archive/%s.tar.gz' % OTHER_SHA, self.urls()[-1])
+
+    # The first ref follows the flush packet on the same line and carries the capabilities.
+    def test_the_branch_is_found_when_it_is_the_first_ref_listed(self):
+        self.advertise([('refs/heads/deploy', SHA), ('refs/heads/main', OTHER_SHA)])
+        self.make_tarball(healthy=True)
+        self.assertEqual(self.run_updater().returncode, 0)
+        self.assertEqual((self.box.proj / '.deployed_commit').read_text().strip(), SHA)
+
+    def test_a_listing_without_the_branch_changes_nothing(self):
+        self.make_tarball(healthy=True)
+        (self.box.proj / 'README.md').write_text('# Old README\n')
+        for listing in (None, b'<!DOCTYPE html><html>Sign in to GitHub</html>\n'):
+            if listing is None:
+                self.advertise([('HEAD', OTHER_SHA), ('refs/heads/main', OTHER_SHA)])
+            else:
+                (self.api / 'refs').write_bytes(listing)
+            res = self.run_updater()
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            self.assertEqual((self.box.proj / 'README.md').read_text(), '# Old README\n')
+            self.assertFalse((self.box.proj / '.deployed_commit').exists())
+        self.assertEqual(self.box.log('maintenance').count('GitHub lists no commit for branch deploy'), 2)
+        self.assertFalse([url for url in self.urls() if '/archive/' in url])
+
+    def test_an_unreachable_github_changes_nothing(self):
+        (self.api / 'refs').unlink()
+        (self.box.proj / 'README.md').write_text('# Old README\n')
         res = self.run_updater()
-        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual((self.box.proj / 'README.md').read_text(), '# Old README\n')
-        self.assertFalse((self.box.proj / '.deployed_commit').exists())
-        self.assertIn("CI check-run concluded 'failure'", self.box.log('maintenance'))
+        self.assertIn('could not fetch the branches of owner/router-script', self.box.log('maintenance'))
+
+    # The router no longer reads a commit's CI result, so the workflow must be
+    # the only thing that moves the branch, and only after the tests.
+    def test_ci_moves_the_deploy_branch_only_after_the_tests_on_main(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'ci.yml').read_text()
+        promote = workflow[workflow.index('\n  promote:'):]
+        self.assertIn('needs: shell-and-tests', promote)
+        self.assertIn("if: github.event_name == 'push' && github.ref == 'refs/heads/main'", promote)
+        self.assertIn('git/refs/heads/deploy', promote)
+        self.assertIn('force=false', promote)
+        self.assertEqual(workflow.count('contents: write'), 1)
+        self.assertIn('contents: write', promote)
 
     def test_failed_health_gate_rolls_back_to_previous_files(self):
         (self.box.proj / 'README.md').write_text('# Working README\n')
@@ -189,7 +223,7 @@ python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read
         self.assertEqual(self.run_updater().returncode, 0)
         self.assertEqual((self.box.proj / 'README.md').read_text(), '# Working README\n')
         res = self.box.run('update_from_git.sh', '--retry-failed', GITHUB_REPO='owner/router-script',
-                           GITHUB_TOKEN='ghp_testtoken123', AUTO_FETCH_USQUE='0', API_DIR=str(self.api))
+                           AUTO_FETCH_USQUE='0', API_DIR=str(self.api))
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertEqual((self.box.proj / 'README.md').read_text(), '# Updated README\n')
         self.assertFalse((self.box.proj / '.git_failed_commit').exists())

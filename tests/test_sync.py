@@ -305,9 +305,10 @@ class SyncTests(unittest.TestCase):
 
     # B5: without .deployed_commit the Git updater promotes the deploy branch
     # over a manual sync on its next run.
-    def fake_git(self, dirty=''):
-        write_exec(self.bin_dir / 'git', 'case "$*" in\n  *rev-parse*) echo %s ;;\n  *status*) printf \'%%s\' "%s" ;;\nesac\n'
-                   % ('c0ffee' * 6 + 'c0ff', dirty))
+    def fake_git(self, dirty='', deploy=None):
+        head = 'c0ffee' * 6 + 'c0ff'
+        write_exec(self.bin_dir / 'git', 'case "$*" in\n  *rev-parse*origin/deploy*) echo %s ;;\n  *rev-parse*) echo %s ;;\n'
+                   '  *status*) printf \'%%s\' "%s" ;;\nesac\n' % (head if deploy is None else deploy, head, dirty))
 
     def test_a_sync_from_a_clean_checkout_records_the_deployed_commit(self):
         self.fake_git()
@@ -320,6 +321,17 @@ class SyncTests(unittest.TestCase):
         self.fake_git(dirty=' M tunnel.sh')
         self.assertEqual(self.sync().returncode, 0)
         self.assertEqual((self.router / '.deployed_commit').read_text(), 'earlier\n')
+
+    # CI moves the deploy branch minutes after a push. Recording a commit the
+    # branch had not reached made the updater put the branch's older one back.
+    def test_a_sync_of_a_commit_the_deploy_branch_has_not_reached_names_no_commit(self):
+        (self.router / '.deployed_commit').write_text('earlier\n')
+        for deploy in ('d' * 40, ''):
+            self.fake_git(deploy=deploy)
+            result = self.sync()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((self.router / '.deployed_commit').read_text(), 'earlier\n')
+            self.assertIn('not at origin/deploy', result.stdout)
 
     def test_first_deploy_without_a_router_registration_proceeds(self):
         (self.router / 'config.json').unlink()

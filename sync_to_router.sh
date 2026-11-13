@@ -91,10 +91,9 @@ fi
 # rotate_tunnel_ip.sh registers a new WARP identity on the router, so the local
 # config.json can be stale; pushing it would undo the rotation. Only hashes are
 # compared: the file holds the private key and is never printed.
-# The router's .env can hold settings the local copy lacks (the Git updater's
-# GITHUB_* keys are set only there), and pushing the local file would drop them
-# without a word. It holds credentials, so it is compared by hash and never
-# pulled or printed.
+# The router's .env can hold settings the local copy lacks, and pushing the
+# local file would drop them without a word. It holds credentials, so it is
+# compared by hash and never pulled or printed.
 if [ -f "$DIR/.env" ]; then
     REMOTE_ENV_SHA="$(run_ssh "$REMOTE" "sha256sum '$REMOTE_DIR/.env' 2>/dev/null | awk '{print \$1}'" || true)"
     if [ -n "$REMOTE_ENV_SHA" ] && [ "$REMOTE_ENV_SHA" != "$(local_sha256 "$DIR/.env")" ]; then
@@ -168,13 +167,22 @@ printf '%s' "$MANIFEST" | run_ssh "$REMOTE" "cat > '$REMOTE_STAGE/.manifest'"
 echo "Promoting staged files."
 run_ssh "$REMOTE" "sh '$REMOTE_STAGE/promote_staged.sh' '$REMOTE_DIR' '$SYNC_LOCK_WAIT'"
 
-# Tell update_from_git.sh which commit the router now runs; without that it
-# promotes the deploy branch over this sync on its next run. Only a checkout
-# with no uncommitted change to a tracked file has a commit to name.
+# Tell update_from_git.sh that the router already runs the deploy branch's
+# commit, so it does not fetch and promote the same files again. That is true
+# only of a checkout at that commit with no uncommitted change to a tracked
+# file. Any other sync leaves the record alone: CI moves the branch to a commit
+# minutes after the push, and naming a commit the branch has not reached would
+# make the updater put the branch's older one back.
+DEPLOY_REF="origin/${DEPLOY_BRANCH:-deploy}"
 if DEPLOYED_COMMIT="$(git -C "$DIR" rev-parse HEAD 2>/dev/null)" &&
     [ -z "$(git -C "$DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-    run_ssh "$REMOTE" "printf '%s\n' '$DEPLOYED_COMMIT' > '$REMOTE_DIR/.deployed_commit'"
-    echo "Recorded $DEPLOYED_COMMIT as the deployed commit."
+    if [ "$DEPLOYED_COMMIT" = "$(git -C "$DIR" rev-parse --verify --quiet "$DEPLOY_REF^{commit}" 2>/dev/null)" ]; then
+        run_ssh "$REMOTE" "printf '%s\n' '$DEPLOYED_COMMIT' > '$REMOTE_DIR/.deployed_commit'"
+        echo "Recorded $DEPLOYED_COMMIT as the deployed commit."
+    else
+        echo "NOTE: this checkout is not at $DEPLOY_REF (as of the last git fetch);"
+        echo "      the router's record of its deployed commit is left as it is."
+    fi
 fi
 
 echo "Router sync complete."
