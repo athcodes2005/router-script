@@ -111,9 +111,9 @@ the two log lines every healthy tick wrote to flash (see [[../log]]).
 
 Open, and why:
 
-- The Git updater does nothing until `GITHUB_REPO` is set in the router's
-  `.env`, with a token to avoid GitHub's anonymous rate limit. Turning it on
-  makes a push to the deploy branch a deployment, which is the owner's call.
+- The Git updater is on since 2026-11-13 and needs no token
+  ([[../operations/deployment]]). A commit that changes a deployed file
+  therefore restarts WARP within 15 minutes of passing CI on `main`.
 - The maintenance lock directory stays on flash (four small metadata writes a
   tick). In `/tmp` it would fail together with a full `/tmp`, the state in which
   the health check is needed most ([[tmp-exhaustion-2026-08-01]]).

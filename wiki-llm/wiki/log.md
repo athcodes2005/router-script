@@ -1284,3 +1284,30 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../defaults.sh`, `../../fetch_usque_rs.sh`
 - [[systems/warp-client]], [[bugs/known-issues]]
+
+## 2026-11-13 — Git updater on, without the API or a token (`d7cea97`)
+
+- Why: anonymous GitHub API calls from the router were refused (HTTP 403, 0 of
+  60 left on its shared address), so the updater could only have run with a
+  token in the router's `.env`. The owner chose to remove the token instead.
+- `update_from_git.sh` reads the deploy head from the Git ref listing and the
+  files from the commit's archive on `github.com`; it no longer reads
+  `GITHUB_TOKEN` or `GITHUB_API_URL`, and the repository has to be public
+  ([[operations/deployment]]).
+- The CI check moved from the router to GitHub: the new `promote` job in
+  `ci.yml` fast-forwards `deploy` after the tests of a push to `main`. Its first
+  run moved `deploy` from `173242b` to `d7cea97`, a commit that itself changes
+  `ci.yml`.
+- `sync_to_router.sh` records the deployed commit only for a clean checkout at
+  `origin/deploy`.
+- Rollout: `GITHUB_REPO` added to `.env`; 20:26 IST `sync_to_router.sh --force`
+  promoted `.env` and `update_from_git.sh` (one WARP restart) and left the
+  record at `173242b`. 20:28: the router's updater saw the new head, found every
+  file already installed, kept the tunnel running, passed its gate and recorded
+  `d7cea97`. Trace `warp=on`.
+- 263 tests pass. The local `deploy` branch is no longer pushed by hand.
+
+## Sources
+
+- `../../update_from_git.sh`, `../../sync_to_router.sh`, `../../.github/workflows/ci.yml`
+- [[operations/deployment]], [[bugs/known-issues]]
