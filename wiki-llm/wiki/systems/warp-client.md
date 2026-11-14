@@ -9,7 +9,7 @@ compiled static `aarch64-unknown-linux-musl` release binary (`usque-rs`) via
 ## Binary delivery (`fetch_usque_rs.sh`)
 
 - `defaults.sh` sets `USQUE_REPO=athcodes2005/usque-rs-openwrt`,
-  `USQUE_RELEASE_TAG=v0.2.5` (pinned: a new release reaches the router only
+  `USQUE_RELEASE_TAG=v0.3.0` (pinned: a new release reaches the router only
   after the tag is bumped in a commit; `latest` still works when set in `.env`), and
   `USQUE_ASSET_NAME=usque-rs-aarch64-linux-musl.tar.gz`.
 - The pinned tag is held to `USQUE_PINNED_SHA256`, the sha256 of its archive: a
@@ -42,7 +42,8 @@ so older rollback binaries remain compatible:
   `ensure_network.sh` also enforce `mtu 1320` on `tun0` and bidirectional TCP
   MSS clamping at `1280` IPv4 / `1260` IPv6).
 - `--congestion-control <cubic|bbr|bbr2|reno>` (from `WARP_CC` in `.env`, `bbr2`
-  in production).
+  in production). Since v0.3.0 (quiche 0.30) `bbr` and `bbr2` select the same
+  BBR2, and `cubic` and `reno` are not paced.
 - `--ready-file <PATH>` (`WARP_READY_FILE`): `tunnel.sh` waits up to 25 s for
   this PID marker before installing public default routes.
 - `--syslog`: logs session lifecycle and disconnect reasons to `logread -e usque-rs`.
@@ -64,6 +65,14 @@ starved `on_timeout()` while the tunnel was busy), and the handshake and
 CONNECT-wait loops are floored and end at their deadline. One interleaved load
 test against v0.2.2 showed no regression. Details are in usque-rs-openwrt's
 `wiki-llm/wiki/bugs/quic-timer-floor.md`.
+
+## `v0.3.0` dependency upgrades (deployed 2026-11-14)
+
+Every crate that was a major version behind is current, quiche 0.30 among
+them. quiche 0.30's BBR2 pacer starved the client's upload when its timer woke
+late (2.5 Mbit/s in the first router test); the client now sends up to 3 ms
+ahead of the pacing schedule (usque-rs-openwrt wiki,
+`bugs/bbr2-pacer-oversleep.md`). The aarch64 binary is 7.4 MB (6.0 before).
 
 ## `v0.2.5` syslog tag (deployed 2026-11-12)
 
