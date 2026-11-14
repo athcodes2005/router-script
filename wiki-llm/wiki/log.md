@@ -1330,3 +1330,28 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../configure_dns.sh`, `../../tests/test_dns_robustness.py`
 - [[systems/dns]], [[bugs/known-issues]]
+
+## 2026-11-14 — usque-rs v0.3.0 deployed (`cba01bc`)
+
+- The owner tagged v0.3.0 (major dependency upgrades, quiche 0.30 and the
+  pacing fix); all six targets built. Pinned by tag and archive hash
+  (`2f87783e…`, checked on the Mac first; binary `93c54cbc…`).
+- 11:07 IST: the Git updater promoted the pin by itself, without a manual sync;
+  `fetch_usque_rs.sh` (run by hand to skip the wait) installed v0.3.0, kept
+  v0.2.5 as `usque-rs.prev` and passed its gate. Trace `warp=on` on IPv4 and
+  IPv6.
+- Two interleaved load-test rounds (`measure_load_latency.sh 12`), v0.2.5
+  against v0.3.0: upload 117.6 and 14.5 Mbit/s against 147.5 and 149.2,
+  download 118.3 and 150.0 against 131.0 and 111.0; latency under upload
+  28 and 35 ms against 32 and 34, under download 34 and 36 against 19 and 23.
+  No regression; v0.3.0 held its upload rate in both rounds.
+- The test script ended with v0.2.5 in place while `.usque_release_sha` named
+  v0.3.0, which the fetcher would have taken as installed. Removing the record
+  and running the fetcher again put v0.3.0 back (11:14).
+- WARP restarted for the promotion, the install, six test swaps and the
+  reinstall.
+
+## Sources
+
+- `../../defaults.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
+- [[systems/warp-client]]
