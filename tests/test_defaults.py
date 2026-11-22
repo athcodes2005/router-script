@@ -26,8 +26,12 @@ EXPECTED = {
     'DNS_SERVERS': '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11',
     'DNS_CACHE_SIZE': '4000',
     'DIRECT_PUBLIC_DOMAINS': 'api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io '
-                             'gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com '
-                             'o315582.ingest.sentry.io clashroyale.com www.clashroyale.com',
+                             'game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com '
+                             'o315582.ingest.sentry.io clashroyale.com www.clashroyale.com pan.utiitsl.com '
+                             'www.pan.utiitsl.com utiitsl.com www.utiitsl.com trackpan.utiitsl.com '
+                             'www.trackpan.utiitsl.com psaonline.utiitsl.com www.psaonline.utiitsl.com '
+                             'pbv.utiitsl.com www.pbv.utiitsl.com',
+    'GOOGLE_WAN_POLICY': '0',
     'BLINKIT_IPV4_DOMAINS': 'api3.blinkit.com jumbo.blinkit.com api2.grofers.com',
     'BLINKIT_HOSTS_DIR': '/etc/router-script/blinkit-hosts', 'DNSMASQ_PID_DIR': '/var/run',
     'CAMPUS_ROUTES_FILE': '/tmp/router-script-campus-host-routes',
@@ -40,10 +44,10 @@ EXPECTED = {
     'WARP_CLIENT_TABLE': '100',
     'USQUE_REPO': 'athcodes2005/usque-rs-openwrt', 'USQUE_RELEASE_TAG': 'v0.3.0',
     'USQUE_ASSET_NAME': 'usque-rs-aarch64-linux-musl.tar.gz',
-    'INTERNET_PROBE_URLS': 'https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204',
+    'INTERNET_PROBE_URLS': 'https://cp.cloudflare.com/generate_204 https://www.google.com/generate_204',
     'INTERACTIVE_LOGIN_MARKER': '/tmp/router-script-interactive-login-required',
     'WIFI_COUNTRY': 'IN', 'WIFI_2G_DEVICE': 'mt798111', 'WIFI_5G_DEVICE': 'mt798112',
-    'WIFI_2G_HTMODE': 'HE20', 'WIFI_5G_HTMODE': 'HE80',
+    'WIFI_2G_HTMODE': 'HE20', 'WIFI_5G_HTMODE': 'HE80', 'WIFI_5G_CHANNEL': '149',
     'MAX_DIAGNOSTICS': '24',
 }
 

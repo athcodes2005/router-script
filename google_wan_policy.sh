@@ -9,6 +9,96 @@ GOOGLE_PRIORITY=710
 GOOGLE_MARK=0x100000
 GOOGLE_MASK=0x100000
 STATE_DIR="${GOOGLE_STATE_DIR:-/tmp/router-script-google}"
+
+if [ "$GOOGLE_WAN_POLICY" != "1" ]; then
+    if [ "${1:-}" = configure-dns ]; then
+        for ENTRY in $(uci -q get dhcp.@dnsmasq[0].ipset 2>/dev/null || true); do
+            case "$ENTRY" in */google_dns4,google_dns6) uci del_list "dhcp.@dnsmasq[0].ipset=$ENTRY" ;; esac
+        done
+        exit 0
+    fi
+    if [ "${1:-}" = check-dns ]; then
+        case " $(uci -q get dhcp.@dnsmasq[0].ipset 2>/dev/null | tr '\n' ' ' || true) " in
+            *"/google_dns4,google_dns6 "*) exit 1 ;;
+        esac
+        exit 0
+    fi
+
+    REMOVED=0
+    case "$(iptables -t mangle -S PREROUTING 2>/dev/null || true)" in
+        *google_net4*|*google_dns4*)
+            for SET in google_net4 google_dns4; do
+                while iptables -t mangle -D PREROUTING -i "$LAN_IF" -m set --match-set "$SET" dst -j MARK --set-xmark "$GOOGLE_MARK/$GOOGLE_MASK" 2>/dev/null; do
+                    REMOVED=1
+                done
+            done
+            ;;
+    esac
+    case "$(iptables -t mangle -S OUTPUT 2>/dev/null || true)" in
+        *google_net4*|*google_dns4*)
+            for SET in google_net4 google_dns4; do
+                while iptables -t mangle -D OUTPUT -m set --match-set "$SET" dst -j MARK --set-xmark "$GOOGLE_MARK/$GOOGLE_MASK" 2>/dev/null; do
+                    REMOVED=1
+                done
+            done
+            ;;
+    esac
+    case "$(ip6tables -S FORWARD 2>/dev/null || true)" in
+        *google_net6*|*google_dns6*)
+            for SET in google_net6 google_dns6; do
+                for REJECT in tcp-reset icmp6-port-unreachable icmp6-no-route; do
+                    set -- -i "$LAN_IF"
+                    [ "$REJECT" != tcp-reset ] || set -- "$@" -p tcp
+                    while ip6tables -D FORWARD "$@" -m set --match-set "$SET" dst -j REJECT --reject-with "$REJECT" 2>/dev/null; do
+                        REMOVED=1
+                    done
+                done
+            done
+            ;;
+    esac
+    case "$(ip6tables -S OUTPUT 2>/dev/null || true)" in
+        *google_net6*|*google_dns6*)
+            for SET in google_net6 google_dns6; do
+                for REJECT in tcp-reset icmp6-port-unreachable icmp6-no-route; do
+                    set --
+                    [ "$REJECT" != tcp-reset ] || set -- -p tcp
+                    while ip6tables -D OUTPUT "$@" -m set --match-set "$SET" dst -j REJECT --reject-with "$REJECT" 2>/dev/null; do
+                        REMOVED=1
+                    done
+                done
+            done
+            ;;
+    esac
+    RULES_NOW="$(ip rule show 2>/dev/null || true)"
+    if printf '%s\n' "$RULES_NOW" | grep -Eq "^$GOOGLE_PRIORITY:.*fwmark $GOOGLE_MARK/$GOOGLE_MASK .*lookup $GOOGLE_TABLE"; then
+        while ip rule del priority "$GOOGLE_PRIORITY" fwmark "$GOOGLE_MARK/$GOOGLE_MASK" table "$GOOGLE_TABLE" 2>/dev/null; do
+            REMOVED=1
+        done
+    fi
+    if printf '%s\n' "$RULES_NOW" | grep -Eq "^690:.*oif $TUN_IF .*lookup main"; then
+        while ip rule del priority 690 oif "$TUN_IF" lookup main 2>/dev/null; do
+            REMOVED=1
+        done
+    fi
+    if [ -n "$(ip route show table "$GOOGLE_TABLE" 2>/dev/null || true)" ]; then
+        ip route flush table "$GOOGLE_TABLE" 2>/dev/null || true
+        REMOVED=1
+    fi
+    for SET in google_net4 google_dns4 google_net6 google_dns6; do
+        if ipset list -n "$SET" >/dev/null 2>&1; then
+            ipset destroy "$SET" 2>/dev/null && REMOVED=1 || true
+        fi
+    done
+    if [ -f "$STATE_DIR/ranges.sha" ]; then
+        rm -f "$STATE_DIR/ranges.sha"
+        REMOVED=1
+    fi
+    if [ "$REMOVED" -eq 1 ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Google WAN policy disabled; removed active direct-WAN Google rules."
+    fi
+    exit 0
+fi
+
 mkdir -p "$STATE_DIR"
 
 # DNS configuration mode is called before dnsmasq restarts. It preserves other

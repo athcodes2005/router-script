@@ -27,7 +27,7 @@ DNSPROXY_YAML="${DNSPROXY_YAML:-/etc/dnsproxy/dnsproxy.yaml}"
 DNS_SERVERS="${DNS_SERVERS:-127.0.0.1#5453 8.8.8.8 8.8.4.4 $CAMPUS_DNS_IP}"
 # dnsmasq cache entries; the firmware default of 150 evicts live entries.
 DNS_CACHE_SIZE="${DNS_CACHE_SIZE:-4000}"
-INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://www.google.com/generate_204 https://cp.cloudflare.com/generate_204}"
+INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://cp.cloudflare.com/generate_204 https://www.google.com/generate_204}"
 INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
 
 # Hosts kept off WARP, and the files recording their routes. tunnel.sh, the
@@ -36,7 +36,10 @@ CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac
 # Selected public services that reject WARP/shared-proxy egress. These are
 # intentionally exact hostnames observed from the affected app; broad CDN
 # ranges would accidentally bypass WARP for unrelated sites.
-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io gemini.google.com game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com}"
+DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com pan.utiitsl.com www.pan.utiitsl.com utiitsl.com www.utiitsl.com trackpan.utiitsl.com www.trackpan.utiitsl.com psaonline.utiitsl.com www.psaonline.utiitsl.com pbv.utiitsl.com www.pbv.utiitsl.com}"
+# Google direct-WAN bypass: 0 (default) routes all Google services over WARP
+# (tun0); set 1 in .env to route Google IPv4 over direct campus WAN (eth0).
+GOOGLE_WAN_POLICY="${GOOGLE_WAN_POLICY:-0}"
 BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
 BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
 # OpenWrt's dnsmasq writes its PID file in $DNSMASQ_PID_DIR/dnsmasq/.
@@ -87,6 +90,8 @@ WIFI_2G_DEVICE="${WIFI_2G_DEVICE:-mt798111}"
 WIFI_5G_DEVICE="${WIFI_5G_DEVICE:-mt798112}"
 WIFI_2G_HTMODE="${WIFI_2G_HTMODE:-HE20}"
 WIFI_5G_HTMODE="${WIFI_5G_HTMODE:-HE80}"
+# Non-DFS UNII-3 channel in IN (149-161 at 80 MHz); avoids campus APs on ch 36.
+WIFI_5G_CHANNEL="${WIFI_5G_CHANNEL:-149}"
 
 # Diagnostics
 MAX_DIAGNOSTICS="${MAX_DIAGNOSTICS:-24}"

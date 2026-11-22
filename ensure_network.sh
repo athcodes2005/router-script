@@ -276,6 +276,7 @@ wifi_config_ok() {
     [ "$(uci -q get "wireless.$WIFI_5G_DEVICE.country" 2>/dev/null || echo "")" = "$WIFI_COUNTRY" ] || return 1
     [ "$(uci -q get "wireless.$WIFI_2G_DEVICE.htmode" 2>/dev/null || echo "")" = "$WIFI_2G_HTMODE" ] || return 1
     [ "$(uci -q get "wireless.$WIFI_5G_DEVICE.htmode" 2>/dev/null || echo "")" = "$WIFI_5G_HTMODE" ] || return 1
+    [ "$(uci -q get "wireless.$WIFI_5G_DEVICE.channel" 2>/dev/null || echo "")" = "$WIFI_5G_CHANNEL" ] || return 1
 }
 
 wifi_runtime_ok() {
@@ -1006,7 +1007,7 @@ clear_retry "$WAN_RECOVERY_RETRY_FILE"
 
 check_platform_once
 
-if ! internet_v4_ok && [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
+if [ -f "$INTERACTIVE_LOGIN_MARKER" ] && ! internet_v4_ok; then
     MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || stat -c %Y "$INTERACTIVE_LOGIN_MARKER" 2>/dev/null || echo 0)"
     MARKER_AGE=$(( $(date +%s) - MARKER_TIME ))
     if [ "$MARKER_AGE" -lt "$INTERACTIVE_RETRY_SECONDS" ]; then
@@ -1041,7 +1042,7 @@ fi
 
 rm -f "$INTERACTIVE_LOGIN_MARKER"
 
-if ! internet_v4_ok; then
+if [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && ! internet_v4_ok; then
     log "IPv4 internet is still down after confirmation or login recovery."
     if tunnel_process_ok; then
         log "Stopping tunnel to allow traffic to fall back to direct WAN."
@@ -1056,6 +1057,7 @@ if ! internet_v4_ok; then
         collect_diagnostics_once internet-down
         exit 1
     fi
+    rm -f "$INTERACTIVE_LOGIN_MARKER"
     log "Internet recovered after tunnel teardown."
 fi
 

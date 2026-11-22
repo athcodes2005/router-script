@@ -94,7 +94,7 @@ class PipelineTests(unittest.TestCase):
     def test_google_policy_failure_does_not_block_tunnel_recovery(self):
         self.box.flag('ipset_fail')
         self.box.flag('warp_down')
-        self.tick()
+        self.tick(GOOGLE_WAN_POLICY='1')
         log = self.box.log('ensure')
         self.assertIn('Google WAN policy deferred', log)
         self.assertIn('Tunnel health check failed: process missing. Restarting tunnel.', log)
@@ -377,7 +377,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.tick().returncode, 0)
         seconds, direction, url = self.clock_warning()
         self.assertAlmostEqual(int(seconds), 5477, delta=10)
-        self.assertEqual((direction, url), ('behind', 'https://www.google.com/generate_204'))
+        self.assertEqual((direction, url), ('behind', 'https://cp.cloudflare.com/generate_204'))
         self.assertIn('Health check passed.', self.box.log('ensure'))
 
     def test_clock_ahead_of_the_probe_date_is_reported(self):
@@ -485,6 +485,64 @@ class PipelineTests(unittest.TestCase):
                      'iptables -t mangle -I PREROUTING', 'ip rule del', 'ip rule add'):
             self.assertEqual(self.box.count(call), 0, call)
         self.assertIn('Health check passed.', self.box.log('ensure'))
+
+    # 2026-11-22: a healthy tick must only probe direct WAN once (not 3x),
+    # and never tear down WARP on a single unconfirmed WAN blip.
+    def test_healthy_tick_probes_direct_wan_once(self):
+        self.box.calls_file.write_text('')
+        self.assertEqual(self.tick().returncode, 0)
+        direct_probes = [c for c in self.box.calls()
+                         if c.startswith('curl -4 ') and '--interface eth0' in c and '-D -' not in c]
+        self.assertEqual(len(direct_probes), 1, direct_probes)
+        self.assertIn('https://cp.cloudflare.com/generate_204', direct_probes[0])
+
+    # 2026-11-22: if login.sh writes the interactive-login marker during a
+    # transient blip and direct internet recovers after tunnel teardown,
+    # ensure_network.sh must remove the stale marker so the next tick does not
+    # tear down WARP a second time.
+    def test_recovery_after_tunnel_teardown_clears_stale_interactive_marker(self):
+        marker = self.box.tmp / 'router-script-interactive-login-required'
+        # Make direct WAN fail on the first two probes, then login.sh fails after
+        # teardown (leaving marker), then the post-teardown recheck succeeds.
+        curl_path = self.box.bin / 'curl'
+        orig_curl = curl_path.read_text()
+        counter = self.box.state / 'direct_probe_count'
+        hook = (
+            'if [ "$iface" = eth0 ] && case "$url" in */generate_204) true;; *) false;; esac; then\n'
+            '  n="$(@CAT@ "$SIM_STATE/direct_probe_count" 2>/dev/null || echo 0)"\n'
+            '  n=$((n + 1)); printf "%s\\n" "$n" > "$SIM_STATE/direct_probe_count"\n'
+            '  if [ "$n" -le 6 ]; then code=000; fi\n'
+            'fi\n'
+        ).replace('@CAT@', '/bin/cat')
+        # Inject before `tc=0.021` so curl reports 000 for the first 6 eth0 probes
+        # (2 probes per URL x 3 checks: check1, confirm, post-login recheck),
+        # while login.sh (run before teardown) creates no marker yet; after teardown
+        # login.sh fails and writes marker, then probe #7 succeeds.
+        # Simpler: stub login.sh to succeed only on second call? Actually first
+        # login.sh must NOT write marker (otherwise line 1032 exits early), and
+        # second login.sh (post-teardown) writes the marker!
+        login_sh = self.box.proj / 'login.sh'
+        login_sh.write_text(
+            '#!/bin/sh\n'
+            'cfile="%s"\n'
+            'n="$(cat "$cfile" 2>/dev/null || echo 0)"; n=$((n + 1)); printf "%%s\\n" "$n" > "$cfile"\n'
+            'if [ "$n" -eq 2 ]; then printf "https://internet.iitb.ac.in/login.php\\n" > "%s"; exit 2; fi\n'
+            'exit 0\n' % (self.box.state / 'login_calls', marker)
+        )
+        login_sh.chmod(0o755)
+        curl_path.write_text(orig_curl.replace('tc=0.021;', hook + 'tc=0.021;'))
+        result = self.tick()
+        self.assertEqual(result.returncode, 0, self.box.log('ensure'))
+        log = self.box.log('ensure')
+        self.assertIn('Internet recovered after tunnel teardown.', log)
+        self.assertFalse(marker.exists(), 'stale interactive-login marker was left behind')
+
+    def test_wifi_5g_channel_drift_is_repaired(self):
+        self.box.flag('wifi_channel_drift')
+        self.assertEqual(self.tick().returncode, 0)
+        log = self.box.log('ensure')
+        self.assertIn('Wi-Fi stability configuration drift detected. Reapplying configure_wifi.sh.', log)
+        self.assertEqual(self.box.count('uci set wireless.mt798112.channel=149'), 1)
 
 
 if __name__ == '__main__':

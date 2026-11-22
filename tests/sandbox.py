@@ -69,7 +69,7 @@ esac
 '''
 
 IP = r'''r="$SIM_STATE/ip.rules"
-[ -f "$r" ] || printf '0:\tfrom all lookup local\n690:\tfrom all oif tun0 lookup main\n710:\tfrom all fwmark 0x100000/0x100000 lookup 102\n32766:\tfrom all lookup main\n' > "$r"
+[ -f "$r" ] || printf '0:\tfrom all lookup local\n32766:\tfrom all lookup main\n' > "$r"
 rule_line() {
   prio=; oif=; mark=; tab=
   while [ $# -gt 0 ]; do
@@ -152,9 +152,11 @@ case "$key" in
   'dhcp.@dnsmasq[0].addnhosts') echo "$BLINKIT_HOSTS_DIR" ;;
   'dhcp.@dnsmasq[0].address') echo '/internet.iitb.ac.in/10.201.250.201 /sso.iitb.ac.in/10.200.1.100' ;;
   'dhcp.@dnsmasq[0].ipset')
-    if flag google_ipset_drift; then skip=1; else skip=0; fi
-    @AWK@ -v skip="$skip" 'NF && $0 !~ /^#/ { if (skip && !dropped) { dropped = 1; next }
-      printf "%s/%s/google_dns4,google_dns6", sep, $0; sep = " " } END { print "" }' "$SIM_PROJ/google_domains.txt" ;;
+    if flag google_ipset_present || flag google_ipset_drift; then
+      if flag google_ipset_drift; then skip=1; else skip=0; fi
+      @AWK@ -v skip="$skip" 'NF && $0 !~ /^#/ { if (skip && !dropped) { dropped = 1; next }
+        printf "%s/%s/google_dns4,google_dns6", sep, $0; sep = " " } END { print "" }' "$SIM_PROJ/google_domains.txt"
+    fi ;;
   'dhcp.lan.ra'|'dhcp.lan.dhcpv6') echo server ;;
   'dhcp.lan.ra_slaac') echo 1 ;;
   'dhcp.lan.ra_default') if flag lan_ra_default_drift; then echo 0; else echo 2; fi ;;
@@ -167,7 +169,8 @@ case "$key" in
   wireless.*.country) echo IN ;;
   wireless.mt798111.htmode) echo HE20 ;;
   wireless.mt798112.htmode) if flag wifi_drift; then echo HE160; else echo HE80; fi ;;
-  wireless.*.channel) echo auto ;;
+  wireless.mt798111.channel) echo auto ;;
+  wireless.mt798112.channel) if flag wifi_channel_drift; then echo auto; else echo 149; fi ;;
   *) exit 1 ;;
 esac
 '''
@@ -264,7 +267,14 @@ elif [ "${1:-}" = lan ] && ! flag lan_ipv6_disabled; then @RM@ -f "$SIM_STATE/la
     'sysctl': r'''case "$*" in
   *.all.disable_ipv6=0*|*.br-lan.disable_ipv6=0*) @RM@ -f "$SIM_STATE/lan_ipv6_disabled" ;;
 esac''',
-    'ipset': 'flag ipset_fail && exit 1; :',
+    'ipset': r'''flag ipset_fail && exit 1
+s="$SIM_STATE/ipsets"; [ -f "$s" ] || : > "$s"
+case "${1:-}" in
+  create) @GREP@ -Fqx -- "$2" "$s" || printf '%s\n' "$2" >> "$s" ;;
+  destroy) @GREP@ -Fqx -- "$2" "$s" || exit 1
+    @AWK@ -v k="$2" '$0 != k' "$s" > "$s.tmp" && @MV@ "$s.tmp" "$s" ;;
+  list) [ "${2:-}" = -n ] && [ -n "${3:-}" ] && { @GREP@ -Fqx -- "$3" "$s" || exit 1; echo "$3"; } ;;
+esac''',
     'iptables': IPTABLES,
     'ip6tables': IPTABLES,
     'ip': IP,

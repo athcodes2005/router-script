@@ -24,8 +24,8 @@ class TunnelStartTests(unittest.TestCase):
         self.public = self.box.tmp / 'router-script-direct-public-host-routes'
         self.campus = self.box.tmp / 'router-script-campus-host-routes'
 
-    def start(self):
-        result = self.box.run('tunnel.sh')
+    def start(self, **env):
+        result = self.box.run('tunnel.sh', **env)
         return result.returncode, self.box.log('tunnel')
 
     def test_reused_client_start_completes(self):
@@ -58,7 +58,7 @@ class TunnelStartTests(unittest.TestCase):
         rules = self.box.state / 'ip6tables.rules'
         accept = 'filter FORWARD -i br-lan -o tun0 -j ACCEPT'
         rules.write_text(''.join(line + '\n' for line in rules.read_text().splitlines() if line != accept))
-        status, log = self.start()
+        status, log = self.start(GOOGLE_WAN_POLICY='1')
         self.assertEqual(status, 0, log)
         forward = [line for line in rules.read_text().splitlines() if line.startswith('filter FORWARD ')]
         google = [i for i, line in enumerate(forward) if '--match-set google_' in line]

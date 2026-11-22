@@ -49,6 +49,7 @@ set_option "$WIFI_2G_DEVICE" country "$WIFI_COUNTRY"
 set_option "$WIFI_5G_DEVICE" country "$WIFI_COUNTRY"
 set_option "$WIFI_2G_DEVICE" htmode "$WIFI_2G_HTMODE"
 set_option "$WIFI_5G_DEVICE" htmode "$WIFI_5G_HTMODE"
+set_option "$WIFI_5G_DEVICE" channel "$WIFI_5G_CHANNEL"
 
 if [ "$CHANGED" -eq 0 ]; then
     log "Wi-Fi stability profile already active."
@@ -56,7 +57,7 @@ if [ "$CHANGED" -eq 0 ]; then
 fi
 
 uci commit wireless
-log "Applied Wi-Fi profile: country=$WIFI_COUNTRY, 2.4GHz=$WIFI_2G_HTMODE, 5GHz=$WIFI_5G_HTMODE."
+log "Applied Wi-Fi profile: country=$WIFI_COUNTRY, 2.4GHz=$WIFI_2G_HTMODE, 5GHz=$WIFI_5G_HTMODE (ch $WIFI_5G_CHANNEL)."
 
 if [ "$WIFI_APPLY" -eq 1 ] 2>/dev/null; then
     log "Reloading Wi-Fi to activate the profile."
