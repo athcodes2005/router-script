@@ -13,8 +13,8 @@
 ## Public IPv6 from a Wi-Fi client
 
 1. odhcpd supplies the client a ULA address and advertised default.
-2. Google IPv6 is rejected for IPv4 fallback; otherwise the default is `tun0`.
-   The router's own IPv6 traffic to Google is not rejected: it uses `tun0`.
+2. The default is `tun0` (including Google; LAN Google IPv6 is rejected only
+   when `GOOGLE_WAN_POLICY=1` is enabled in `.env`).
 3. Forwarding, MSS clamping, and IPv6 masquerade are applied.
 4. WARP supplies public IPv6 egress and carries replies back to the LAN.
 

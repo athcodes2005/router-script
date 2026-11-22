@@ -12,9 +12,9 @@ The lowest priority number is evaluated first.
 |---|---|---|---|
 | 0 | kernel | `lookup local` | Local addresses |
 | 1 | GL.iNet | `iif lo lookup 16800` | Router-originated traffic (table 16800 is empty/absent on 4.11.0) |
-| 690 | ours | `oif tun0 lookup main` | Sockets bound to `tun0` (health probes) keep testing WARP |
+| 690 | ours | `oif tun0 lookup main` | Opt-in (`GOOGLE_WAN_POLICY=1`): sockets bound to `tun0` keep testing WARP |
 | 700 | ours | `fwmark 0x40000/0xf0000 lookup 101` | Game sessions (port 9339) use the WAN |
-| 710 | ours | `fwmark 0x100000/0x100000 lookup 102` | Google IPv4 uses the WAN |
+| 710 | ours | `fwmark 0x100000/0x100000 lookup 102` | Opt-in (`GOOGLE_WAN_POLICY=1`): Google IPv4 uses the WAN |
 | 800 | GL.iNet | `lookup 9910 suppress_prefixlength 0` | Pre-4.11.0 only (gone on 4.11.0) |
 | 1099 | GL.iNet | `fwmark 0x80000/0xc0000 lookup main` | Active on 4.11.0 |
 | 1101 | GL.iNet | `not fwmark 0x8000/0xc000 lookup 8000` | Active on 4.11.0 |

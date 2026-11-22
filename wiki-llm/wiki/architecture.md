@@ -1,8 +1,9 @@
 # Active architecture
 
-The router uses WARP defaults with direct WAN exceptions for campus services,
-selected apps and game sessions, and Google services. Google routing and IPv6
-fallback are described in [[systems/google-wan]].
+The router uses WARP defaults (including Google services) with direct WAN
+exceptions for campus services and selected apps/game sessions. The opt-in
+Google direct-WAN policy (disabled by default since 2026-11-22) is described in
+[[systems/google-wan]].
 
 ## Components
 

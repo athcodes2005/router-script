@@ -14,7 +14,7 @@ the active topology. This index lists every maintained wiki page.
 
 - [[systems/script-map]] — responsibilities of every top-level project file.
 - [[systems/warp-client]] — how the external `usque-rs` MASQUE binary is delivered (`fetch_usque_rs.sh`) and driven by `tunnel.sh` (CLI flags, MTU/MSS, release optimizations).
-- [[systems/google-wan]] — Google/YouTube direct IITB routing and IPv6 fallback.
+- [[systems/google-wan]] — opt-in Google/YouTube direct IITB routing (disabled by default since 2026-11-22).
 - [[systems/dns]] — resolver chain and campus-domain forwarding.
 - [[systems/campus-wan]] — Hostel 01 addressing, gateway, DNS, and campus hops.
 - [[systems/policy-routing]] — rule priorities and mark bits, ours and GL.iNet's.
@@ -56,6 +56,7 @@ the active topology. This index lists every maintained wiki page.
 - [[bugs/game-latency-audit-2026-09-19]] — intermittent game latency, recovery hardening, validation and remaining limits.
 - [[bugs/opencode-pqc-mss-clamping-2026-10-08]] — OpenCode Post-Quantum TLS failure resolved via bidirectional MSS clamping.
 - [[bugs/full-review-2026-10-20]] — October 2026 full review (F01–F52), firmware 4.11.0 audit, and Git CD pipeline.
+- [[bugs/iitb-middlebox-google-resets-2026-11-22]] — IITB border TCP proxy `:32`–`:33` Google resets, `ensure_network.sh` teardown bugs, and 5 GHz channel 149 pin.
 - [[bugs/known-issues]] — limitations and remaining operational risks.
 - [[security/secrets-and-trust]] — credentials, file modes, and endpoint trust.
 - [[policies/architecture-decisions]] — current design decisions and rationale.

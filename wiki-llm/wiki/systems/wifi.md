@@ -17,10 +17,11 @@ the tunnel data plane.
 ## Stability policy
 
 - Regulatory country is `IN` on both radios.
-- 2.4 GHz uses `HE20` to reduce overlap in dense spectrum.
-- 5 GHz uses `HE80` instead of 160 MHz.
-- Channel selection remains automatic because the vendor scan interface does
-  not provide reliable survey results on this firmware.
+- 2.4 GHz uses `HE20` (`channel=auto`) to reduce overlap in dense spectrum.
+- 5 GHz uses `HE80` pinned to `WIFI_5G_CHANNEL=149` (non-DFS UNII-3 149–161 in
+  `IN`), avoiding co-channel overlap with neighboring campus APs on channel 36
+  (which previously put `channel=auto` on channel 48 inside the 36–48 block and
+  caused 12–36 ms local ping spikes).
 
 An 80 MHz 5 GHz channel retains substantially more PHY capacity than the WAN
 requires, while reducing interference exposure and compatibility edge cases.

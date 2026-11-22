@@ -1355,3 +1355,35 @@ Append new entries at the end. Preserve older entries as historical evidence.
 
 - `../../defaults.sh`, `../../fetch_usque_rs.sh`, `../../measure_load_latency.sh`
 - [[systems/warp-client]]
+
+## 2026-11-22 — Disable Google direct-WAN bypass, fix WAN recovery bugs, pin 5 GHz ch 149
+
+- Diagnosed recurring Antigravity/Google `EOF` and `connection reset by peer`
+  errors plus intermittent sluggishness. Live `tcpdump` on `eth0` proved IITB's
+  border transparent TCP middlebox (`TTL = 59`, behind `10.201.23.1`) split TCP
+  443 handshakes in 0.5–2 ms, stalled TLS, and injected `FIN`/`RST` across
+  direct Google flows every minute at `:32`–`:33`, while `tun0` (WARP) passed
+  100% (`75–120 ms`).
+- Defaulted `GOOGLE_WAN_POLICY=0` in `defaults.sh`, added automatic idempotent
+  teardown in `google_wan_policy.sh` (mangle rules, `ip6tables` rejects, ip
+  rules 690/710, table 102, ipsets, dnsmasq UCI entries), and removed
+  `gemini.google.com` from `DIRECT_PUBLIC_DOMAINS`.
+- Fixed `ensure_network.sh` probing `internet_v4_ok` three times per healthy
+  tick (reordering `[ -f "$INTERACTIVE_LOGIN_MARKER" ]` before the probe and
+  gating the tunnel-teardown recheck on `PORTAL_RECOVERY_ATTEMPTED=1` so a
+  single unconfirmed WAN blip cannot kill WARP), and cleared
+  `$INTERACTIVE_LOGIN_MARKER` upon post-teardown recovery.
+- Reordered `INTERNET_PROBE_URLS` to probe `https://cp.cloudflare.com/generate_204`
+  before Google so healthy ticks avoid stalling on IITB's Google path.
+- Pinned 5 GHz (`mt798112`) to `WIFI_5G_CHANNEL=149` (non-DFS UNII-3 in `IN`,
+  zero neighboring APs vs 4 campus SSIDs on ch 36); local ping to `192.168.8.1`
+  improved from `7.2 ms avg / 35.9 ms max` to `3.4 ms avg / 5.4 ms max`.
+- Deployed via `sync_to_router.sh`; verified zero leftover Google WAN rules,
+  active Google/Antigravity flows NAT'd via `172.16.0.2` (`tun0`), and 5 GHz
+  active on channel 149 HE80.
+
+## Sources
+
+- `../../defaults.sh`, `../../google_wan_policy.sh`, `../../ensure_network.sh`, `../../configure_wifi.sh`
+- `../../tests/test_defaults.py`, `../../tests/test_google_policy.py`, `../../tests/test_pipeline.py`, `../../tests/test_tunnel_start.py`
+- [[systems/google-wan]], [[systems/wifi]], [[bugs/iitb-middlebox-google-resets-2026-11-22]]

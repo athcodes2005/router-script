@@ -1,6 +1,20 @@
 # Google services through IITB WAN
 
-## Active policy
+## Status (disabled by default since 2026-11-22)
+
+`GOOGLE_WAN_POLICY` now defaults to `0` in `defaults.sh`, routing all Google
+services (IPv4 and IPv6) through WARP (`tun0`) and removing `gemini.google.com`
+from `DIRECT_PUBLIC_DOMAINS`. On 2026-11-22, IITB's border transparent TCP
+middlebox (`TTL = 59`, behind hop 6) began stalling TLS handshakes and resetting
+active direct-WAN TCP 443 flows to Google endpoints every minute at `:32`–`:33`,
+while WARP (`tun0` over UDP/QUIC) passed 100%.
+
+When `GOOGLE_WAN_POLICY=0`, `google_wan_policy.sh` idempotently tears down any
+active mangle marks, `ip6tables` rejects, `ip rule` 690/710, table 102 routes,
+`google_*` ipsets, and dnsmasq Google ipset entries. Set `GOOGLE_WAN_POLICY=1`
+in `.env` to re-enable the direct-WAN bypass described below.
+
+## Opt-in policy (`GOOGLE_WAN_POLICY=1`)
 
 Deployed and verified on 2026-09-23 at the user's request after YouTube's bot
 challenge. Google service IPv4 destinations use IITB WAN instead of WARP.

@@ -40,8 +40,10 @@ in the future after a clock reset).
    both radio sections, a WAN metric above WARP's 5 (outside game mode) and the
    fw3 include. It logs "Platform check passed." or one WARNING, and changes
    nothing.
-9. Verify direct-WAN IPv4 and run portal login recovery when needed
-   ([[portal-login]]).
+9. Verify direct-WAN IPv4 (probing `cp.cloudflare.com` before Google) once on
+   healthy ticks, confirm failures before portal login recovery
+   ([[portal-login]]), tear down WARP only after confirmed recovery fails, and
+   clear any stale interactive-login marker upon post-teardown recovery.
 10. Every 10 minutes of uptime, compare the clock with the `Date` header of a
     direct probe, and log a WARNING when they differ by more than 120 s
     (`CLOCK_CHECK_INTERVAL`, `CLOCK_SKEW_WARN_SECONDS`). This catches a time
