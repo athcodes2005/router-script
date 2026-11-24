@@ -1419,6 +1419,12 @@ Append new entries at the end. Preserve older entries as historical evidence.
   added a 5-attempt registration retry loop in `tunnel.sh`. Rotated the router's
   WARP identity, synced `config.json` back, and verified `duckduckgo.com` (5/5
   probes in `97–128 ms`).
+- Added `campus.placements.iitb.ac.in` to `CAMPUS_DOMAINS` in `defaults.sh` after
+  diagnosing TLS resets (`OpenSSL SSL_connect: Connection reset by peer`) when
+  public DNS resolved it to IITB's external border VIP `103.21.124.10` instead of
+  the internal campus DNS answer `10.195.150.228` (`HTTP/1.1 200 OK`,
+  `<title>Placements, IIT Bombay</title>`). Applied `configure_dns.sh` live
+  without restarting WARP.
 
 ## Sources
 

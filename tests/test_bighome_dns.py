@@ -13,6 +13,8 @@ class BighomeDnsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('uci add_list dhcp.@dnsmasq[0].server=/bighome.iitb.ac.in/10.200.1.11',
                       self.box.calls())
+        self.assertIn('uci add_list dhcp.@dnsmasq[0].server=/campus.placements.iitb.ac.in/10.200.1.11',
+                      self.box.calls())
 
     def test_router_missing_bighome_entry_is_dns_drift(self):
         self.box.flag('dns_drift_bighome')
