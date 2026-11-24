@@ -41,10 +41,16 @@ in the future after a clock reset).
    fw3 include. It logs "Platform check passed." or one WARNING, and changes
    nothing.
 9. Verify direct-WAN IPv4 (probing `cp.cloudflare.com` before Google) once on
-   healthy ticks, confirm failures before portal login recovery
-   ([[portal-login]]), tear down WARP only after confirmed recovery fails, and
-   clear any stale interactive-login marker upon post-teardown recovery.
-10. Every 10 minutes of uptime, compare the clock with the `Date` header of a
+   healthy ticks. When direct `eth0` probes stall outside game mode, check
+   `tunnel_healthy` first: because IITB blocks external UDP 443 when the captive
+   portal is unauthenticated, a healthy `tun0` proves the portal session is
+   active, so `ensure_network.sh` skips `login.sh` (which would otherwise follow
+   `login.php -> logout.php` and cause an ~18 s full-LAN blackout) and reuses
+   that tunnel health check. Only when both direct `eth0` and `tun0` fail (or in
+   game mode) does it confirm direct failure, run `login.sh`
+   ([[portal-login]]), tear down WARP if both paths remain down after recovery,
+   and clear any stale interactive-login marker upon post-teardown recovery.
+10. Every 10 minutes of uptime (on ticks where direct `eth0` answered), compare the clock with the `Date` header of a
     direct probe, and log a WARNING when they differ by more than 120 s
     (`CLOCK_CHECK_INTERVAL`, `CLOCK_SKEW_WARN_SECONDS`). This catches a time
     client that has stopped correcting the clock, which step 1 misses: after a

@@ -1387,3 +1387,41 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../defaults.sh`, `../../google_wan_policy.sh`, `../../ensure_network.sh`, `../../configure_wifi.sh`
 - `../../tests/test_defaults.py`, `../../tests/test_google_policy.py`, `../../tests/test_pipeline.py`, `../../tests/test_tunnel_start.py`
 - [[systems/google-wan]], [[systems/wifi]], [[bugs/iitb-middlebox-google-resets-2026-11-22]]
+
+## 2026-11-24 — Prevent false portal logouts while WARP is healthy, remove Blinkit bypass, rotate WARP IP
+
+- Diagnosed intermittent 10–30 s website stalls (`duckduckgo.com` and general
+  browsing) across three causes:
+  1. IITB's direct `eth0` TCP 443 proxy timed out ~750 times (single failure) and
+     29+ times (double failure) on 2026-11-23 while `tun0` (WARP over UDP/QUIC)
+     remained 100% healthy (`110–133 ms`). Each double `eth0` failure triggered
+     `login.sh`, which followed `login.php -> logout.php` and sent `POST /logout.php`,
+     causing a self-inflicted 15–18 s full-LAN portal blackout.
+  2. `refresh_blinkit_dns.sh` sent `SIGHUP` to `dnsmasq` 107 times on 2026-11-23,
+     repeatedly flushing its 4,000-entry DNS cache.
+  3. The previous shared Cloudflare WARP registration intermittently experienced
+     15–35 s TCP SYN timeouts to `20.204.244.192` (`duckduckgo.com`).
+- Updated `ensure_network.sh` so that when `internet_v4_ok` fails on `eth0`
+  outside game mode, it checks `tunnel_healthy` first: if `tun0` is up and passing
+  traffic (proving the IITB captive portal session is active), it skips
+  `login.sh` and tunnel teardown and reuses that `tunnel_healthy` result.
+  Overnight verification on the router showed 120/120 quiet health checks per
+  hour (`08:53`, `09:53`) with zero false portal logouts.
+- Removed `refresh_blinkit_dns.sh`, `tests/test_blinkit_dns.py`,
+  `BLINKIT_IPV4_DOMAINS`, `BLINKIT_HOSTS_DIR`, `DNSMASQ_PID_DIR`, and the four
+  Blinkit/Grofers/Sentry domains from `DIRECT_PUBLIC_DOMAINS`. Updated
+  `configure_dns.sh` and `ensure_network.sh` (`dns_config_ok`) so legacy
+  `server=/domain/` and `/etc/router-script/blinkit-hosts` UCI entries are
+  detected as drift and removed automatically.
+- Hardened `rotate_tunnel_ip.sh` to pre-register the new WARP identity over the
+  active `tun0` tunnel before stopping `tun0` (avoiding `Connection reset by peer`
+  from IITB's direct `eth0` TCP 443 proxy to `api.cloudflareclient.com`), and
+  added a 5-attempt registration retry loop in `tunnel.sh`. Rotated the router's
+  WARP identity, synced `config.json` back, and verified `duckduckgo.com` (5/5
+  probes in `97–128 ms`).
+
+## Sources
+
+- `../../ensure_network.sh`, `../../configure_dns.sh`, `../../defaults.sh`, `../../tunnel.sh`, `../../rotate_tunnel_ip.sh`
+- `../../tests/sandbox.py`, `../../tests/test_defaults.py`, `../../tests/test_platform.py`, `../../tests/test_pipeline.py`
+- [[systems/dns]], [[systems/host-routes]], [[operations/health-recovery]], [[operations/warp-rotation]]

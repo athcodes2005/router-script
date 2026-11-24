@@ -7,10 +7,15 @@ with the health-check maintenance lock.
 ## Transaction
 
 1. Wait up to thirty seconds to acquire the maintenance lock.
-2. Copy the existing `config.json` to `config.json.previous` with mode `0600`.
-3. Stop the active tunnel and remove the current config.
-4. Run `tunnel.sh`, which registers noninteractively using the explicit config
-   path and installs full-tunnel state.
+2. When `usque-rs` is already running, pre-register the new identity to a
+   temporary file while `tun0` is still active so the HTTPS POST to
+   `api.cloudflareclient.com` travels over WARP rather than IITB's direct-WAN
+   TCP 443 proxy.
+3. Stop the active tunnel, copy the existing `config.json` to
+   `config.json.previous` with mode `0600`, and promote the pre-registered
+   config (or let `tunnel.sh` register with up to 5 retry attempts if no
+   pre-registered config exists).
+4. Run `tunnel.sh`, which starts the new WARP session and installs full-tunnel state.
 5. Verify the WARP process, then fetch Cloudflare's trace through `tun0` for
    both families (`https://1.1.1.1/cdn-cgi/trace` and its IPv6 literal) and
    require `warp=on` or `warp=plus`. Google probes cannot validate a rotation:

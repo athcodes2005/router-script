@@ -141,7 +141,7 @@ case "$key" in
     if flag dns_firmware_reset; then echo '127.0.0.1#5453'; exit 0; fi
     if flag dns_order_drift; then printf '10.200.1.11 127.0.0.1#5453 8.8.8.8 8.8.4.4'
     else printf '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11'; fi
-    printf ' /api3.blinkit.com/ /jumbo.blinkit.com/ /api2.grofers.com/'
+    flag dns_legacy_blinkit && printf ' /api3.blinkit.com/'
     for d in internet.iitb.ac.in sso.iitb.ac.in cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in bighome.iitb.ac.in; do
       [ "$d" = webmail.iitb.ac.in ] && flag dns_drift && continue
       [ "$d" = bighome.iitb.ac.in ] && flag dns_drift_bighome && continue
@@ -149,7 +149,6 @@ case "$key" in
     done
     flag dns_zone_forward && printf ' /iitb.ac.in/10.200.1.11'
     echo ;;
-  'dhcp.@dnsmasq[0].addnhosts') echo "$BLINKIT_HOSTS_DIR" ;;
   'dhcp.@dnsmasq[0].address') echo '/internet.iitb.ac.in/10.201.250.201 /sso.iitb.ac.in/10.200.1.100' ;;
   'dhcp.@dnsmasq[0].ipset')
     if flag google_ipset_present || flag google_ipset_drift; then
@@ -250,13 +249,6 @@ printf 'Server:\t\t%s\nAddress:\t%s#53\n\nName:      %s\n' "$server" "$server" "
 case "$name" in
   internet.iitb.ac.in) echo 'Address 1: 10.201.250.201' ;;
   sso.iitb.ac.in) echo 'Address 1: 10.200.1.100' ;;
-  api3.blinkit.com|jumbo.blinkit.com|api2.grofers.com)
-    # dnsmasq serves these local zones from the Blinkit hosts file only.
-    if [ "$server" = 127.0.0.1 ]; then
-      @AWK@ -v n="$name" '$2 == n { print "Address " ++i ": " $1 }' "$BLINKIT_HOSTS_DIR/hosts" 2>/dev/null
-    else
-      echo "Address 1: $(@CAT@ "$SIM_STATE/blinkit_upstream" 2>/dev/null || echo 198.51.100.10)"
-    fi ;;
   *) echo 'Address 1: 198.51.100.10'; echo 'Address 2: 2001:db8::10' ;;
 esac''',
     # GL.iNet 4.11.0's /etc/hotplug.d/iface/99-disable_ipv6: while its own IPv6
@@ -309,7 +301,7 @@ class Sandbox:
     def build(cls, base):
         box = cls(base)
         for path in [box.proj, box.bin, box.tmp, box.state, box.sysroot / 'etc/init.d',
-                     box.sysroot / 'etc/dnsproxy', box.sysroot / 'etc/router-script/blinkit-hosts',
+                     box.sysroot / 'etc/dnsproxy',
                      box.sysroot / 'sys/class/net/eth0', box.sysroot / 'var/run',
                      box.tmp / 'router-script-google']:
             path.mkdir(parents=True, exist_ok=True)
@@ -378,7 +370,6 @@ class Sandbox:
             'PATH': str(self.bin), 'HOME': str(self.tmp), 'LC_ALL': 'C',
             'SIM_LOG': str(self.calls_file), 'SIM_STATE': str(self.state), 'SIM_PROJ': str(self.proj),
             'SYSROOT': str(self.sysroot), 'SIMTMP': str(self.tmp),
-            'BLINKIT_HOSTS_DIR': str(self.sysroot / 'etc/router-script/blinkit-hosts'),
             'PERSISTENT_STORAGE_FALLBACK_PERCENT': '101', 'TMP_MAX_USED_PERCENT': '101',
             # Every healthy tick in the log, as tests expect; the hourly summary has its own tests.
             'HEALTHY_LOG_INTERVAL': '0',

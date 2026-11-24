@@ -31,19 +31,15 @@ INTERNET_PROBE_URLS="${INTERNET_PROBE_URLS:-https://cp.cloudflare.com/generate_2
 INTERACTIVE_LOGIN_MARKER="${INTERACTIVE_LOGIN_MARKER:-/tmp/router-script-interactive-login-required}"
 
 # Hosts kept off WARP, and the files recording their routes. tunnel.sh, the
-# health check, the Blinkit refresher and stop_tunnel.sh must all agree.
+# health check and stop_tunnel.sh must all agree.
 CAMPUS_DIRECT_DOMAINS="${CAMPUS_DIRECT_DOMAINS:-www.cc.iitb.ac.in moodle.iitb.ac.in portal.iitb.ac.in mulyankan.cse.iitb.ac.in webmail.iitb.ac.in}"
 # Selected public services that reject WARP/shared-proxy egress. These are
 # intentionally exact hostnames observed from the affected app; broad CDN
 # ranges would accidentally bypass WARP for unrelated sites.
-DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com pan.utiitsl.com www.pan.utiitsl.com utiitsl.com www.utiitsl.com trackpan.utiitsl.com www.trackpan.utiitsl.com psaonline.utiitsl.com www.psaonline.utiitsl.com pbv.utiitsl.com www.pbv.utiitsl.com}"
+DIRECT_PUBLIC_DOMAINS="${DIRECT_PUBLIC_DOMAINS:-game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com o315582.ingest.sentry.io clashroyale.com www.clashroyale.com pan.utiitsl.com www.pan.utiitsl.com utiitsl.com www.utiitsl.com trackpan.utiitsl.com www.trackpan.utiitsl.com psaonline.utiitsl.com www.psaonline.utiitsl.com pbv.utiitsl.com www.pbv.utiitsl.com}"
 # Google direct-WAN bypass: 0 (default) routes all Google services over WARP
 # (tun0); set 1 in .env to route Google IPv4 over direct campus WAN (eth0).
 GOOGLE_WAN_POLICY="${GOOGLE_WAN_POLICY:-0}"
-BLINKIT_IPV4_DOMAINS="${BLINKIT_IPV4_DOMAINS:-api3.blinkit.com jumbo.blinkit.com api2.grofers.com}"
-BLINKIT_HOSTS_DIR="${BLINKIT_HOSTS_DIR:-/etc/router-script/blinkit-hosts}"
-# OpenWrt's dnsmasq writes its PID file in $DNSMASQ_PID_DIR/dnsmasq/.
-DNSMASQ_PID_DIR="${DNSMASQ_PID_DIR:-/var/run}"
 CAMPUS_ROUTES_FILE="${CAMPUS_ROUTES_FILE:-/tmp/router-script-campus-host-routes}"
 DIRECT_PUBLIC_ROUTES_FILE="${DIRECT_PUBLIC_ROUTES_FILE:-/tmp/router-script-direct-public-host-routes}"
 GAME_SESSION_ROUTES_FILE="${GAME_SESSION_ROUTES_FILE:-/tmp/router-script-game-session-host-routes}"

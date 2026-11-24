@@ -1,5 +1,11 @@
 # Blinkit VPN warning: IPv6 and missing legacy API — 2026-09-19
 
+> **Status (2026-11-23):** Historical. `refresh_blinkit_dns.sh`,
+> `tests/test_blinkit_dns.py`, `BLINKIT_IPV4_DOMAINS`, and the Blinkit/Grofers
+> domains in `DIRECT_PUBLIC_DOMAINS` were removed on 2026-11-23 because frequent
+> upstream A-record rotations sent `SIGHUP` to `dnsmasq` (107 times/day) and
+> flushed its 4,000-entry DNS cache.
+
 The iPhone displayed “You're using VPN” in Blinkit on router Wi-Fi. The user
 confirmed no phone VPN and that the warning occurs only on Wi-Fi, not mobile
 data. WARP on the router still affects devices without their own VPN client.

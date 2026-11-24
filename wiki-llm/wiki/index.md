@@ -48,8 +48,8 @@ the active topology. This index lists every maintained wiki page.
 - [[bugs/campus-dns-outage-2026-08-19]] — campus DNS outage blocked captive-portal resolution and room egress.
 - [[bugs/mulyankan-internal-dns-2026-08-20]] — Mulyankan required campus split DNS and router-provided client DNS.
 - [[bugs/bighome-internal-dns-2026-10-26]] — BigHome (internal-only name) needed campus split DNS; fixed and deployed.
-- [[bugs/blinkit-warp-egress-2026-09-10]] — Blinkit endpoints required direct WAN egress instead of shared WARP.
-- [[bugs/blinkit-ipv6-vpn-warning-2026-09-19]] — IPv6 gap and captured legacy API omitted from the Blinkit bypass.
+- [[bugs/blinkit-warp-egress-2026-09-10]] — (historical; removed 2026-11-23) Blinkit endpoints required direct WAN egress instead of shared WARP.
+- [[bugs/blinkit-ipv6-vpn-warning-2026-09-19]] — (historical; removed 2026-11-23) IPv6 gap and captured legacy API omitted from the Blinkit bypass.
 - [[bugs/webmail-split-dns-2026-09-12]] — Webmail required campus split DNS instead of its public address.
 - [[bugs/gemini-warp-egress-2026-09-17]] — Gemini anti-abuse warning required direct IPv4 egress.
 - [[bugs/clash-royale-warp-port-2026-09-22]] — Clash Royale’s game-session port required direct WAN egress.

@@ -81,8 +81,15 @@ chmod +x "$EXECUTABLE"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "[INFO] Config not found. Registering usque-rs..."
-    "$EXECUTABLE" --config "$CONFIG_FILE" register --accept-tos
-    if [ ! -f "$CONFIG_FILE" ]; then
+    for REG_TRY in 1 2 3 4 5; do
+        if "$EXECUTABLE" --config "$CONFIG_FILE" register --accept-tos && [ -s "$CONFIG_FILE" ]; then
+            break
+        fi
+        rm -f "$CONFIG_FILE"
+        echo "[WARNING] Registration attempt $REG_TRY failed; retrying in 2s..."
+        sleep 2
+    done
+    if [ ! -s "$CONFIG_FILE" ]; then
         echo "[ERROR] Failed to register usque-rs."
         exit 1
     fi
@@ -276,10 +283,6 @@ if [ -n "$DEFAULT_GW" ]; then
     # source IP. Resolve those explicit hostnames with campus DNS and keep the
     # resulting IPv4 host routes off WARP.
     add_host_routes "$CAMPUS_DIRECT_DOMAINS" "$CAMPUS_DNS_IP" "$CAMPUS_ROUTES_FILE"
-
-    # Restore/publish the IPv4-only Blinkit answers before resolving local
-    # public exceptions, including after a reboot or a tunnel teardown.
-    sh "$DIR/refresh_blinkit_dns.sh" || echo "[WARNING] Blinkit DNS refresh deferred."
 
     # Selected public app endpoints use direct WAN egress to avoid WARP/shared
     # proxy reputation checks. Resolve through the router resolver every time

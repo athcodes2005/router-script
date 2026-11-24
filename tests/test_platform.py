@@ -66,12 +66,6 @@ class PlatformCheckTests(unittest.TestCase):
         self.assertIn("dnsproxy is not running, so dnsmasq's primary encrypted upstream (127.0.0.1#5453) is dead",
                       self.tick())
 
-    def test_a_dnsmasq_pid_file_the_blinkit_refresher_cannot_find_is_named(self):
-        (self.box.sysroot / 'var/run/dnsmasq/dnsmasq.cfg01411c.pid').unlink()
-        log = self.tick()
-        self.assertIn('dnsmasq has no PID file under ', log)
-        self.assertIn(', so Blinkit record changes cannot reach it', log)
-
     def test_sysupgrade_keep_list_missing_project_is_named(self):
         (self.box.sysroot / 'etc/sysupgrade.conf').write_text('/etc/config/gl_nas/\n')
         log = self.tick()

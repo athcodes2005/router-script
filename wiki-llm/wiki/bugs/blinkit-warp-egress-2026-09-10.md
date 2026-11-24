@@ -1,5 +1,9 @@
 # Blinkit WARP egress failure — 2026-09-10
 
+> **Status (2026-11-23):** Historical. The Blinkit direct-WAN and IPv4-only DNS
+> exception was removed on 2026-11-23 at the owner's request because upstream IP
+> churn triggered frequent `dnsmasq` `SIGHUP` cache flushes.
+
 Blinkit worked on the phone's mobile-data connection but failed or behaved
 incorrectly over the router Wi-Fi path. The router was intentionally sending
 public IPv4 and IPv6 traffic through WARP, so the app inherited a shared WARP

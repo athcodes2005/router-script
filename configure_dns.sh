@@ -106,15 +106,8 @@ for SERVER in $DNS_SERVERS; do
     uci add_list dhcp.@dnsmasq[0].server="$SERVER"
 done
 
-# Exact local zones plus refreshed IPv4 hosts return NOERROR/NODATA for AAAA
-# (dnsmasq 2.85 on older firmware, 2.92 on 4.11.0) without disabling IPv6 for
-# unrelated services.
-sh "$DIR/refresh_blinkit_dns.sh" || log "Blinkit refresh deferred; retaining saved DNS records."
-for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
-    uci add_list dhcp.@dnsmasq[0].server="/$DOMAIN/"
-done
-uci del_list dhcp.@dnsmasq[0].addnhosts="$BLINKIT_HOSTS_DIR" 2>/dev/null || true
-uci add_list dhcp.@dnsmasq[0].addnhosts="$BLINKIT_HOSTS_DIR"
+uci del_list dhcp.@dnsmasq[0].addnhosts="/etc/router-script/blinkit-hosts" 2>/dev/null || true
+rm -rf /etc/router-script/blinkit-hosts 2>/dev/null || true
 
 # strict-order: query servers in the order listed, not all at once
 uci set dhcp.@dnsmasq[0].strictorder='1'

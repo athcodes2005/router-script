@@ -235,16 +235,15 @@ dns_config_ok() {
             for (i = 1; i <= n; i++) if ($i != w[i]) bad = 1
             for (i = 1; i <= NF; i++) {
                 parts = split($i, part, "/")
-                if (parts < 3 || part[parts] != dns) continue
+                if (parts < 3) continue
+                if (part[parts] == "") { bad = 1; continue }
+                if (part[parts] != dns) continue
                 for (j = 2; j < parts; j++) if (index(allowed, " " part[j] " ") == 0) bad = 1
             }
         }
         END { exit bad }' || return 1
 
-    for DOMAIN in $BLINKIT_IPV4_DOMAINS; do
-        printf '%s\n' "$CURRENT_SERVERS" | tr ' ' '\n' | grep -Fxq "/$DOMAIN/" || return 1
-    done
-    uci -q get dhcp.@dnsmasq[0].addnhosts | tr ' ' '\n' | grep -Fxq "$BLINKIT_HOSTS_DIR" || return 1
+    ! uci -q get dhcp.@dnsmasq[0].addnhosts 2>/dev/null | tr ' ' '\n' | grep -Fxq "/etc/router-script/blinkit-hosts" || return 1
 
     # Portal/SSO local pins must survive UCI drift (campus DNS outage path).
     CURRENT_ADDRESSES="$(uci -q get dhcp.@dnsmasq[0].address 2>/dev/null || echo "")"
@@ -697,14 +696,6 @@ check_platform_once() {
     #     PROBLEMS="$PROBLEMS; dnscrypt-proxy is not running, so dnsmasq's last upstream (127.0.0.1#5453) is dead"
     pidof dnsproxy >/dev/null 2>&1 ||
         PROBLEMS="$PROBLEMS; dnsproxy is not running, so dnsmasq's primary encrypted upstream (127.0.0.1#5453) is dead"
-    PID_FOUND=0
-    for PID_FILE in "$DNSMASQ_PID_DIR"/dnsmasq/dnsmasq*.pid "$DNSMASQ_PID_DIR"/dnsmasq*.pid; do
-        [ -f "$PID_FILE" ] || continue
-        PID_FOUND=1
-        break
-    done
-    [ "$PID_FOUND" -eq 1 ] ||
-        PROBLEMS="$PROBLEMS; dnsmasq has no PID file under $DNSMASQ_PID_DIR, so Blinkit record changes cannot reach it"
     grep -Fqx "$DIR/" /etc/sysupgrade.conf 2>/dev/null ||
         PROBLEMS="$PROBLEMS; /etc/sysupgrade.conf does not list $DIR/, so a firmware upgrade will remove it (run bootstrap_router.sh)"
     if [ -n "$PROBLEMS" ]; then
@@ -1022,47 +1013,63 @@ if [ -f "$INTERACTIVE_LOGIN_MARKER" ] && ! internet_v4_ok; then
 fi
 
 PORTAL_RECOVERY_ATTEMPTED=0
+TUNNEL_ALREADY_HEALTHY=0
 if ! internet_v4_ok; then
-    log "IPv4 internet check failed once. Confirming before portal recovery."
-    sleep "$DIRECT_CONFIRM_DELAY"
-    if ! internet_v4_ok; then
-        log "IPv4 internet check failed twice. Running login.sh."
-        PORTAL_RECOVERY_ATTEMPTED=1
-        sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
-    fi
-    if [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
-        log "Interactive IITB SSO login is required; keeping direct WAN fallback active."
-        if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
-            sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+    # IITB's direct-WAN TCP 443 proxy can stall while the captive portal session
+    # and WARP UDP/QUIC tunnel remain active. If tun0 is already passing traffic,
+    # running login.sh would hit logout.php and drop the LAN for ~18 s.
+    if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy; then
+        TUNNEL_ALREADY_HEALTHY=1
+    else
+        log "IPv4 internet check failed once. Confirming before portal recovery."
+        sleep "$DIRECT_CONFIRM_DELAY"
+        if ! internet_v4_ok; then
+            if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy; then
+                TUNNEL_ALREADY_HEALTHY=1
+            else
+                log "IPv4 internet check failed twice. Running login.sh."
+                PORTAL_RECOVERY_ATTEMPTED=1
+                sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
+            fi
         fi
-        exit_untested
+        if [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
+            log "Interactive IITB SSO login is required; keeping direct WAN fallback active."
+            if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
+                sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+            fi
+            exit_untested
+        fi
+        [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && sleep 5
     fi
-    [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && sleep 5
 fi
 
 rm -f "$INTERACTIVE_LOGIN_MARKER"
 
 if [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && ! internet_v4_ok; then
-    log "IPv4 internet is still down after confirmation or login recovery."
-    if tunnel_process_ok; then
-        log "Stopping tunnel to allow traffic to fall back to direct WAN."
-        sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-        sleep 3
-        log "Retrying login after tunnel teardown."
-        sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
-        sleep 5
+    if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy; then
+        TUNNEL_ALREADY_HEALTHY=1
+    else
+        log "IPv4 internet is still down after confirmation or login recovery."
+        if tunnel_process_ok; then
+            log "Stopping tunnel to allow traffic to fall back to direct WAN."
+            sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+            sleep 3
+            log "Retrying login after tunnel teardown."
+            sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
+            sleep 5
+        fi
+        if ! internet_v4_ok; then
+            log "IPv4 internet is still down after tunnel teardown. Collecting diagnostics."
+            collect_diagnostics_once internet-down
+            exit 1
+        fi
+        rm -f "$INTERACTIVE_LOGIN_MARKER"
+        log "Internet recovered after tunnel teardown."
     fi
-    if ! internet_v4_ok; then
-        log "IPv4 internet is still down after tunnel teardown. Collecting diagnostics."
-        collect_diagnostics_once internet-down
-        exit 1
-    fi
-    rm -f "$INTERACTIVE_LOGIN_MARKER"
-    log "Internet recovered after tunnel teardown."
 fi
 
 # The direct path answers now, so a probe's Date header can be read.
-check_clock_skew
+[ "$TUNNEL_ALREADY_HEALTHY" -eq 1 ] || check_clock_skew
 
 if ! runtime_resources_ok; then
     log "Runtime storage pressure detected: /tmp is at or above ${TMP_MAX_USED_PERCENT}% usage. Falling back to direct WAN."
@@ -1071,10 +1078,6 @@ if ! runtime_resources_ok; then
     defer_tunnel_retry
     exit 1
 fi
-
-# Publish fresh Blinkit IPv4 answers only after their WAN routes exist.
-sh "$DIR/refresh_blinkit_dns.sh" >> "$LOG_FILE" 2>&1 ||
-    log "Blinkit DNS refresh deferred; preserving last known records."
 
 # Before the game-mode exit: tun0 stays up in game mode, and fw3 reloads drop it.
 ensure_tunnel_input_drop
@@ -1096,7 +1099,7 @@ if [ -f "$GAME_MODE_MARKER" ]; then
     exit 1
 fi
 
-if tunnel_healthy_confirmed; then
+if [ "$TUNNEL_ALREADY_HEALTHY" -eq 1 ] || tunnel_healthy_confirmed; then
     refresh_optional_routes
     warn_if_tunnel_not_preferred
     warn_if_tunnel_slow

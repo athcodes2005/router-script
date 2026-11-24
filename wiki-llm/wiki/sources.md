@@ -9,7 +9,7 @@ what is present without copying credentials or generated build products.
 - Health and authentication: `ensure_network.sh`, `login.sh`.
 - Network configuration: `configure_dns.sh`, `configure_lan_ipv6.sh`,
   `configure_wifi.sh`.
-- Routing policy: `google_wan_policy.sh`, `refresh_blinkit_dns.sh`, `game_mode.sh`.
+- Routing policy: `google_wan_policy.sh`, `game_mode.sh`.
 - Operations: `install_cron_pipeline.sh`, `rotate_logs.sh`, `rotate_tunnel_ip.sh`,
   `update_from_git.sh`, `fetch_usque_rs.sh`, `firewall_hook.sh`,
   `install_firewall_hook.sh`, `promote_staged.sh`.
@@ -39,7 +39,7 @@ never shipped) as the rollback binary. See [[systems/warp-client]].
 - `tests/` holds Python regression tests: recovery functions, whole-script
   health runs in a stubbed sandbox (`tests/sandbox.py`), `sync_to_router.sh`,
   `update_from_git.sh`, `fetch_usque_rs.sh`, SIGHUP handling, login, diagnostics,
-  rotation, Google policy and ranges, LAN IPv6, and Blinkit DNS.
+  rotation, Google policy and ranges, and LAN IPv6.
 
 ## Imported reference assets and raw sources
 
@@ -64,16 +64,8 @@ not canonical source. `.DS_Store`, fetched `usque-rs` binaries, and packet
 captures are not tracked in git. Imported user-provided references are kept
 under `raw/assets/` and must remain immutable after import.
 
-## Blinkit DNS maintenance
-
-`refresh_blinkit_dns.sh` maintains IPv4-only records for the three observed Blinkit
-API endpoints and installs corresponding WAN routes before exposing answers.
-It is called by DNS setup, tunnel startup and the existing health pipeline.
-Regression tests are in `tests/test_blinkit_dns.py`.
-
 ## Sources
 
 - Workspace file inventory from 2026-08-01 and two-repo split on 2026-10-26.
 - `../../fetch_usque_rs.sh`, `../../update_from_git.sh`
 - `../raw/sources/historical-split-routing-plan-2026-07-31.md`
-- `../../refresh_blinkit_dns.sh`

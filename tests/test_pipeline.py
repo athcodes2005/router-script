@@ -109,10 +109,23 @@ class PipelineTests(unittest.TestCase):
     def test_dns_config_drift_does_not_block_portal_recovery(self):
         self.box.flag('dns_drift')
         self.box.flag('direct_down')
+        self.box.flag('warp_down')
         self.tick()
         log = self.box.log('ensure')
         self.assertIn('DNS configuration drift detected', log)
         self.assertIn('IPv4 internet check failed twice. Running login.sh.', log)
+
+    def test_direct_wan_failure_skips_portal_login_while_warp_is_healthy(self):
+        self.box.flag('direct_down')
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.box.log('login'), '')
+        self.assertEqual(self.box.count('stop_tunnel'), 0)
+        self.assertIn('Health check passed.', self.box.log('ensure'))
+
+    def test_legacy_blinkit_dns_entry_is_detected_as_drift_and_repaired(self):
+        self.box.flag('dns_legacy_blinkit')
+        self.tick()
+        self.assertIn('DNS configuration drift detected', self.box.log('ensure'))
 
     def test_persistent_dns_config_repair_is_rate_limited(self):
         self.box.flag('dns_drift')
@@ -302,18 +315,6 @@ class PipelineTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.box.count('ip route del 203.0.113.9/32 via 10.1.40.250 dev eth0 metric 1'), 1)
 
-    # F12: on a healthy tick the public refresher resolves the Blinkit names
-    # through dnsmasq, which serves the Blinkit hosts file, so an address that
-    # leaves the file loses its route on that tick.
-    def test_replaced_blinkit_address_loses_its_route(self):
-        upstream = self.box.state / 'blinkit_upstream'
-        upstream.write_text('198.51.100.30\n')
-        self.tick()
-        upstream.write_text('198.51.100.40\n')
-        self.tick()
-        self.assertEqual(self.box.count('ip route del 198.51.100.30/32 via 10.1.40.250 dev eth0 metric 1'), 1)
-        self.assertEqual(self.box.count('ip route del 198.51.100.40/32'), 0)
-
     # F14: a reachable but slow tunnel (the 08-07/08-09 failure class) passes
     # every probe. Restarting on latency caused false restarts, so only report.
     def test_sustained_slow_tunnel_is_reported_without_restart(self):
@@ -410,33 +411,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.clock_warnings(), [])
         self.assertIn('Health check passed.', self.box.log('ensure'))
 
-    # F12: refresh_blinkit_dns.sh publishes on every tick, but the public
-    # refresher runs only on healthy ones. A record set replaced while WARP was
-    # down or game mode was on kept its routes forever (20 found on 2026-10-22).
-    def test_blinkit_routes_replaced_while_warp_is_down_are_removed(self):
-        upstream = self.box.state / 'blinkit_upstream'
-        self.box.flag('warp_down')
-        self.tick()  # the restart fails: direct fallback, public route file removed
-        upstream.write_text('198.51.100.30\n')
-        self.tick()
-        upstream.write_text('198.51.100.40\n')
-        self.tick()
-        self.assertIn('Tunnel retry is cooling down', self.box.log('ensure'))
-        self.assertEqual(self.box.count('ip route del 198.51.100.30/32 via 10.1.40.250 dev eth0 metric 1'), 1)
-        self.assertEqual(self.box.count('ip route del 198.51.100.40/32'), 0)
-
-    def test_blinkit_routes_replaced_in_game_mode_are_removed(self):
-        upstream = self.box.state / 'blinkit_upstream'
-        (self.box.tmp / 'router-script-game-mode').write_text('on\n')
-        upstream.write_text('198.51.100.30\n')
-        self.tick()
-        upstream.write_text('198.51.100.40\n')
-        self.tick()
-        self.assertIn('Health check passed (game_mode: direct WAN preferred).', self.box.log('ensure'))
-        self.assertEqual(self.box.count('ip route del 198.51.100.30/32 via 10.1.40.250 dev eth0 metric 1'), 1)
-        # The pre-game-mode address is still listed for the other public names.
-        self.assertEqual(self.box.count('ip route del 198.51.100.10/32'), 0)
-
     # F31: fw3 filters input only from br-lan and eth0 and INPUT's policy is
     # ACCEPT, so new connections arriving on tun0 reached SSH, the admin UI and DNS.
     TUN0_DROP = 'filter INPUT -i tun0 -m conntrack --ctstate NEW -j DROP'
@@ -508,9 +482,11 @@ class PipelineTests(unittest.TestCase):
         orig_curl = curl_path.read_text()
         counter = self.box.state / 'direct_probe_count'
         hook = (
-            'if [ "$iface" = eth0 ] && case "$url" in */generate_204) true;; *) false;; esac; then\n'
+            'if case "$url" in */generate_204) true;; *) false;; esac; then\n'
             '  n="$(@CAT@ "$SIM_STATE/direct_probe_count" 2>/dev/null || echo 0)"\n'
-            '  n=$((n + 1)); printf "%s\\n" "$n" > "$SIM_STATE/direct_probe_count"\n'
+            '  if [ "$iface" = eth0 ]; then\n'
+            '    n=$((n + 1)); printf "%s\\n" "$n" > "$SIM_STATE/direct_probe_count"\n'
+            '  fi\n'
             '  if [ "$n" -le 6 ]; then code=000; fi\n'
             'fi\n'
         ).replace('@CAT@', '/bin/cat')

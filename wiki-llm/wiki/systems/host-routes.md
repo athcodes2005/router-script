@@ -3,7 +3,7 @@
 Some destinations must leave through the campus WAN even while WARP is the
 default:
 - campus pages that check the source address;
-- apps that reject shared VPN egress (Blinkit, Gemini, Supercell);
+- apps that reject shared VPN egress (Supercell, UTIITSL);
 - active game sessions.
 
 Each gets `/32` routes via the WAN gateway at metric 1, recorded in a state
@@ -16,7 +16,6 @@ file under `/tmp`.
 | Campus | `CAMPUS_DIRECT_DOMAINS`, resolved by campus DNS | `router-script-campus-host-routes` |
 | Public | `DIRECT_PUBLIC_DOMAINS`, resolved by dnsmasq | `router-script-direct-public-host-routes` |
 | Game session | conntrack flows to port 9339 | `router-script-game-session-host-routes` |
-| Blinkit | upstream answers that `refresh_blinkit_dns.sh` publishes | the Blinkit hosts file |
 
 ## Lifecycle
 
@@ -40,17 +39,12 @@ file under `/tmp`.
 - **At start.** `tunnel.sh` only adds these routes when WARP starts and never
   removes any, so the health check's refresher is the only remover (commit
   `dcc7e10`).
-- **Blinkit.** `refresh_blinkit_dns.sh` runs on every tick, including during
-  WARP fallback and game mode, when the public refresher does not run. When the
-  Blinkit record set changes, it removes the dropped addresses' routes itself,
-  after publishing the new set. It leaves any route another refresher lists to
-  that refresher (commit `775bcd4`). Before that commit, sets replaced in those
-  states kept their routes until reboot; the router held 20 such routes, which
-  were removed by hand on 2026-10-22.
 - **Stop.** `stop_tunnel.sh` removes every listed route and the state files.
+
+*(Historical note: the former Blinkit refresher `refresh_blinkit_dns.sh` and its
+four domains in `DIRECT_PUBLIC_DOMAINS` were removed on 2026-11-23.)*
 
 ## Sources
 
 - `../../../ensure_network.sh`, `../../../tunnel.sh`, `../../../stop_tunnel.sh`
-- `../../../refresh_blinkit_dns.sh`
 - [[policy-routing]], [[../flows/traffic-routing]], [[../operations/health-recovery]]

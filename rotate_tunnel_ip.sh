@@ -7,6 +7,7 @@ ENV_FILE="$DIR/.env"
 CONFIG_FILE="$DIR/config.json"
 BACKUP_FILE="$DIR/config.json.previous"
 BACKUP_TEMP="$BACKUP_FILE.tmp.$$"
+NEW_CONFIG_TEMP="$CONFIG_FILE.new.$$"
 WARP_TRACE_URL_V4="${WARP_TRACE_URL_V4:-https://1.1.1.1/cdn-cgi/trace}"
 WARP_TRACE_URL_V6="${WARP_TRACE_URL_V6:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
 WAS_RUNNING=0
@@ -59,7 +60,7 @@ cleanup() {
         fi
     fi
 
-    rm -f "$BACKUP_TEMP"
+    rm -f "$BACKUP_TEMP" "$NEW_CONFIG_TEMP"
     release_maintenance_lock
     exit "$STATUS"
 }
@@ -81,6 +82,14 @@ if pidof usque-rs >/dev/null 2>&1; then
     WAS_RUNNING=1
 fi
 
+# Register the new WARP identity while tun0 is still active so the HTTPS POST to
+# api.cloudflareclient.com travels over WARP instead of IITB's direct WAN TCP proxy.
+if [ "$WAS_RUNNING" -eq 1 ] && [ -x "$DIR/usque-rs" ]; then
+    log "Pre-registering fresh Cloudflare WARP identity over active tunnel..."
+    "$DIR/usque-rs" --config "$NEW_CONFIG_TEMP" register --accept-tos >> "$LOG_FILE" 2>&1 || rm -f "$NEW_CONFIG_TEMP"
+    [ -s "$NEW_CONFIG_TEMP" ] && chmod 600 "$NEW_CONFIG_TEMP"
+fi
+
 # Stop the currently running tunnel
 if [ -f "$DIR/stop_tunnel.sh" ]; then
     log "Stopping active tunnel..."
@@ -95,6 +104,11 @@ if [ -f "$CONFIG_FILE" ]; then
     mv "$BACKUP_TEMP" "$BACKUP_FILE"
     BACKUP_CREATED=1
     rm -f "$CONFIG_FILE"
+fi
+
+if [ -s "$NEW_CONFIG_TEMP" ]; then
+    mv "$NEW_CONFIG_TEMP" "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
 fi
 
 # Restart the tunnel (which automatically triggers a fresh registration in tunnel.sh)

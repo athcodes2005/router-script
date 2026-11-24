@@ -25,15 +25,12 @@ EXPECTED = {
     'DNSPROXY_YAML': '/etc/dnsproxy/dnsproxy.yaml',
     'DNS_SERVERS': '127.0.0.1#5453 8.8.8.8 8.8.4.4 10.200.1.11',
     'DNS_CACHE_SIZE': '4000',
-    'DIRECT_PUBLIC_DOMAINS': 'api3.blinkit.com jumbo.blinkit.com api2.grofers.com o1069899.ingest.us.sentry.io '
-                             'game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com '
+    'DIRECT_PUBLIC_DOMAINS': 'game.clashroyaleapp.com id.supercell.com init.mkt.supercell.com '
                              'o315582.ingest.sentry.io clashroyale.com www.clashroyale.com pan.utiitsl.com '
                              'www.pan.utiitsl.com utiitsl.com www.utiitsl.com trackpan.utiitsl.com '
                              'www.trackpan.utiitsl.com psaonline.utiitsl.com www.psaonline.utiitsl.com '
                              'pbv.utiitsl.com www.pbv.utiitsl.com',
     'GOOGLE_WAN_POLICY': '0',
-    'BLINKIT_IPV4_DOMAINS': 'api3.blinkit.com jumbo.blinkit.com api2.grofers.com',
-    'BLINKIT_HOSTS_DIR': '/etc/router-script/blinkit-hosts', 'DNSMASQ_PID_DIR': '/var/run',
     'CAMPUS_ROUTES_FILE': '/tmp/router-script-campus-host-routes',
     'DIRECT_PUBLIC_ROUTES_FILE': '/tmp/router-script-direct-public-host-routes',
     'GAME_SESSION_ROUTES_FILE': '/tmp/router-script-game-session-host-routes',

@@ -78,7 +78,7 @@ does), this:
   the admin panel (two Quad9 DoH stamps from `secure_manual_list`), leaving the
   rest of the file;
 - cut the dnsmasq `server` list down to `127.0.0.1#5453`, which drops the plain
-  fallbacks, the campus forwards and the Blinkit zones, and removed `cachesize`;
+  fallbacks and the campus forwards, and removed `cachesize`;
 - restarted dnsproxy and rebuilt the firewall.
 
 The firewall rebuild runs `firewall_hook.sh`, so a health check started 3 s
@@ -118,18 +118,13 @@ is sent direct because of `10.0.0.0/8`. Public answers inside IITB's routed
 `103.21.124.0/22` also go direct, covering browser and OS DNS caches that still
 hold a public split-horizon answer. Other public answers use WARP.
 
-## Blinkit IPv4-only exception
-
-The exact API names `api3.blinkit.com`, `jumbo.blinkit.com` and
-`api2.grofers.com` use refreshed
-IPv4 hosts plus exact local DNS zones. AAAA replies are NOERROR/NODATA while
-other domains retain IPv6. `refresh_blinkit_dns.sh` queries upstream directly,
-installs WAN routes first, publishes only changed records, and signals dnsmasq
-via `/var/run/dnsmasq/dnsmasq*.pid` (audit F50). See
-[[../bugs/blinkit-ipv6-vpn-warning-2026-09-19]] for verification and limitations.
 The vendor dnsmasq (2.85 before, 2.92 on 4.11.0) init script ignores the
 `filter_aaaa` UCI option, so it stays 0 in every mode; game mode no longer
-toggles it.
+toggles it. The former Blinkit IPv4-only DNS exception (`refresh_blinkit_dns.sh`,
+`/etc/router-script/blinkit-hosts`) was removed on 2026-11-23 because every
+upstream IP rotation sent `SIGHUP` to `dnsmasq` and flushed its 4,000-entry DNS
+cache; `configure_dns.sh` and `ensure_network.sh` now strip any legacy Blinkit
+`server=/domain/` or `addnhosts` entries as drift.
 
 ## Sources
 
@@ -139,5 +134,3 @@ toggles it.
 - `../../../dns_flow.sh`
 - [[flows/traffic-routing]]
 - [[campus-wan]]
-
-- `../../../refresh_blinkit_dns.sh`
