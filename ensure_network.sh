@@ -167,6 +167,27 @@ internet_v4_ok() {
     return 1
 }
 
+# Ask the local captive portal (over WAN_IF, using the pinned PORTAL_IP)
+# whether this WAN IP is logged out. Returns 0 only when /login.php explicitly
+# redirects to IITB SSO, meaning the portal session expired even though an
+# existing WARP UDP/QUIC conntrack flow survived. Returns 1 when logged in
+# (redirect to logout.php) or unreachable/ambiguous so a portal timeout never
+# triggers a false logout while tun0 is healthy.
+portal_session_logged_out() {
+    PORTAL_REDIRECT="$(curl -4 -sS \
+        --interface "$WAN_IF" \
+        --resolve "internet.iitb.ac.in:443:${PORTAL_IP}" \
+        --connect-timeout "$DIRECT_PROBE_CONNECT_TIMEOUT" \
+        --max-time "$DIRECT_PROBE_MAX_TIME" \
+        -o /dev/null \
+        -w '%{redirect_url}' \
+        "${PORTAL_BASE_URL:-https://internet.iitb.ac.in}/login.php" 2>/dev/null || true)"
+    case "$PORTAL_REDIRECT" in
+        *sso.iitb.ac.in*) return 0 ;;
+    esac
+    return 1
+}
+
 tunnel_internet_v4_ok() {
     for URL in $INTERNET_PROBE_URLS; do
         RESULT="$(curl -4 -sS --interface "$TUN_IF" --connect-timeout 4 --max-time 10 -o /dev/null -w '%{http_code} %{time_total}' "$URL" 2>/dev/null || true)"
@@ -1003,7 +1024,7 @@ if [ -f "$INTERACTIVE_LOGIN_MARKER" ] && ! internet_v4_ok; then
     MARKER_AGE=$(( $(date +%s) - MARKER_TIME ))
     if [ "$MARKER_AGE" -lt "$INTERACTIVE_RETRY_SECONDS" ]; then
         log "Interactive IITB login is pending; deferring token retry for $((INTERACTIVE_RETRY_SECONDS - MARKER_AGE))s."
-        if tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; then
+        if ! tunnel_healthy && { tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; }; then
             sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
         fi
         exit_untested
@@ -1016,15 +1037,28 @@ PORTAL_RECOVERY_ATTEMPTED=0
 TUNNEL_ALREADY_HEALTHY=0
 if ! internet_v4_ok; then
     # IITB's direct-WAN TCP 443 proxy can stall while the captive portal session
-    # and WARP UDP/QUIC tunnel remain active. If tun0 is already passing traffic,
-    # running login.sh would hit logout.php and drop the LAN for ~18 s.
+    # and WARP UDP/QUIC tunnel remain active. Conversely, when the portal
+    # session expires, an existing WARP UDP/QUIC conntrack flow can keep passing
+    # packets while campus DNS (10.200.1.11) returns NXDOMAIN. Check /login.php
+    # to distinguish the two: only run login.sh if it explicitly redirects to
+    # SSO, and keep a healthy tun0 up in either case.
     if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy; then
+        if portal_session_logged_out; then
+            log "Direct IPv4 failed while $TUN_IF is healthy, and captive portal reports logged out. Running login.sh."
+            PORTAL_RECOVERY_ATTEMPTED=1
+            sh "$DIR/login.sh" >> "$LOG_FILE" 2>&1 || true
+            if [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
+                log "Interactive IITB SSO login is required; keeping healthy $TUN_IF active."
+                exit_untested
+            fi
+            sleep 5
+        fi
         TUNNEL_ALREADY_HEALTHY=1
     else
         log "IPv4 internet check failed once. Confirming before portal recovery."
         sleep "$DIRECT_CONFIRM_DELAY"
         if ! internet_v4_ok; then
-            if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy; then
+            if [ ! -f "$GAME_MODE_MARKER" ] && tunnel_healthy && ! portal_session_logged_out; then
                 TUNNEL_ALREADY_HEALTHY=1
             else
                 log "IPv4 internet check failed twice. Running login.sh."

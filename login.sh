@@ -155,6 +155,13 @@ require_interactive_login() {
     log "Access-token recovery failed; interactive IITB SSO login is required."
 }
 
+flush_dns_cache() {
+    # While unauthenticated, campus DNS (10.200.1.11) returns NXDOMAIN for
+    # internal IITB domains with a 3960s SOA minimum TTL. SIGHUP clears
+    # dnsmasq's cache once after a real login so those entries do not linger.
+    killall -HUP dnsmasq 2>/dev/null || true
+}
+
 if ! check_internet; then
     log "No internet connection. Attempting captive portal authentication on $WAN_IF."
 
@@ -168,6 +175,7 @@ if ! check_internet; then
         log "Token login reached logout.php while internet is down; clearing stale portal session immediately."
         if recover_stale_session; then
             rm -f "$INTERACTIVE_LOGIN_MARKER"
+            flush_dns_cache
             log "Successful recovery: Internet is active after immediate stale-session re-login."
             exit 0
         fi
@@ -183,6 +191,7 @@ if ! check_internet; then
         log "Internet remains down after login. Captive portal session might be hung."
         if recover_stale_session; then
             rm -f "$INTERACTIVE_LOGIN_MARKER"
+            flush_dns_cache
             log "Successful recovery: Internet is active after re-login."
         else
             require_interactive_login
@@ -190,6 +199,7 @@ if ! check_internet; then
         fi
     else
         rm -f "$INTERACTIVE_LOGIN_MARKER"
+        flush_dns_cache
         log "First login successful. Internet is active."
     fi
 else

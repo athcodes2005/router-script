@@ -9,6 +9,8 @@ import tempfile
 import threading
 import unittest
 
+from sandbox import Sandbox
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'login.sh').read_text()
 FUNCTIONS = ''.join(re.findall(r'^[a-z_]+\(\) \{\n.*?^\}\n', SOURCE, re.M | re.S))
@@ -74,6 +76,29 @@ class LoginTests(unittest.TestCase):
             server.server_close()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(headers, ['Basic ' + base64.b64encode((USER + ':' + PASS).encode()).decode()])
+
+    def test_successful_login_flushes_dnsmasq_cache(self):
+        box = Sandbox.fresh(self)
+        (box.proj / '.env').write_text('USER=u123\nPASS=secret\n')
+        box.flag('direct_down')
+        curl_path = box.bin / 'curl'
+        orig_curl = curl_path.read_text()
+        hook = (
+            'case "$url" in */login.php) @RM@ -f "$SIM_STATE/direct_down"; code=200;; esac\n'
+        ).replace('@RM@', '/bin/rm')
+        curl_path.write_text(orig_curl.replace('tc=0.021;', hook + 'tc=0.021;'))
+        result = box.run('login.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('First login successful. Internet is active.', box.log('login'))
+        self.assertEqual(box.count('killall -HUP dnsmasq'), 1)
+
+    def test_already_active_internet_does_not_flush_dnsmasq_cache(self):
+        box = Sandbox.fresh(self)
+        (box.proj / '.env').write_text('USER=u123\nPASS=secret\n')
+        result = box.run('login.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Internet connection is active.', box.log('login'))
+        self.assertEqual(box.count('killall'), 0)
 
 
 if __name__ == '__main__':

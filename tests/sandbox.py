@@ -184,10 +184,22 @@ for a in "$@"; do
   prev=$a
 done
 flag curl_blocks && { : > "$SIM_STATE/blocked"; exec /bin/sleep 30; }
-code=204; t=0.050
+code=204; t=0.050; redir=
 [ "$iface" = tun0 ] && flag tunnel_slow && t=2.400
 case "$url" in */login.php|*/logout.php|*/cdn-cgi/trace) code=200 ;; esac
 [ "$iface" = eth0 ] && flag direct_down && code=000
+case "$url" in
+  */login.php)
+    if [ "$fmt" = '%{redirect_url}' ]; then
+      if flag portal_unreachable; then
+        code=000; redir=
+      elif flag portal_logged_out; then
+        code=302; redir='https://sso.iitb.ac.in/authorize?client_id=internet-uat.iitb'
+      else
+        code=302; redir='https://internet.iitb.ac.in/logout.php'
+      fi
+    fi ;;
+esac
 [ "$iface" = tun0 ] && flag warp_down && code=000
 [ "$iface" = tun0 ] && [ "$v6" = 1 ] && flag tunnel_v6_down && code=000
 case "$url" in http://1.1.1.1/*) flag rtt_fail && code=000 ;; esac
@@ -210,7 +222,7 @@ if [ "$code" != 000 ] && [ -n "$headers_to" ]; then
   if [ "$headers_to" = - ]; then printf 'HTTP/2 %s\r\ndate: %s\r\n\r\n' "$code" "$d"
   else printf 'HTTP/2 %s\r\ndate: %s\r\n\r\n' "$code" "$d" > "$headers_to"; fi
 fi
-out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s/%{time_total}/$t/g" \
+out=$(printf '%s' "$fmt" | @SED@ -e "s/%{http_code}/$code/g" -e "s|%{url_effective}|$url|g" -e "s|%{redirect_url}|$redir|g" -e "s/%{time_total}/$t/g" \
   -e "s/%{time_connect}/$tc/g" -e "s/%{speed_upload}/4000000/g" -e "s/%{speed_download}/12500000/g" \
   -e "s/%{size_download}/$size/g")
 printf '%b' "$out"

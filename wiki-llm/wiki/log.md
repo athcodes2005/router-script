@@ -1431,3 +1431,31 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../ensure_network.sh`, `../../configure_dns.sh`, `../../defaults.sh`, `../../tunnel.sh`, `../../rotate_tunnel_ip.sh`
 - `../../tests/sandbox.py`, `../../tests/test_defaults.py`, `../../tests/test_platform.py`, `../../tests/test_pipeline.py`
 - [[systems/dns]], [[systems/host-routes]], [[operations/health-recovery]], [[operations/warp-rotation]]
+
+## 2026-11-25 — Detect captive portal expiry while WARP UDP conntrack stays up, flush dnsmasq negative cache
+
+- Diagnosed `campus.placements.iitb.ac.in` (`ERR_NAME_NOT_RESOLVED`) and all
+  internal `CAMPUS_DOMAINS` returning `NXDOMAIN` from `10.200.1.11`: the router's
+  IITB captive portal session had expired (direct `eth0` probes timed out and
+  `https://internet.iitb.ac.in/login.php` redirected `302` to `sso.iitb.ac.in`),
+  while the already-established `usque-rs` UDP/QUIC conntrack flow kept passing
+  `tun0` probes (`204` in `75 ms`).
+- Because commit `2911fa6` skipped `login.sh` whenever `tunnel_healthy` succeeded,
+  `ensure_network.sh` logged quiet healthy ticks for 3+ hours without
+  re-authenticating the expired portal session.
+- Added `portal_session_logged_out()` in `ensure_network.sh`: when direct `eth0`
+  probes fail while `tun0` is healthy, it queries `https://internet.iitb.ac.in/login.php`
+  (pinned `PORTAL_IP`, no redirect follow) and runs `login.sh` only when `/login.php`
+  explicitly redirects to `sso.iitb.ac.in`, keeping healthy `tun0` up in both cases
+  (active-session proxy stalls and unreachable portal still skip `login.sh`).
+- Updated `login.sh` (`flush_dns_cache`) to send `killall -HUP dnsmasq` after a
+  successful login so `NXDOMAIN` entries cached from `10.200.1.11` during the
+  unauthenticated window (`3960 s` SOA minimum TTL) are cleared immediately.
+- Added sandbox `portal_logged_out` / `portal_unreachable` support and unit tests
+  in `tests/test_pipeline.py` and `tests/test_login.py`.
+
+## Sources
+
+- `../../ensure_network.sh`, `../../login.sh`
+- `../../tests/sandbox.py`, `../../tests/test_pipeline.py`, `../../tests/test_login.py`
+- [[operations/health-recovery]], [[operations/portal-login]]

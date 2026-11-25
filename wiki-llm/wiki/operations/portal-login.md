@@ -31,6 +31,14 @@ A certificate failure (curl exit 60, "not yet valid", "certificate has
 expired") is logged with a hint to check the router clock. After a reboot it can
 be months behind until NTP syncs.
 
+## DNS negative-cache flush
+
+While the captive portal is unauthenticated, campus DNS (`10.200.1.11`) returns
+`NXDOMAIN` (with a `3960 s` SOA minimum TTL) for internal IITB domains in
+`CAMPUS_DOMAINS`. After every successful portal login (initial login or
+stale-session recovery), `login.sh` sends `killall -HUP dnsmasq` so cached
+negative answers are cleared immediately instead of lingering for over an hour.
+
 ## Sources
 
 - `../../../login.sh`

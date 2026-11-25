@@ -42,11 +42,18 @@ in the future after a clock reset).
    nothing.
 9. Verify direct-WAN IPv4 (probing `cp.cloudflare.com` before Google) once on
    healthy ticks. When direct `eth0` probes stall outside game mode, check
-   `tunnel_healthy` first: because IITB blocks external UDP 443 when the captive
-   portal is unauthenticated, a healthy `tun0` proves the portal session is
-   active, so `ensure_network.sh` skips `login.sh` (which would otherwise follow
-   `login.php -> logout.php` and cause an ~18 s full-LAN blackout) and reuses
-   that tunnel health check. Only when both direct `eth0` and `tun0` fail (or in
+   `tunnel_healthy` first: if `tun0` is up and passing traffic, query
+   `https://internet.iitb.ac.in/login.php` over `eth0` (using pinned `PORTAL_IP`)
+   without following redirects (`portal_session_logged_out`). IITB's stateful
+   firewall lets an already-established WARP UDP/QUIC conntrack flow continue
+   after the captive portal session expires, while campus DNS (`10.200.1.11`)
+   returns `NXDOMAIN` for internal campus domains and `/login.php` redirects to
+   `sso.iitb.ac.in`. Only when `/login.php` explicitly redirects to
+   `sso.iitb.ac.in` does `ensure_network.sh` run `login.sh` (without stopping
+   healthy `tun0`); when `/login.php` redirects to `logout.php` or is
+   unreachable, it assumes a direct-WAN TCP 443 proxy stall, skips `login.sh`
+   (avoiding `logout.php` and an ~18 s full-LAN blackout), and reuses that
+   tunnel health check. Only when both direct `eth0` and `tun0` fail (or in
    game mode) does it confirm direct failure, run `login.sh`
    ([[portal-login]]), tear down WARP if both paths remain down after recovery,
    and clear any stale interactive-login marker upon post-teardown recovery.

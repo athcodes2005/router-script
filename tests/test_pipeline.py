@@ -122,6 +122,48 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.box.count('stop_tunnel'), 0)
         self.assertIn('Health check passed.', self.box.log('ensure'))
 
+    def test_expired_portal_session_relogs_in_even_while_warp_is_healthy(self):
+        (self.box.proj / '.env').write_text('USER=u123\nPASS=secret\n')
+        self.box.flag('direct_down')
+        self.box.flag('portal_logged_out')
+        # Simulate a successful portal login on /login.php clearing direct_down
+        # (campus portal is reachable on eth0 even when public direct_down is set).
+        curl_path = self.box.bin / 'curl'
+        orig_curl = curl_path.read_text()
+        hook = (
+            'case "$url" in */login.php) [ "$fmt" != \'%{redirect_url}\' ] && flag portal_logged_out && '
+            '{ @RM@ -f "$SIM_STATE/direct_down" "$SIM_STATE/portal_logged_out"; code=200; };; esac\n'
+        ).replace('@RM@', '/bin/rm')
+        curl_path.write_text(orig_curl.replace('tc=0.021;', hook + 'tc=0.021;'))
+        result = self.tick()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log = self.box.log('ensure')
+        self.assertIn('captive portal reports logged out. Running login.sh.', log)
+        self.assertIn('First login successful. Internet is active.', self.box.log('login'))
+        self.assertIn('killall -HUP dnsmasq', self.box.calls())
+        self.assertEqual(self.box.count('stop_tunnel'), 0)
+        self.assertIn('Health check passed.', log)
+
+    def test_expired_portal_session_needing_interactive_login_keeps_healthy_warp(self):
+        (self.box.proj / '.env').write_text('USER=u123\nPASS=secret\n')
+        self.box.flag('direct_down')
+        self.box.flag('portal_logged_out')
+        result = self.tick()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        log = self.box.log('ensure')
+        self.assertIn('captive portal reports logged out. Running login.sh.', log)
+        self.assertIn('Interactive IITB SSO login is required; keeping healthy tun0 active.', log)
+        self.assertEqual(self.box.count('stop_tunnel'), 0)
+        self.assertEqual(self.box.count('killall -HUP dnsmasq'), 0)
+
+    def test_unreachable_portal_does_not_teardown_healthy_warp(self):
+        self.box.flag('direct_down')
+        self.box.flag('portal_unreachable')
+        self.assertEqual(self.tick().returncode, 0)
+        self.assertEqual(self.box.log('login'), '')
+        self.assertEqual(self.box.count('stop_tunnel'), 0)
+        self.assertIn('Health check passed.', self.box.log('ensure'))
+
     def test_legacy_blinkit_dns_entry_is_detected_as_drift_and_repaired(self):
         self.box.flag('dns_legacy_blinkit')
         self.tick()
