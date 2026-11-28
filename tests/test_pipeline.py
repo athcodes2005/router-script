@@ -562,6 +562,57 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Wi-Fi stability configuration drift detected. Reapplying configure_wifi.sh.', log)
         self.assertEqual(self.box.count('uci set wireless.mt798112.channel=149'), 1)
 
+    # 2026-11-28: if direct WAN drops after the initial check and causes
+    # tunnel.sh to fail, do not blame WARP with a 5-minute retry cooldown.
+    def test_failed_tunnel_restart_skips_cooldown_when_direct_wan_also_dropped(self):
+        self.box.flag('warp_down')
+        tunnel_sh = self.box.proj / 'tunnel.sh'
+        tunnel_sh.write_text('#!/bin/sh\n: > "%s/direct_down"\nexit 1\n' % self.box.state)
+        tunnel_sh.chmod(0o755)
+        result = self.tick()
+        self.assertEqual(result.returncode, 1)
+        log = self.box.log('ensure')
+        self.assertIn('Direct IPv4 on eth0 is also down; skipping tunnel retry cooldown', log)
+        self.assertFalse((self.box.tmp / 'router-script-tunnel-retry-after').exists())
+
+    def test_failed_tunnel_restart_sets_cooldown_when_direct_wan_is_up(self):
+        self.box.flag('warp_down')
+        result = self.tick()
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue((self.box.tmp / 'router-script-tunnel-retry-after').exists())
+
+    # 2026-11-28: when WAN recovers from an interactive-login or WAN-cycle
+    # outage, any stale WARP retry cooldown must be cleared immediately so WARP
+    # restarts on the first healthy WAN tick instead of waiting out 5 minutes.
+    def test_wan_recovery_from_interactive_marker_clears_tunnel_cooldown(self):
+        self.box.flag('warp_down')
+        (self.box.tmp / 'router-script-tunnel-retry-after').write_text('%d\n' % (time.time() + 300))
+        (self.box.tmp / 'router-script-interactive-login-required').write_text('pending\n')
+        self.tick()
+        log = self.box.log('ensure')
+        self.assertIn('Direct WAN recovered; clearing stale tunnel retry cooldown.', log)
+        self.assertNotIn('Tunnel retry is cooling down', log)
+        self.assertIn('Restarting tunnel.', log)
+
+    def test_wan_recovery_from_wan_cycle_clears_tunnel_cooldown(self):
+        self.box.flag('warp_down')
+        (self.box.tmp / 'router-script-tunnel-retry-after').write_text('%d\n' % (time.time() + 300))
+        (self.box.tmp / 'router-script-wan-recovery-retry-after').write_text('%d\n' % (time.time() + 120))
+        self.tick()
+        log = self.box.log('ensure')
+        self.assertIn('Direct WAN recovered; clearing stale tunnel retry cooldown.', log)
+        self.assertNotIn('Tunnel retry is cooling down', log)
+        self.assertIn('Restarting tunnel.', log)
+
+    # 2026-11-28: when tunnel.sh itself exits non-zero (it already waited and
+    # reverted itself), do not waste another 10s sleeping before handling failure.
+    def test_failed_tunnel_startup_skips_post_start_sleep(self):
+        self.box.flag('warp_down')
+        result = self.tick()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.box.count('sleep 10'), 0)
+        self.assertIn('Tunnel startup failed; skipping post-start wait.', self.box.log('ensure'))
+
 
 if __name__ == '__main__':
     unittest.main()

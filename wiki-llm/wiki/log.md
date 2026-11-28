@@ -1459,3 +1459,31 @@ Append new entries at the end. Preserve older entries as historical evidence.
 - `../../ensure_network.sh`, `../../login.sh`
 - `../../tests/sandbox.py`, `../../tests/test_pipeline.py`, `../../tests/test_login.py`
 - [[operations/health-recovery]], [[operations/portal-login]]
+
+## 2026-11-28 — Avoid stale WARP retry cooldown across WAN outages
+
+- Investigated a 6.5-minute IPv6 outage (`01:16:31`–`01:23:01 IST`, e.g.
+  IPv6-only `mypi2025.duckdns.org`) after IITB's external egress stalled for
+  ~2.5 minutes and came back online at `01:19:00` while WARP stayed down until
+  `01:23:00`.
+- Root cause: at `01:16:30`, `internet_v4_ok` passed 1–2 s before IITB egress
+  dropped, so `ensure_network.sh` blamed WARP, ran `tunnel.sh` (25 s CONNECT-IP
+  timeout), slept 10 s despite non-zero exit, ran diagnostics (confirming
+  `direct_ipv4_status=000`), and wrote a 300 s `TUNNEL_RETRY_FILE` cooldown
+  (`01:22:41`). When direct WAN recovered at `01:19:00` and cleared
+  `INTERACTIVE_LOGIN_MARKER`, the stale cooldown remained, holding WARP down for
+  8 consecutive ticks until `01:23:00` (when `usque-rs` reconnected in 1 s).
+- Updated `ensure_network.sh`:
+  - Check `tunnel.sh`'s exit status before sleeping 10 s.
+  - Re-check `internet_v4_ok` after `stop_tunnel.sh` on restart failure and skip
+    `defer_tunnel_retry` when direct WAN is also down.
+  - Clear any stale `TUNNEL_RETRY_FILE` immediately when direct WAN transitions
+    from down to up (WAN-recovery cooldown cleared, interactive-login marker
+    cleared, or portal recovery succeeded).
+- Added 5 regression tests in `tests/test_pipeline.py`; verified `sh -n`,
+  `dash -n`, `shellcheck`, and all 268 Python tests pass.
+
+## Sources
+
+- `../../ensure_network.sh`, `../../tests/test_pipeline.py`
+- [[operations/health-recovery]]

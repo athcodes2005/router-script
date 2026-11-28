@@ -105,10 +105,16 @@ diagnostic snapshot, removes tunnel routing/process state, restores direct WAN,
 and writes a retry-after timestamp. This protects the RAM-backed filesystem and
 prevents a failing WARP process from intensifying pressure.
 
-**Failed restart.** If a single restart does not restore tunnel health and IPv4 reachability, diagnostics are
-captured, WARP is stopped, and a five-minute cooldown begins. Runs during the
-cooldown maintain direct IPv4 instead of restarting every minute. A healthy
-tunnel removes the cooldown marker.
+**Failed restart.** If `tunnel.sh` itself exits non-zero, the 10-second
+post-start wait is skipped. If a single restart does not restore tunnel health
+and IPv4 reachability, diagnostics are captured and WARP is stopped; direct IPv4
+(`internet_v4_ok`) is then re-checked so a five-minute cooldown is only imposed
+when direct WAN is healthy (never when a mid-tick WAN outage caused the tunnel
+start to fail). Runs during a genuine WARP cooldown maintain direct IPv4 instead
+of restarting every minute. Both a healthy tunnel and a direct-WAN recovery
+(clearing `WAN_RECOVERY_RETRY_FILE`, clearing `INTERACTIVE_LOGIN_MARKER`, or
+successful portal recovery) clear the cooldown marker immediately so WARP
+restarts on the first healthy WAN tick.
 
 ## Observation and game mode
 

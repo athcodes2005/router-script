@@ -1015,27 +1015,37 @@ if ! campus_core_route_ok; then
     collect_diagnostics_once campus-route
     exit 1
 fi
+WAN_RECOVERED=0
+if [ -f "$WAN_RECOVERY_RETRY_FILE" ]; then
+    WAN_RECOVERED=1
+fi
 clear_retry "$WAN_RECOVERY_RETRY_FILE"
 
 check_platform_once
 
-if [ -f "$INTERACTIVE_LOGIN_MARKER" ] && ! internet_v4_ok; then
-    MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || stat -c %Y "$INTERACTIVE_LOGIN_MARKER" 2>/dev/null || echo 0)"
-    MARKER_AGE=$(( $(date +%s) - MARKER_TIME ))
-    if [ "$MARKER_AGE" -lt "$INTERACTIVE_RETRY_SECONDS" ]; then
-        log "Interactive IITB login is pending; deferring token retry for $((INTERACTIVE_RETRY_SECONDS - MARKER_AGE))s."
-        if ! tunnel_healthy && { tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; }; then
-            sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+DIRECT_V4_OK=0
+if [ -f "$INTERACTIVE_LOGIN_MARKER" ]; then
+    if ! internet_v4_ok; then
+        MARKER_TIME="$(date -r "$INTERACTIVE_LOGIN_MARKER" +%s 2>/dev/null || stat -c %Y "$INTERACTIVE_LOGIN_MARKER" 2>/dev/null || echo 0)"
+        MARKER_AGE=$(( $(date +%s) - MARKER_TIME ))
+        if [ "$MARKER_AGE" -lt "$INTERACTIVE_RETRY_SECONDS" ]; then
+            log "Interactive IITB login is pending; deferring token retry for $((INTERACTIVE_RETRY_SECONDS - MARKER_AGE))s."
+            if ! tunnel_healthy && { tunnel_process_ok || ip -4 route show default 2>/dev/null | grep -q "dev $TUN_IF"; }; then
+                sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
+            fi
+            exit_untested
         fi
-        exit_untested
+        log "Interactive-login retry interval elapsed; retrying the access token."
+        rm -f "$INTERACTIVE_LOGIN_MARKER"
+    else
+        DIRECT_V4_OK=1
+        WAN_RECOVERED=1
     fi
-    log "Interactive-login retry interval elapsed; retrying the access token."
-    rm -f "$INTERACTIVE_LOGIN_MARKER"
 fi
 
 PORTAL_RECOVERY_ATTEMPTED=0
 TUNNEL_ALREADY_HEALTHY=0
-if ! internet_v4_ok; then
+if [ "$DIRECT_V4_OK" -eq 0 ] && ! internet_v4_ok; then
     # IITB's direct-WAN TCP 443 proxy can stall while the captive portal session
     # and WARP UDP/QUIC tunnel remain active. Conversely, when the portal
     # session expires, an existing WARP UDP/QUIC conntrack flow can keep passing
@@ -1102,6 +1112,10 @@ if [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && ! internet_v4_ok; then
     fi
 fi
 
+if [ "$PORTAL_RECOVERY_ATTEMPTED" -eq 1 ] && [ "$TUNNEL_ALREADY_HEALTHY" -eq 0 ]; then
+    WAN_RECOVERED=1
+fi
+
 # The direct path answers now, so a probe's Date header can be read.
 [ "$TUNNEL_ALREADY_HEALTHY" -eq 1 ] || check_clock_skew
 
@@ -1143,6 +1157,11 @@ if [ "$TUNNEL_ALREADY_HEALTHY" -eq 1 ] || tunnel_healthy_confirmed; then
     exit 0
 fi
 
+if [ "$WAN_RECOVERED" -eq 1 ] && [ -f "$TUNNEL_RETRY_FILE" ]; then
+    log "Direct WAN recovered; clearing stale tunnel retry cooldown."
+    rm -f "$TUNNEL_RETRY_FILE"
+fi
+
 # A gate needs a verdict now, so it restarts WARP even during the cooldown.
 if [ "$GATE" -eq 0 ] && tunnel_retry_deferred; then
     log "Tunnel retry is cooling down; keeping direct WAN fallback active."
@@ -1154,14 +1173,25 @@ fi
 
 log "Tunnel health check failed: $TUNNEL_FAILURE_REASON. Restarting tunnel."
 sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-sleep 10
+TUNNEL_RESTART_HEALTHY=0
+if sh "$DIR/tunnel.sh" >> "$LOG_FILE" 2>&1; then
+    sleep 10
+    if tunnel_healthy_confirmed; then
+        TUNNEL_RESTART_HEALTHY=1
+    fi
+else
+    log "Tunnel startup failed; skipping post-start wait."
+fi
 
-if ! tunnel_healthy_confirmed; then
+if [ "$TUNNEL_RESTART_HEALTHY" -ne 1 ]; then
     log "Tunnel is still unhealthy after restart. Collecting diagnostics and enabling direct WAN fallback."
     collect_diagnostics_once tunnel-restart
     sh "$DIR/stop_tunnel.sh" >> "$LOG_FILE" 2>&1 || true
-    defer_tunnel_retry
+    if internet_v4_ok; then
+        defer_tunnel_retry
+    else
+        log "Direct IPv4 on $WAN_IF is also down; skipping tunnel retry cooldown so WARP restarts once WAN recovers."
+    fi
     exit 1
 fi
 
